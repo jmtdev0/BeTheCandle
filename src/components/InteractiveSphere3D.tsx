@@ -469,7 +469,7 @@ export default function InteractiveSphere3D({
     } catch (err) {
       // ignore
     }
-  }, [camera, desiredPlanetDistance]);
+  }, [camera, desiredPlanetDistance, controlsRef, initialPosition]);
 
   // satellite
   // multiple satellites with randomized radius, distance and speed per page load

@@ -137,7 +137,8 @@ export default function TwinklingStars({ count = 600, radius = 60 }: TwinklingSt
       blending: THREE.AdditiveBlending,
     });
     return mat;
-  }, [count]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Periodic painter: trigger visibility toggles every few seconds.
   useEffect(() => {
