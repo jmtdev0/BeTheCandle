@@ -5,6 +5,8 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import InteractiveSphere3D, { SatelliteUser } from "@/components/InteractiveSphere3D";
 import SatelliteInfoCard from "@/components/SatelliteInfoCard";
+import SatelliteColorPicker from "@/components/SatelliteColorPicker";
+import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
 
 // Sample satellite users data
 const sampleUsers: SatelliteUser[] = [
@@ -47,6 +49,7 @@ export default function GoofyModePage() {
   const [selectedUser, setSelectedUser] = useState<SatelliteUser | null>(null);
   const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const { color: satelliteColor, setColor: setSatelliteColor } = useSatelliteColorPreference();
 
   useEffect(() => {
     setMounted(true);
@@ -64,6 +67,13 @@ export default function GoofyModePage() {
 
   return (
     <div className="relative w-full h-screen flex items-center justify-center bg-gradient-to-b from-[#030712] via-[#050b1a] to-[#030712] overflow-hidden">
+      <div className="absolute top-6 right-6 z-[60]">
+        <SatelliteColorPicker
+          value={satelliteColor}
+          onChange={setSatelliteColor}
+          className="relative"
+        />
+      </div>
       <Canvas shadows camera={{ position: [0, 0, 6], fov: 50 }} style={{ width: "100%", height: "100%" }}>
         <ambientLight intensity={0.6} />
         <directionalLight position={[5, 5, 5]} intensity={1.2} castShadow />
@@ -75,6 +85,7 @@ export default function GoofyModePage() {
           satelliteUsers={sampleUsers}
           onSatelliteClick={handleSatelliteClick}
           selectedSatelliteId={selectedUser?.id}
+          satelliteColor={satelliteColor}
         />
         {/* Allow zoom but restrict min/max so user cannot zoom out indefinitely */}
         <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} minDistance={4} maxDistance={60} />

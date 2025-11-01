@@ -4,6 +4,11 @@ import React, { useRef, useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import TwinklingStars from "./TwinklingStars";
+import {
+  DEFAULT_SATELLITE_COLOR,
+  SATELLITE_COLOR_PALETTES,
+  type SatelliteColorOption,
+} from "@/lib/satelliteColors";
 
 // User/Satellite data interface
 export interface SatelliteUser {
@@ -204,6 +209,7 @@ interface InteractiveSphere3DProps {
   satelliteUsers?: SatelliteUser[];
   onSatelliteClick?: (user: SatelliteUser, screenPos?: { x: number; y: number }) => void;
   selectedSatelliteId?: string; // ID of selected satellite for camera focus
+  satelliteColor?: SatelliteColorOption;
 }
 
 export default function InteractiveSphere3D({ 
@@ -213,6 +219,7 @@ export default function InteractiveSphere3D({
   satelliteUsers = [],
   onSatelliteClick,
   selectedSatelliteId,
+  satelliteColor = DEFAULT_SATELLITE_COLOR,
 }: InteractiveSphere3DProps) {
   const meshRef = useRef<THREE.Mesh | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -484,6 +491,7 @@ export default function InteractiveSphere3D({
   
   // create satellites based on provided users or generate random ones
   const satellites = useMemo(() => {
+    const palette = SATELLITE_COLOR_PALETTES[satelliteColor] ?? SATELLITE_COLOR_PALETTES[DEFAULT_SATELLITE_COLOR];
     if (satelliteUsers && satelliteUsers.length > 0) {
       // Use provided satellite users
       return satelliteUsers.map((user, idx) => {
@@ -497,9 +505,7 @@ export default function InteractiveSphere3D({
         const verticalAmp = (Math.random() - 0.5) * radius * 0.25;
         const verticalFreq = 0.5 + Math.random() * 1.2;
         const orbitEuler = new THREE.Euler(inclination, orbitRotation, 0, "XYZ");
-        
-        const moonColors = ["#8b9dc3", "#c1440e", "#d4af37", "#a8d5e2", "#786d5f"];
-        const color = moonColors[idx % moonColors.length];
+        const color = palette[idx % palette.length];
 
         return {
           size,
@@ -528,9 +534,7 @@ export default function InteractiveSphere3D({
         const verticalAmp = (Math.random() - 0.5) * radius * 0.25;
         const verticalFreq = 0.5 + Math.random() * 1.2;
         const orbitEuler = new THREE.Euler(inclination, orbitRotation, 0, "XYZ");
-        
-        const moonColors = ["#8b9dc3", "#c1440e", "#d4af37", "#a8d5e2", "#786d5f"];
-        const color = moonColors[idx % moonColors.length];
+        const color = palette[idx % palette.length];
 
         return {
           size,
@@ -546,7 +550,7 @@ export default function InteractiveSphere3D({
         };
       });
     }
-  }, [radius, satelliteUsers]);
+  }, [radius, satelliteUsers, satelliteColor]);
 
   // Camera animation state for tracking selected satellite
   const cameraAnimationProgress = useRef(0);
