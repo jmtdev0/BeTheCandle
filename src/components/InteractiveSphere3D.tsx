@@ -317,6 +317,8 @@ export default function InteractiveSphere3D({
     if (!gl || !camera) return;
     const raycaster = new THREE.Raycaster();
 
+    const activeTouchIds = new Set<number>();
+
     const handlePointerDown = (ev: PointerEvent) => {
       try {
         const rect = gl.domElement.getBoundingClientRect();
@@ -330,8 +332,32 @@ export default function InteractiveSphere3D({
           // also allow zooming the camera only when the sphere is clicked
           controlsRef.current.enableZoom = !!hitSphere;
         }
+        if (ev.pointerType === "touch") {
+          activeTouchIds.add(ev.pointerId);
+          if (controlsRef?.current) {
+            controlsRef.current.enableZoom = true;
+          }
+        }
       } catch (err) {
         // ignore
+      }
+    };
+
+    const handlePointerUp = (ev: PointerEvent) => {
+      if (ev.pointerType === "touch") {
+        activeTouchIds.delete(ev.pointerId);
+        if (controlsRef?.current && activeTouchIds.size === 0) {
+          controlsRef.current.enableZoom = false;
+        }
+      }
+    };
+
+    const handlePointerCancel = (ev: PointerEvent) => {
+      if (ev.pointerType === "touch") {
+        activeTouchIds.delete(ev.pointerId);
+        if (controlsRef?.current && activeTouchIds.size === 0) {
+          controlsRef.current.enableZoom = false;
+        }
       }
     };
 
@@ -340,8 +366,83 @@ export default function InteractiveSphere3D({
       controlsRef.current.enableRotate = false;
       controlsRef.current.enableZoom = false;
     }
-    gl.domElement.addEventListener("pointerdown", handlePointerDown, { passive: true });
-    return () => gl.domElement.removeEventListener("pointerdown", handlePointerDown as any);
+    const element = gl.domElement as HTMLElement;
+    element.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    element.addEventListener("pointerup", handlePointerUp, { passive: true });
+    element.addEventListener("pointercancel", handlePointerCancel, { passive: true });
+    return () => {
+      element.removeEventListener("pointerdown", handlePointerDown as any);
+      element.removeEventListener("pointerup", handlePointerUp as any);
+      element.removeEventListener("pointercancel", handlePointerCancel as any);
+    };
+  }, [gl, camera, controlsRef]);
+
+  // Custom pinch-to-zoom handling for touch devices
+  useEffect(() => {
+    if (!gl || !controlsRef?.current) return;
+
+    const element = gl.domElement as HTMLElement;
+    const targetControls = controlsRef.current;
+
+    const pinchState = {
+      active: false,
+      startDistance: 0,
+      startVector: new THREE.Vector3(),
+      startLength: 0,
+    };
+
+    const getDistance = (touches: TouchList) => {
+      if (touches.length < 2) return 0;
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        targetControls.enableZoom = true;
+        pinchState.active = true;
+        pinchState.startDistance = getDistance(event.touches);
+        pinchState.startVector.copy(camera.position).sub(targetControls.target);
+        pinchState.startLength = pinchState.startVector.length();
+      }
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!pinchState.active || event.touches.length < 2) return;
+
+      event.preventDefault();
+      const distance = getDistance(event.touches);
+      if (distance <= 0 || pinchState.startDistance <= 0 || pinchState.startLength <= 0) return;
+
+      const scale = pinchState.startDistance / distance;
+      const minDistance = targetControls.minDistance ?? 0.01;
+      const maxDistance = targetControls.maxDistance ?? Infinity;
+
+      const nextLength = THREE.MathUtils.clamp(pinchState.startLength * scale, minDistance, maxDistance);
+      const newVector = pinchState.startVector.clone().setLength(nextLength);
+
+      camera.position.copy(targetControls.target).add(newVector);
+      targetControls.update();
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length < 2) {
+        pinchState.active = false;
+      }
+    };
+
+    element.addEventListener("touchstart", handleTouchStart, { passive: true });
+    element.addEventListener("touchmove", handleTouchMove, { passive: false });
+    element.addEventListener("touchend", handleTouchEnd, { passive: true });
+    element.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener("touchstart", handleTouchStart as any);
+      element.removeEventListener("touchmove", handleTouchMove as any);
+      element.removeEventListener("touchend", handleTouchEnd as any);
+      element.removeEventListener("touchcancel", handleTouchEnd as any);
+    };
   }, [gl, camera, controlsRef]);
 
   // Programmatically perform a tiny synthetic drag (pointerdown -> few pointermoves -> pointerup)
