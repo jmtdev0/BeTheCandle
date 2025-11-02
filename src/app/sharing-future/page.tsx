@@ -1,55 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import DonationBubble from "@/components/DonationBubble";
 import DonationModal from "@/components/DonationModal";
 import { BackgroundMusic } from "@/components/BackgroundMusic";
 import { SatelliteUser } from "@/components/InteractiveSphere3D";
 import SatelliteInfoCard from "@/components/SatelliteInfoCard";
+import { useRealtimeDonations } from "@/hooks/useRealtimeDonations";
 
 // Interface for individual donations
-interface Donation {
-  id: number;
-  amount: number;
-  address: string;
-  timestamp: Date;
-}
-
 export default function SharingFuturePage() {
-  // State to track total BTC donations
-  const [totalBTC, setTotalBTC] = useState(0.134);
-  
-  // State to track individual donations
-  const [donations, setDonations] = useState<Donation[]>([
-    {
-      id: 1,
-      amount: 0.05,
-      address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-      timestamp: new Date(Date.now() - 3600000),
-    },
-    {
-      id: 2,
-      amount: 0.034,
-      address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-      timestamp: new Date(Date.now() - 7200000),
-    },
-    {
-      id: 3,
-      amount: 0.05,
-      address: "3J98t1WpEZ73CNmYviecrnyiWrnqRhWNLy",
-      timestamp: new Date(Date.now() - 1800000),
-    },
-  ]);
-  
   // State to control modal visibility
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // State for selected satellite user
   const [selectedSatellite, setSelectedSatellite] = useState<SatelliteUser | null>(null);
   const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
 
+  const { donations, totalBtc, addDonation, onlineMembers, status, error } = useRealtimeDonations();
+
+  const formattedDonations = useMemo(
+    () =>
+      donations.map((donation) => ({
+        id: donation.id,
+        amount: donation.amountBtc,
+        address: donation.btcAddress,
+        displayName: donation.displayName,
+        message: donation.message,
+        timestamp: donation.createdAt,
+      })),
+    [donations]
+  );
+
+  const displayedTotal = totalBtc;
+
   // Handler to open the donation modal
   const handleAddDonation = () => {
+    setSubmitError(null);
     setIsModalOpen(true);
   };
 
@@ -67,26 +56,28 @@ export default function SharingFuturePage() {
   };
 
   // Handler for modal submission
-  const handleDonationSubmit = (amount: number, address: string) => {
-    // Create new donation object
-    const newDonation: Donation = {
-      id: Date.now(),
-      amount,
-      address,
-      timestamp: new Date(),
-    };
-    
-    // Add the donation to the list
-    setDonations((prev) => [...prev, newDonation]);
-    
-    // Add the donation amount to the total
-    setTotalBTC((prev) => prev + amount);
-    
-    // Log the donation details (in a real app, this would be sent to a backend)
-    console.log("New donation:", newDonation);
-    
-    // Close the modal
-    setIsModalOpen(false);
+  const handleDonationSubmit = async (input: {
+    amount: number;
+    address: string;
+    displayName: string;
+    message?: string;
+  }) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await addDonation({
+        amountBtc: input.amount,
+        btcAddress: input.address,
+        displayName: input.displayName,
+        message: input.message,
+      });
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      setSubmitError(err instanceof Error ? err.message : "Unable to save donation");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handler to close the modal
@@ -97,19 +88,46 @@ export default function SharingFuturePage() {
   return (
     <main className="min-h-screen">
       <BackgroundMusic volume={0.45} />
+      <div className="fixed top-6 left-6 z-[60] flex flex-col gap-2">
+        <span
+          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium backdrop-blur transition-colors ${
+            status === "ready"
+              ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+              : status === "connecting"
+              ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+              : status === "error"
+              ? "border-red-400/40 bg-red-500/10 text-red-200"
+              : "border-slate-500/40 bg-slate-800/50 text-slate-300"
+          }`}
+        >
+          <span className="h-2 w-2 rounded-full bg-current" />
+          {status === "ready" && "Supabase realtime listo"}
+          {status === "connecting" && "Conectando con la órbita"}
+          {status === "error" && "Sin conexión realtime"}
+          {status === "idle" && "Preparando órbita"}
+        </span>
+        {status === "error" && error && (
+          <span className="max-w-xs text-xs text-red-200/80">
+            {error}
+          </span>
+        )}
+      </div>
       <DonationBubble
-        totalBTC={totalBTC}
+        totalBTC={displayedTotal}
         maxBTC={1.0}
         onAddDonation={handleAddDonation}
-        donations={donations}
+        donations={formattedDonations}
         onSatelliteClick={handleSatelliteClick}
         selectedSatelliteId={selectedSatellite?.id}
+        onlineMembers={onlineMembers.map((member) => ({ id: member.id, alias: member.alias }))}
       />
       
       <DonationModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         onSubmit={handleDonationSubmit}
+        isSubmitting={isSubmitting}
+        errorMessage={submitError ?? (error && status === "error" ? error : undefined)}
       />
 
       <SatelliteInfoCard

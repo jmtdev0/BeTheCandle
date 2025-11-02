@@ -24,6 +24,7 @@ interface DonationBubbleProps {
   donations?: Donation[]; // array of individual donations captured elsewhere
   onSatelliteClick?: (user: SatelliteUser) => void; // callback when satellite is clicked
   selectedSatelliteId?: string; // currently selected satellite
+  onlineMembers?: Array<{ id: string; alias: string }>;
 }
 
 // Interface for mini bubbles that animate towards the main bubble
@@ -36,9 +37,11 @@ interface MiniBubble {
 
 // Interface for individual donations displayed inside the main bubble
 interface Donation {
-  id: number;
+  id: string;
   amount: number;
   address: string;
+  displayName: string;
+  message?: string;
   timestamp: Date;
 }
 
@@ -101,6 +104,9 @@ const LOBBY_SATELLITES: OrbitSatellite[] = [
   },
 ];
 
+const ORBIT_COLORS = ["#f97316", "#60a5fa", "#facc15", "#34d399", "#818cf8", "#f472b6", "#22d3ee"] as const;
+const ORBIT_TYPES: OrbitSatellite["bodyType"][] = ["moon", "comet", "drone", "capsule", "ring"];
+
 export default function DonationBubble({
   totalBTC,
   maxBTC = 1,
@@ -109,6 +115,7 @@ export default function DonationBubble({
   showOverlays = false,
   onSatelliteClick,
   selectedSatelliteId: externalSelectedSatelliteId,
+  onlineMembers = [],
 }: DonationBubbleProps & { showOverlays?: boolean }) {
   const [miniBubbles, setMiniBubbles] = useState<MiniBubble[]>([]);
   const [prevTotal, setPrevTotal] = useState(totalBTC);
@@ -120,7 +127,30 @@ export default function DonationBubble({
   // Use external selected satellite if provided, otherwise use internal state
   const selectedSatelliteIdValue = externalSelectedSatelliteId ?? internalSelectedSatelliteId;
 
-  const satellites = useMemo(() => LOBBY_SATELLITES, []);
+  const satellites = useMemo(() => {
+    if (!donations.length) {
+      return LOBBY_SATELLITES;
+    }
+
+    return donations.map((donation, index) => {
+      const color = ORBIT_COLORS[index % ORBIT_COLORS.length];
+      const displayInitial = donation.displayName.charAt(0)?.toUpperCase() ?? "🛰️";
+      return {
+        id: donation.id,
+        displayName: donation.displayName,
+        contact: donation.address,
+        goalBTC: Math.max(donation.amount * 3, 0.05),
+        donatedBTC: donation.amount,
+        color,
+        orbitDistance: 2.1 + (index % 6) * 0.35,
+        rotationSpeed: 0.24 + (index % 5) * 0.04,
+        size: 0.2 + Math.min(donation.amount * 5, 0.45),
+        bio: donation.message ?? "En órbita con los suyos",
+        avatar: displayInitial,
+        bodyType: ORBIT_TYPES[index % ORBIT_TYPES.length],
+      } satisfies OrbitSatellite;
+    });
+  }, [donations]);
   const selectedSatellite = useMemo(
     () => satellites.find((sat) => sat.id === selectedSatelliteIdValue) ?? null,
     [satellites, selectedSatelliteIdValue],
@@ -162,6 +192,29 @@ export default function DonationBubble({
   <div className="relative w-full h-screen flex flex-col items-center justify-center overflow-hidden bg-[#040814]">
       {/* Background gradient */}
   <div className="absolute inset-0 bg-gradient-to-b from-[#030712] via-[#050b1a] to-[#030712]" />
+
+      {onlineMembers.length > 0 && (
+        <div className="absolute top-10 right-10 z-30 rounded-2xl border border-amber-400/40 bg-slate-900/70 px-4 py-3 shadow-xl backdrop-blur">
+          <p className="text-[11px] uppercase tracking-[0.3em] text-amber-200/80 mb-2">
+            En órbita ahora mismo
+          </p>
+          <div className="flex flex-wrap gap-2 max-w-[220px]">
+            {onlineMembers.slice(0, 6).map((member) => (
+              <span
+                key={member.id}
+                className="px-2.5 py-1 rounded-full bg-slate-800/80 text-xs text-slate-100 border border-amber-400/20"
+              >
+                {member.alias}
+              </span>
+            ))}
+            {onlineMembers.length > 6 && (
+              <span className="px-2 py-1 text-xs text-amber-200/80">
+                +{onlineMembers.length - 6} más
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Title */}
       {/* Title intentionally hidden for immersive view */}
@@ -218,6 +271,7 @@ export default function DonationBubble({
                     goalBTC: satellite.goalBTC,
                     purpose: satellite.bio || "Sin descripción",
                     avatar: satellite.avatar,
+                    walletAddress: satellite.contact,
                   };
                   onSatelliteClick(user);
                 } else {

@@ -49,6 +49,12 @@ function createNebulaTexture(
       gold: '#ffcc66',      // Golden glow
       bright: '#ffd89b',    // Bright gold-orange
       crimson: '#8b2e0a',   // Dark crimson
+      // New: colorful galaxy regions
+      blue: '#3b82f6',      // Bright blue
+      purple: '#a855f7',    // Purple nebula
+      cyan: '#06b6d4',      // Cyan glow
+      magenta: '#ec4899',   // Magenta
+      teal: '#14b8a6',      // Teal
     }
   }
 ) {
@@ -83,9 +89,18 @@ function createNebulaTexture(
     // Create multi-stop gradient for volumetric feel
     const cloudGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cloudSize);
     
-    // Randomly pick warm colors for variety
-    const warmColors = [config.colors.gold, config.colors.bright, config.colors.crimson];
-    const cloudColor = warmColors[Math.floor(Math.random() * warmColors.length)];
+    // Mix of warm AND cool colors for variety
+    const allColors = [
+      config.colors.gold, 
+      config.colors.bright, 
+      config.colors.crimson,
+      config.colors.blue,
+      config.colors.purple,
+      config.colors.cyan,
+      config.colors.magenta,
+      config.colors.teal
+    ];
+    const cloudColor = allColors[Math.floor(Math.random() * allColors.length)];
     
     cloudGrad.addColorStop(0, `${cloudColor}${Math.floor(intensity * 255).toString(16).padStart(2, '0')}`);
     cloudGrad.addColorStop(0.3, `${config.colors.warm}${Math.floor(intensity * 0.6 * 255).toString(16).padStart(2, '0')}`);
@@ -409,6 +424,54 @@ export default function InteractiveSphere3D({
   // Volumetric nebula background texture
   // Rich orange/gold cosmic clouds with scattered stars
   const nebulaTexture = useMemo(() => createNebulaTexture(2048), []);
+
+  // Procedural bump/normal map for surface irregularities (craters, roughness)
+  const planetBumpTexture = useMemo(() => {
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Base gray for neutral bump
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, size, size);
+    
+    // Add noise for micro-detail
+    const imageData = ctx.getImageData(0, 0, size, size);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 30;
+      imageData.data[i] = Math.max(0, Math.min(255, 128 + noise));
+      imageData.data[i + 1] = Math.max(0, Math.min(255, 128 + noise));
+      imageData.data[i + 2] = Math.max(0, Math.min(255, 128 + noise));
+    }
+    ctx.putImageData(imageData, 0, 0);
+    
+    // Add crater-like darker spots
+    const craterCount = 80 + Math.floor(Math.random() * 40);
+    for (let i = 0; i < craterCount; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const craterRadius = 3 + Math.random() * 20;
+      const darkness = 30 + Math.random() * 60;
+      
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, craterRadius);
+      grad.addColorStop(0, `rgba(0,0,0,${darkness / 255})`);
+      grad.addColorStop(0.6, `rgba(0,0,0,${darkness / 400})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, craterRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }, []);
 
   // Canvas texture for a centered white ₿ symbol to paint on the sphere surface.
   // We use it as an emissiveMap so the symbol appears white over the orange base color.
@@ -755,7 +818,7 @@ export default function InteractiveSphere3D({
         <meshBasicMaterial map={nebulaTexture} side={THREE.BackSide} />
       </mesh>
         {/* Twinkling background stars to add subtle motion */}
-        <TwinklingStars count={700} radius={95} />
+        <TwinklingStars count={2500} radius={95} />
 
       {/* Ambient light for general scene illumination */}
       <ambientLight intensity={0.25} color="#4a5f8f" />
@@ -780,15 +843,26 @@ export default function InteractiveSphere3D({
         <sphereGeometry args={[radius, 96, 96]} />
         <meshStandardMaterial
           color="#ff8a00"
-          metalness={0.1}
-          roughness={0.4}
-          // Emissive map paints the white ₿ on top of the orange base. Emissive color is white
-          // so the symbol appears bright regardless of lighting.
-          emissive={'#ffffff'}
-          emissiveIntensity={0.6}
+          metalness={0.2}
+          roughness={0.5}
+          // Bump map for surface irregularities (craters, roughness)
+          bumpMap={planetBumpTexture}
+          bumpScale={0.15}
+          // Make the planet glow like a sun - high emissive intensity
+          emissive={'#ff8a00'}
+          emissiveIntensity={1.2}
           emissiveMap={btcSymbolTexture}
         />
       </mesh>
+
+      {/* Internal point light at planet center to make it glow like a star */}
+      <pointLight 
+        position={initialPosition as any} 
+        color="#ffaa33" 
+        intensity={3.5} 
+        distance={radius * 8} 
+        decay={2} 
+      />
 
       {/* Orbiting moons/satellites with orbit lines */}
       {satellites.map((sat, i) => (
@@ -865,10 +939,10 @@ export default function InteractiveSphere3D({
               <sphereGeometry args={[sat.size, 32, 32]} />
               <meshStandardMaterial 
                 color={sat.color} 
-                metalness={0.2} 
-                roughness={0.6} 
+                metalness={0.3 + Math.random() * 0.2} 
+                roughness={0.5 + Math.random() * 0.2} 
                 emissive={sat.color}
-                emissiveIntensity={hoveredSatId === sat.user?.id ? 0.3 : 0.1}
+                emissiveIntensity={hoveredSatId === sat.user?.id ? 0.4 : 0.15}
               />
             </mesh>
             {/* Small glow around each moon */}
@@ -877,7 +951,7 @@ export default function InteractiveSphere3D({
               <meshBasicMaterial
                 color={sat.color}
                 transparent
-                opacity={hoveredSatId === sat.user?.id ? 0.25 : 0.15}
+                opacity={hoveredSatId === sat.user?.id ? 0.3 : 0.18}
                 depthWrite={false}
                 blending={THREE.AdditiveBlending}
               />

@@ -7,17 +7,28 @@ import { useState } from "react";
 interface DonationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (amount: number, address: string) => void;
+  onSubmit: (input: {
+    amount: number;
+    address: string;
+    displayName: string;
+    message?: string;
+  }) => void;
+  isSubmitting?: boolean;
+  errorMessage?: string;
 }
 
 export default function DonationModal({
   isOpen,
   onClose,
   onSubmit,
+  isSubmitting = false,
+  errorMessage,
 }: DonationModalProps) {
   const [btcAmount, setBtcAmount] = useState("");
   const [btcAddress, setBtcAddress] = useState("");
-  const [errors, setErrors] = useState({ amount: "", address: "" });
+  const [displayName, setDisplayName] = useState("");
+  const [message, setMessage] = useState("");
+  const [errors, setErrors] = useState({ amount: "", address: "", name: "" });
 
   // Validate BTC amount (must be positive number)
   const validateAmount = (value: string): boolean => {
@@ -27,6 +38,21 @@ export default function DonationModal({
       return false;
     }
     setErrors((prev) => ({ ...prev, amount: "" }));
+    return true;
+  };
+
+  // Validate donor name (required, max length)
+  const validateName = (value: string): boolean => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setErrors((prev) => ({ ...prev, name: "Please share an alias" }));
+      return false;
+    }
+    if (trimmed.length > 64) {
+      setErrors((prev) => ({ ...prev, name: "Alias must be 64 characters or less" }));
+      return false;
+    }
+    setErrors((prev) => ({ ...prev, name: "" }));
     return true;
   };
 
@@ -52,13 +78,21 @@ export default function DonationModal({
     
     const isAmountValid = validateAmount(btcAmount);
     const isAddressValid = validateAddress(btcAddress);
+    const isNameValid = validateName(displayName);
 
-    if (isAmountValid && isAddressValid) {
-      onSubmit(parseFloat(btcAmount), btcAddress);
+    if (isAmountValid && isAddressValid && isNameValid && !isSubmitting) {
+      onSubmit({
+        amount: parseFloat(btcAmount),
+        address: btcAddress,
+        displayName: displayName.trim(),
+        message: message.trim() ? message.trim() : undefined,
+      });
       // Reset form
       setBtcAmount("");
       setBtcAddress("");
-      setErrors({ amount: "", address: "" });
+      setDisplayName("");
+      setMessage("");
+      setErrors({ amount: "", address: "", name: "" });
     }
   };
 
@@ -104,6 +138,35 @@ export default function DonationModal({
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              {errorMessage && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {errorMessage}
+                </div>
+              )}
+
+              {/* Display Name Input */}
+              <div>
+                <label htmlFor="btcDisplayName" className="block text-sm font-semibold text-slate-300 mb-2">
+                  Your Alias (shareable across sessions)
+                </label>
+                <input
+                  type="text"
+                  id="btcDisplayName"
+                  value={displayName}
+                  onChange={(e) => {
+                    setDisplayName(e.target.value);
+                    if (errors.name) validateName(e.target.value);
+                  }}
+                  onBlur={(e) => validateName(e.target.value)}
+                  placeholder="Primo Dani"
+                  maxLength={64}
+                  className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                />
+                {errors.name && (
+                  <p className="mt-1 text-sm text-red-400">{errors.name}</p>
+                )}
+              </div>
+
               {/* BTC Amount Input */}
               <div>
                 <label htmlFor="btcAmount" className="block text-sm font-semibold text-slate-300 mb-2">
@@ -156,6 +219,24 @@ export default function DonationModal({
                 </p>
               </div>
 
+              {/* Message */}
+              <div>
+                <label htmlFor="btcMessage" className="block text-sm font-semibold text-slate-300 mb-2">
+                  Message (optional)
+                </label>
+                <textarea
+                  id="btcMessage"
+                  value={message}
+                  maxLength={280}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="To the moon with la tía Carmen 🚀"
+                  className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all min-h-[96px]"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Shared live with everyone orbiting this bubble
+                </p>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
@@ -167,9 +248,10 @@ export default function DonationModal({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-orange-500/50 transition-all"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-orange-500/50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Confirm Donation
+                  {isSubmitting ? "Sending..." : "Confirm Donation"}
                 </button>
               </div>
             </form>

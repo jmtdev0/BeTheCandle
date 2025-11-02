@@ -36,3 +36,5 @@ yarn-error.log*
 next-env.d.ts
 BTCDailyCollection-CodexCooking/node_modules/
 logs/
+.vscode/settings.json
+.env
