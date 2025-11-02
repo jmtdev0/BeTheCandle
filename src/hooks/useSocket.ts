@@ -1,97 +1,249 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { ServerToClientEvents, ClientToServerEvents, Planet } from '@/types/socket';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import type { Planet } from '@/types/socket';
 
-type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+interface PlanetPresencePayload {
+  userId: string;
+  color: string;
+  userName?: string;
+  joinedAt: string;
+  orbitRadius: number;
+  orbitSpeed: number;
+  size: number;
+}
+
+const MOCK_PLANETS: Planet[] = [
+  {
+    id: 'mock-1',
+    userId: 'mock-1',
+    color: '#FF6B6B',
+    position: [0, 0, 0],
+    orbitRadius: 8,
+    orbitSpeed: 0.3,
+    size: 0.8,
+    isUser: false,
+  },
+  {
+    id: 'mock-2',
+    userId: 'mock-2',
+    color: '#4ECDC4',
+    position: [0, 0, 0],
+    orbitRadius: 12,
+    orbitSpeed: 0.2,
+    size: 1,
+    isUser: false,
+  },
+  {
+    id: 'mock-3',
+    userId: 'mock-3',
+    color: '#95E1D3',
+    position: [0, 0, 0],
+    orbitRadius: 16,
+    orbitSpeed: 0.15,
+    size: 0.9,
+    isUser: false,
+  },
+  {
+    id: 'mock-4',
+    userId: 'mock-4',
+    color: '#F38181',
+    position: [0, 0, 0],
+    orbitRadius: 20,
+    orbitSpeed: 0.12,
+    size: 1.1,
+    isUser: false,
+  },
+];
+
+function createSupabaseClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anon) {
+    console.warn('Supabase URL or anon key missing; realtime planet features disabled');
+    return null;
+  }
+
+  return createClient(url, anon, {
+    realtime: {
+      params: {
+        eventsPerSecond: 5,
+      },
+    },
+  });
+}
+
+function generateClientId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function hashString(input: string) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) || 1;
+}
+
+function mulberry32(a: number) {
+  let t = a;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), t | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function derivePlanetAttributes(userId: string) {
+  const random = mulberry32(hashString(userId));
+  return {
+    orbitRadius: 18 + random() * 14, // 18 - 32
+    orbitSpeed: 0.08 + random() * 0.12, // 0.08 - 0.2
+    size: 0.7 + random() * 0.5, // 0.7 - 1.2
+  } satisfies Pick<PlanetPresencePayload, 'orbitRadius' | 'orbitSpeed' | 'size'>;
+}
+
+function presenceToPlanet(presence: PlanetPresencePayload, selfId: string): Planet {
+  return {
+    id: presence.userId,
+    userId: presence.userId,
+    color: presence.color,
+    position: [0, 0, 0],
+    orbitRadius: presence.orbitRadius,
+    orbitSpeed: presence.orbitSpeed,
+    size: presence.size,
+    isUser: presence.userId === selfId,
+    userName: presence.userName,
+  };
+}
 
 export function useSocket() {
-  const [socket, setSocket] = useState<ClientSocket | null>(null);
-  const [planets, setPlanets] = useState<Planet[]>([]);
+  const [planets, setPlanets] = useState<Planet[]>(MOCK_PLANETS);
   const [myPlanetId, setMyPlanetId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
+  const supabaseRef = useRef<SupabaseClient | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const presenceKeyRef = useRef(generateClientId());
+  const lastPresenceRef = useRef<PlanetPresencePayload | null>(null);
+
   useEffect(() => {
-    // Initialize socket connection
-  const initSocket = async (): Promise<ClientSocket> => {
-      const url = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
-      const path = process.env.NEXT_PUBLIC_SOCKET_PATH?.trim() || '/socket.io';
+    const supabase = createSupabaseClient();
+    supabaseRef.current = supabase;
 
-      const socketInstance: ClientSocket = io(url || undefined, {
-        path,
-        transports: ['websocket', 'polling'],
-      });
+    if (!supabase) {
+      setIsConnected(false);
+      setPlanets(MOCK_PLANETS);
+      return;
+    }
 
-      socketInstance.on('connect', () => {
-        console.log('✅ Conectado al servidor Socket.IO');
-        setIsConnected(true);
-        setMyPlanetId(socketInstance.id || null);
-      });
-
-      socketInstance.on('disconnect', () => {
-        console.log('❌ Desconectado del servidor Socket.IO');
-        setIsConnected(false);
-      });
-
-      socketInstance.on('planets:update', (updatedPlanets) => {
-        setPlanets(updatedPlanets);
-      });
-
-      socketInstance.on('planet:added', (planet) => {
-        setPlanets((prev) => {
-          // Avoid duplicates
-          if (prev.some(p => p.id === planet.id)) return prev;
-          return [...prev, planet];
-        });
-      });
-
-      socketInstance.on('planet:removed', (userId) => {
-        setPlanets((prev) => prev.filter(p => p.userId !== userId));
-      });
-
-      socketInstance.on('planet:colorChanged', (userId, color) => {
-        setPlanets((prev) =>
-          prev.map(p => p.userId === userId ? { ...p, color } : p)
-        );
-      });
-
-      setSocket(socketInstance);
-      return socketInstance;
-    };
-
-    let currentSocket: ClientSocket | null = null;
-    initSocket().then((instance) => {
-      currentSocket = instance;
+    const channel = supabase.channel('planets-realtime', {
+      config: {
+        presence: {
+          key: presenceKeyRef.current,
+        },
+      },
     });
 
+    channelRef.current = channel;
+
+    const handleSync = () => {
+      const state = channel.presenceState() as Record<string, PlanetPresencePayload[]>;
+      const members = Object.values(state).flat();
+      const dynamicPlanets = members.map((member) => presenceToPlanet(member, presenceKeyRef.current));
+      setPlanets([...MOCK_PLANETS, ...dynamicPlanets]);
+      const selfPresence = members.find((member) => member.userId === presenceKeyRef.current) || null;
+      setMyPlanetId(selfPresence ? selfPresence.userId : null);
+      setIsConnected(true);
+    };
+
+    channel
+      .on('presence', { event: 'sync' }, handleSync)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          setIsConnected(true);
+          if (lastPresenceRef.current) {
+            try {
+              await channel.track(lastPresenceRef.current);
+            } catch (trackErr) {
+              console.error('Failed to restore planet presence', trackErr);
+            }
+          }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setIsConnected(false);
+        }
+      });
+
     return () => {
-      if (currentSocket) {
-        currentSocket.disconnect();
-      }
+      channel.unsubscribe().catch(() => {});
+      channelRef.current = null;
+      setIsConnected(false);
+      setPlanets(MOCK_PLANETS);
+      setMyPlanetId(null);
     };
   }, []);
 
   const joinAsPlanet = useCallback((color: string, userName?: string) => {
-    if (socket) {
-      socket.emit('planet:join', { color, userName });
-    }
-  }, [socket]);
+    const channel = channelRef.current;
+    if (!channel) return;
+
+    const attributes = derivePlanetAttributes(presenceKeyRef.current);
+    const payload: PlanetPresencePayload = {
+      userId: presenceKeyRef.current,
+      color,
+      userName,
+      joinedAt: new Date().toISOString(),
+      ...attributes,
+    };
+
+    lastPresenceRef.current = payload;
+
+    channel
+      .track(payload)
+      .then(() => {
+        setMyPlanetId(payload.userId);
+      })
+      .catch((err: unknown) => {
+        console.error('Failed to announce planet presence', err);
+      });
+  }, []);
 
   const updateColor = useCallback((color: string) => {
-    if (socket) {
-      socket.emit('planet:updateColor', color);
-    }
-  }, [socket]);
+    const channel = channelRef.current;
+    if (!channel || !lastPresenceRef.current) return;
+
+    const updated: PlanetPresencePayload = {
+      ...lastPresenceRef.current,
+      color,
+    };
+
+    lastPresenceRef.current = updated;
+
+    channel
+      .track(updated)
+      .catch((err: unknown) => {
+        console.error('Failed to update planet color', err);
+      });
+  }, []);
 
   const leavePlanet = useCallback(() => {
-    if (socket) {
-      socket.emit('planet:leave');
-    }
-  }, [socket]);
+    const channel = channelRef.current;
+    if (!channel) return;
+
+    channel.untrack().catch(() => {});
+    lastPresenceRef.current = null;
+    setMyPlanetId(null);
+  }, []);
 
   return {
-    socket,
     planets,
     myPlanetId,
     isConnected,

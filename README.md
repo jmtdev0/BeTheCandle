@@ -32,6 +32,14 @@ Primary experience for the BeTheCandle Bitcoin donation platform. Focuses on the
 
 3. Visit [http://localhost:3000/goofy-mode](http://localhost:3000/goofy-mode) in your browser
 
+### Environment variables
+
+Set the following values (Netlify build settings already include them):
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `DATABASE_URL` (Postgres connection for donation APIs)
+
 ## Key Files
 
 ```
