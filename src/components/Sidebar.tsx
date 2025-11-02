@@ -8,7 +8,6 @@ import { usePathname } from "next/navigation";
 const menuItems = [
   { label: "Goofy Mode", href: "/goofy-mode" },
   { label: "Even Goofier Mode", href: "/even-goofier-mode" },
-  { label: "Sharing Future", href: "/sharing-future" },
 ];
 
 export default function Sidebar() {

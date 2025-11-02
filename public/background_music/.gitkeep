@@ -1,0 +1,10 @@
+# Archivo de ejemplo
+
+Este archivo sirve como placeholder. 
+
+Para añadir música real:
+1. Elimina este archivo
+2. Coloca tus archivos MP3/WAV/OGG aquí
+3. Actualiza la lista en src/lib/musicTracks.ts
+
+Ejemplo de nombre de archivo: ambient-space-1.mp3

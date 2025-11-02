@@ -3,46 +3,28 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import * as THREE from "three";
 import InteractiveSphere3D, { SatelliteUser } from "@/components/InteractiveSphere3D";
 import SatelliteInfoCard from "@/components/SatelliteInfoCard";
 import SatelliteColorPicker from "@/components/SatelliteColorPicker";
+import MusicPlayer from "@/components/MusicPlayer";
 import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
+import { useSocket } from "@/hooks/useSocket";
+import { Planet } from "@/types/socket";
 
-// Sample satellite users data
-const sampleUsers: SatelliteUser[] = [
-  {
-    id: "user-1",
-    displayName: "Carlos M.",
-    currentBTC: "0.001 - 0.01 BTC",
-    goalBTC: 0.1,
-    purpose: "I want to save for my first house in 5 years. Bitcoin is my way to protect my money from inflation.",
-    avatar: "🏠"
-  },
-  {
-    id: "user-2",
-    displayName: "Ana R.",
-    currentBTC: "0.05 - 0.15 BTC",
-    goalBTC: 1.0,
-    purpose: "I'm saving for my children's university education. I believe in Bitcoin as a long-term store of value.",
-    avatar: "🎓"
-  },
-  {
-    id: "user-3",
-    displayName: "Luis P.",
-    currentBTC: "0.0001 - 0.001 BTC",
-    goalBTC: 0.05,
-    purpose: "I just started with Bitcoin. My goal is to learn and build a digital emergency fund.",
-    avatar: "🌱"
-  },
-  {
-    id: "user-4",
-    displayName: "María G.",
-    currentBTC: "0.01 - 0.05 BTC",
-    goalBTC: 0.5,
-    purpose: "I want financial freedom to travel the world. Bitcoin gives me independence from traditional banks.",
-    avatar: "✈️"
-  }
-];
+// Convert Planet to SatelliteUser format
+const planetToSatelliteUser = (planet: Planet, isCurrentUser: boolean): SatelliteUser => ({
+  id: planet.userId,
+  displayName: isCurrentUser ? "Tu planeta 🌟" : (planet.userName || `Visitante ${planet.userId.slice(0, 6)}`),
+  currentBTC: "N/A",
+  goalBTC: 0,
+  purpose: isCurrentUser 
+    ? "Este es tu planeta personal. Personaliza su color usando el selector de color." 
+    : "Otro usuario explorando el universo Bitcoin.",
+  avatar: isCurrentUser ? "👤" : "🪐",
+  color: planet.color, // Pass the color to the satellite
+});
 
 export default function GoofyModePage() {
   const controlsRef = useRef<any>(null);
@@ -50,6 +32,30 @@ export default function GoofyModePage() {
   const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [mounted, setMounted] = useState(false);
   const { color: satelliteColor, setColor: setSatelliteColor } = useSatelliteColorPreference();
+  
+  // Socket integration
+  const { planets, myPlanetId, isConnected, joinAsPlanet, updateColor } = useSocket();
+  const hasJoined = useRef(false);
+
+  // Join as planet when connected and color is available
+  useEffect(() => {
+    if (isConnected && satelliteColor && !hasJoined.current) {
+      joinAsPlanet(satelliteColor);
+      hasJoined.current = true;
+    }
+  }, [isConnected, satelliteColor, joinAsPlanet]);
+
+  // Update color when user changes it
+  useEffect(() => {
+    if (isConnected && hasJoined.current && satelliteColor) {
+      updateColor(satelliteColor);
+    }
+  }, [satelliteColor, isConnected, updateColor]);
+
+  // Convert planets to satellite users
+  const satelliteUsers: SatelliteUser[] = planets.map(planet => 
+    planetToSatelliteUser(planet, planet.userId === myPlanetId)
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -74,26 +80,67 @@ export default function GoofyModePage() {
           className="relative"
         />
       </div>
-      <Canvas shadows camera={{ position: [0, 0, 6], fov: 50 }} style={{ width: "100%", height: "100%" }}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[5, 5, 5]} intensity={1.2} castShadow />
+      
+      {/* Connection Status Indicator */}
+      <div className="absolute top-6 left-6 z-[60]">
+        <div className={`px-4 py-2 rounded-lg backdrop-blur-md ${
+          isConnected 
+            ? 'bg-green-500/20 border border-green-500/50 text-green-300' 
+            : 'bg-red-500/20 border border-red-500/50 text-red-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+            <span className="text-sm font-medium">
+              {isConnected ? `Conectado · ${planets.length} planetas` : 'Conectando...'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <Canvas 
+        shadows 
+        camera={{ position: [0, 0, 6], fov: 50 }} 
+        style={{ width: "100%", height: "100%" }}
+        gl={{ 
+          toneMapping: THREE.ACESFilmicToneMapping, 
+          toneMappingExposure: 1.5,
+          antialias: true 
+        }}
+      >
+        {/* Remove duplicate lights - InteractiveSphere3D provides its own lighting */}
         {/* Larger planet: increase radius to make the Bitcoin sphere much bigger */}
         <InteractiveSphere3D 
           initialPosition={[0, 0, 0]} 
           radius={3.5} 
           controlsRef={controlsRef}
-          satelliteUsers={sampleUsers}
+          satelliteUsers={satelliteUsers}
           onSatelliteClick={handleSatelliteClick}
           selectedSatelliteId={selectedUser?.id}
           satelliteColor={satelliteColor}
         />
         {/* Allow zoom but restrict min/max so user cannot zoom out indefinitely */}
         <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} minDistance={4} maxDistance={60} />
+        
+        {/* Bloom Postprocessing for Realistic Star Glow */}
+        <EffectComposer>
+          <Bloom
+            intensity={1.8}
+            luminanceThreshold={0.8}
+            luminanceSmoothing={0.9}
+            mipmapBlur={true}
+            radius={0.85}
+          />
+        </EffectComposer>
       </Canvas>
 
   {/* Satellite info card overlay (render only after client mount to avoid SSR/client mismatch) */}
   {mounted && (
-    <SatelliteInfoCard user={selectedUser} onClose={handleCloseCard} screenPosition={selectedScreenPos} />
+    <>
+      <SatelliteInfoCard user={selectedUser} onClose={handleCloseCard} screenPosition={selectedScreenPos} />
+      
+      {/* Music Player - Carga automáticamente la música de /public/background_music/ */}
+      <MusicPlayer />
+    </>
   )}
     </div>
   );

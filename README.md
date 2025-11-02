@@ -1,76 +1,59 @@
-# Sharing Future
+# Goofy Mode
 
-A non-custodial Bitcoin donation platform with beautiful animated bubbles.
+Primary experience for the BeTheCandle Bitcoin donation platform. Focuses on the interactive 3D "Goofy Mode" orbit, where supporters float around a giant BTC planet.
 
-## Features
+## Highlights
 
-- 🎨 Animated donation bubble that grows with contributions
-- ✨ Smooth animations using Framer Motion
-- 💰 Real-time BTC total display
-- 🎯 Mini-bubbles that merge into the main pot
-- 🌊 Particle effects for visual engagement
+- 🪐 Immersive Three.js scene with animated Bitcoin sphere
+- �️ Selectable satellite supporters with rich profile cards
+- � Persistent color customization for satellites
+- � Ambient soundtrack and playful animations powered by Framer Motion
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 with App Router
+- **Framework**: Next.js 15 (App Router)
 - **Language**: TypeScript
+- **3D & Animations**: React Three Fiber, drei, Framer Motion
 - **Styling**: TailwindCSS
-- **Animations**: Framer Motion
-- **Package Manager**: npm
 
 ## Getting Started
 
-### Prerequisites
+1. Install dependencies
 
-- Node.js 18.17 or later
-- npm or yarn
+   ```bash
+   npm install
+   ```
 
-### Installation
+2. Launch the development server
 
-1. Install dependencies:
+   ```bash
+   npm run dev
+   ```
 
-```bash
-npm install
-```
+3. Visit [http://localhost:3000/goofy-mode](http://localhost:3000/goofy-mode) in your browser
 
-2. Run the development server:
-
-```bash
-npm run dev
-```
-
-3. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-## Project Structure
+## Key Files
 
 ```
 src/
 ├── app/
-│   ├── layout.tsx       # Root layout
-│   ├── page.tsx         # Home page with demo
-│   └── globals.css      # Global styles
+│   ├── layout.tsx              # Root layout
+│   ├── page.tsx                # Redirects / to /goofy-mode
+│   ├── globals.css             # Global styles
+│   ├── goofy-mode/page.tsx     # Goofy Mode entry point
+│   └── even-goofier-mode/      # Experimental playground
 └── components/
-    └── DonationBubble.tsx   # Main animated bubble component
+    ├── GoofySphere.tsx         # Core 3D planet + orbit logic
+    ├── InteractiveSphere3D.tsx # Higher-level scene composition
+    └── SatelliteInfoCard.tsx   # Overlay with supporter details
 ```
 
-## Component Usage
+## Scripts
 
-```tsx
-import DonationBubble from "@/components/DonationBubble";
-
-<DonationBubble
-  totalBTC={0.134}
-  maxBTC={1.0}
-  onAddDonation={() => console.log("Donation added!")}
-/>
-```
-
-## Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm run lint` - Run ESLint
+- `npm run dev` – start development server
+- `npm run build` – build for production
+- `npm start` – run production build
+- `npm run lint` – lint project
 
 ## License
 

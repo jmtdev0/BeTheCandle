@@ -2,13 +2,175 @@
 
 import React, { useRef, useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
-import { useFrame, useThree } from "@react-three/fiber";
-import TwinklingStars from "./TwinklingStars";
+import { useFrame, useThree, extend } from "@react-three/fiber";
 import {
   DEFAULT_SATELLITE_COLOR,
   SATELLITE_COLOR_PALETTES,
   type SatelliteColorOption,
 } from "@/lib/satelliteColors";
+
+/**
+ * GLSL Shader for Realistic Animated Star
+ * Uses 3D Simplex noise to create turbulent plasma surface
+ */
+const starVertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+  varying vec2 vUv;
+  
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vPosition = position;
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const starFragmentShader = `
+  uniform float uTime;
+  uniform vec3 uBaseColor;
+  uniform vec3 uHotColor;
+  uniform float uIntensity;
+  
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+  varying vec2 vUv;
+  
+  // 3D Simplex Noise function
+  vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+  vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+  
+  float snoise(vec3 v) {
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+              i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    
+    vec4 x = x_ *ns.x + ns.yyyy;
+    vec4 y = y_ *ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    
+    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+    
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+  }
+  
+  // Fractal Brownian Motion for multi-scale detail
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    
+    for(int i = 0; i < 5; i++) {
+      value += amplitude * snoise(p * frequency);
+      frequency *= 2.0;
+      amplitude *= 0.5;
+    }
+    
+    return value;
+  }
+  
+  void main() {
+    // Animate the noise in 3D space
+    vec3 noiseCoord = vPosition * 1.5 + vec3(uTime * 0.15, uTime * 0.1, 0.0);
+    
+    // Multi-octave turbulence
+    float noise1 = fbm(noiseCoord);
+    float noise2 = fbm(noiseCoord * 2.0 + vec3(100.0, 50.0, 25.0));
+    float noise3 = fbm(noiseCoord * 4.0 - vec3(50.0, 100.0, 75.0));
+    
+    // Combine noises for complex plasma effect
+    float turbulence = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+    turbulence = (turbulence + 1.0) * 0.5; // Normalize to 0-1
+    
+    // Create hot spots and cooler regions
+    float hotSpots = smoothstep(0.4, 0.8, turbulence);
+    
+    // Mix between base white-hot and hotter yellow-orange
+    vec3 finalColor = mix(uBaseColor, uHotColor, hotSpots);
+    
+    // Add intensity variation
+    float brightness = 1.0 + turbulence * 0.5;
+    
+    // Emissive output
+    gl_FragColor = vec4(finalColor * brightness * uIntensity, 1.0);
+  }
+`;
+
+// Create custom shader material class
+class StarMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      vertexShader: starVertexShader,
+      fragmentShader: starFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uBaseColor: { value: new THREE.Color('#ffd27a') }, // Warm yellow-orange base
+        uHotColor: { value: new THREE.Color('#f7931a') },  // Bitcoin orange for hot regions
+        uIntensity: { value: 1.8 },
+      },
+    });
+  }
+}
+
+// Register the material for React Three Fiber
+extend({ StarMaterial });
+
+// Declare JSX intrinsic element for TypeScript
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      starMaterial: any;
+    }
+  }
+}
 
 // User/Satellite data interface
 export interface SatelliteUser {
@@ -20,201 +182,99 @@ export interface SatelliteUser {
   avatar?: string;
   // Optional wallet address where this user would like to receive donations
   walletAddress?: string;
+  // Optional color for the satellite (will override default palette)
+  color?: string;
 }
 
 /**
- * VOLUMETRIC NEBULA BACKGROUND GENERATOR
- * Creates a rich, glowing cosmic nebula texture with orange/gold tones
- * inspired by the Pillars of Creation / Eagle Nebula aesthetic.
- * 
- * Tunable Parameters:
- * @param size - Canvas resolution (higher = more detail, default 2048)
- * @param config - Configuration object:
- *   - starCount: number of scattered stars (default 4000)
- *   - nebulaIntensity: overall brightness of nebula clouds (0-1, default 0.85)
- *   - cloudDensity: number of layered cloud regions (default 12)
- *   - darkRegions: number of darker dust pockets (default 8)
- *   - colors: nebula color palette (warm oranges/reds by default)
+ * Bitcoin Color Palette for Distant Galaxies
  */
-function createNebulaTexture(
-  size = 2048,
-  config = {
-    starCount: 4000,
-    nebulaIntensity: 0.85,
-    cloudDensity: 12,
-    darkRegions: 8,
-    colors: {
-      deep: '#1a0d0d',      // Deep dark red-brown
-      warm: '#4a1a0a',      // Dark burnt orange
-      gold: '#ffcc66',      // Golden glow
-      bright: '#ffd89b',    // Bright gold-orange
-      crimson: '#8b2e0a',   // Dark crimson
-      // New: colorful galaxy regions
-      blue: '#3b82f6',      // Bright blue
-      purple: '#a855f7',    // Purple nebula
-      cyan: '#06b6d4',      // Cyan glow
-      magenta: '#ec4899',   // Magenta
-      teal: '#14b8a6',      // Teal
-    }
-  }
+const BITCOIN_COLORS = {
+  orange: '#f7931a',   // (247,147,26) - Bitcoin orange
+  white: '#ffffff',    // (255,255,255) - Pure white
+  gray: '#4d4d4d',     // (77,77,77) - Gray
+  blue: '#0d579b',     // (13,87,155) - Bitcoin blue
+  green: '#329239',    // (50,146,57) - Bitcoin green
+};
+
+/**
+ * Creates a galaxy texture with Bitcoin color palette
+ * Used for distant galaxy sprites in the background
+ */
+function createGalaxyTexture(
+  size = 512,
+  colorPalette: string[] = [BITCOIN_COLORS.orange, BITCOIN_COLORS.blue, BITCOIN_COLORS.white]
 ) {
-  const canvas = document.createElement("canvas");
+  const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-
-  // === STEP 1: Base deep space gradient ===
-  // Start with a rich, dark cosmic base
-  const baseGrad = ctx.createRadialGradient(
-    size * 0.5, size * 0.4, 0,
-    size * 0.5, size * 0.5, size * 0.7
-  );
-  baseGrad.addColorStop(0, config.colors.warm);
-  baseGrad.addColorStop(0.4, config.colors.deep);
-  baseGrad.addColorStop(1, '#000000');
-  ctx.fillStyle = baseGrad;
+  const ctx = canvas.getContext('2d')!;
+  
+  // Dark space background
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, size, size);
-
-  // === STEP 2: Simulate volumetric nebula clouds with layered noise ===
-  // Multiple overlapping clouds create depth and complexity
-  ctx.save();
-  ctx.globalCompositeOperation = 'screen'; // Additive blending for glow
   
-  for (let layer = 0; layer < config.cloudDensity; layer++) {
-    const cx = Math.random() * size;
-    const cy = Math.random() * size;
-    const cloudSize = size * (0.3 + Math.random() * 0.5);
-    const intensity = config.nebulaIntensity * (0.15 + Math.random() * 0.25);
-    
-    // Create multi-stop gradient for volumetric feel
-    const cloudGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cloudSize);
-    
-    // Mix of warm AND cool colors for variety
-    const allColors = [
-      config.colors.gold, 
-      config.colors.bright, 
-      config.colors.crimson,
-      config.colors.blue,
-      config.colors.purple,
-      config.colors.cyan,
-      config.colors.magenta,
-      config.colors.teal
-    ];
-    const cloudColor = allColors[Math.floor(Math.random() * allColors.length)];
-    
-    cloudGrad.addColorStop(0, `${cloudColor}${Math.floor(intensity * 255).toString(16).padStart(2, '0')}`);
-    cloudGrad.addColorStop(0.3, `${config.colors.warm}${Math.floor(intensity * 0.6 * 255).toString(16).padStart(2, '0')}`);
-    cloudGrad.addColorStop(0.7, `${config.colors.deep}${Math.floor(intensity * 0.2 * 255).toString(16).padStart(2, '0')}`);
-    cloudGrad.addColorStop(1, 'rgba(0,0,0,0)');
-    
-    ctx.fillStyle = cloudGrad;
-    ctx.fillRect(cx - cloudSize, cy - cloudSize, cloudSize * 2, cloudSize * 2);
-  }
-  ctx.restore();
-
-  // === STEP 3: Add darker dust regions for contrast ===
-  // These create the dramatic dark pillars/structures
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const maxRadius = size / 2;
   
-  for (let i = 0; i < config.darkRegions; i++) {
-    const dx = Math.random() * size;
-    const dy = Math.random() * size;
-    const dustSize = size * (0.15 + Math.random() * 0.35);
-    
-    const dustGrad = ctx.createRadialGradient(dx, dy, 0, dx, dy, dustSize);
-    dustGrad.addColorStop(0, 'rgba(10, 5, 5, 0.7)');
-    dustGrad.addColorStop(0.5, 'rgba(20, 10, 8, 0.4)');
-    dustGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    
-    ctx.fillStyle = dustGrad;
-    ctx.fillRect(dx - dustSize, dy - dustSize, dustSize * 2, dustSize * 2);
-  }
-  ctx.restore();
-
-  // === STEP 4: Scattered bright stars with variable sizes ===
-  ctx.save();
+  // Choose a primary color from palette
+  const primaryColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+  
+  // Create spiral galaxy with Bitcoin colors
+  // Core glow
+  const coreGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, maxRadius * 0.15);
+  coreGrad.addColorStop(0, primaryColor);
+  coreGrad.addColorStop(0.5, primaryColor + '88');
+  coreGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = coreGrad;
+  ctx.fillRect(0, 0, size, size);
+  
+  // Spiral arms with multiple colors
   ctx.globalCompositeOperation = 'lighter';
+  const spiralArms = 2 + Math.floor(Math.random() * 3);
+  const particles = 2000 + Math.floor(Math.random() * 1000);
   
-  for (let i = 0; i < config.starCount; i++) {
+  for (let i = 0; i < particles; i++) {
+    const angle = (i / particles) * Math.PI * 8 + Math.random() * 0.3;
+    const armIndex = Math.floor(Math.random() * spiralArms);
+    const armAngle = (armIndex / spiralArms) * Math.PI * 2;
+    const distance = Math.pow(Math.random(), 0.6) * maxRadius * 0.9;
+    
+    const x = centerX + Math.cos(angle + armAngle) * distance;
+    const y = centerY + Math.sin(angle + armAngle) * distance;
+    
+    // Pick color from palette with variation
+    const colorIndex = Math.floor(Math.random() * colorPalette.length);
+    const color = colorPalette[colorIndex];
+    const alpha = (1 - (distance / maxRadius)) * (0.2 + Math.random() * 0.6);
+    
+    const particleSize = Math.random() * 2 + 0.5;
+    ctx.fillStyle = color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.beginPath();
+    ctx.arc(x, y, particleSize, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Add some bright stars in Bitcoin colors
+  const starCount = 50 + Math.floor(Math.random() * 50);
+  for (let i = 0; i < starCount; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const starSize = Math.random() * 2 + 0.3;
-    const brightness = Math.random();
+    const starColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+    const starSize = Math.random() * 1.5 + 0.5;
     
-    // Most stars are small and dim
-    if (brightness < 0.92) {
-      ctx.fillStyle = `rgba(255, 245, 230, ${brightness * 0.7})`;
-      ctx.beginPath();
-      ctx.arc(x, y, starSize * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-    } 
-    // Some stars are medium and warmer
-    else if (brightness < 0.98) {
-      const starGrad = ctx.createRadialGradient(x, y, 0, x, y, starSize * 2);
-      starGrad.addColorStop(0, 'rgba(255, 235, 200, 1)');
-      starGrad.addColorStop(0.4, 'rgba(255, 200, 150, 0.6)');
-      starGrad.addColorStop(1, 'rgba(255, 180, 100, 0)');
-      ctx.fillStyle = starGrad;
-      ctx.beginPath();
-      ctx.arc(x, y, starSize * 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // Rare bright stars with strong glow
-    else {
-      const brightGrad = ctx.createRadialGradient(x, y, 0, x, y, starSize * 4);
-      brightGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-      brightGrad.addColorStop(0.2, 'rgba(255, 240, 220, 0.9)');
-      brightGrad.addColorStop(0.5, 'rgba(255, 200, 150, 0.4)');
-      brightGrad.addColorStop(1, 'rgba(255, 160, 80, 0)');
-      ctx.fillStyle = brightGrad;
-      ctx.beginPath();
-      ctx.arc(x, y, starSize * 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.fillStyle = starColor;
+    ctx.beginPath();
+    ctx.arc(x, y, starSize, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.restore();
-
-  // === STEP 5: Add glowing bright regions (star formation areas) ===
-  ctx.save();
-  ctx.globalCompositeOperation = 'screen';
   
-  const brightRegions = 4 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < brightRegions; i++) {
-    const bx = Math.random() * size;
-    const by = Math.random() * size;
-    const bSize = size * (0.1 + Math.random() * 0.25);
-    
-    const brightGrad = ctx.createRadialGradient(bx, by, 0, bx, by, bSize);
-    brightGrad.addColorStop(0, 'rgba(255, 220, 180, 0.25)');
-    brightGrad.addColorStop(0.4, 'rgba(255, 180, 120, 0.15)');
-    brightGrad.addColorStop(0.7, 'rgba(255, 140, 60, 0.08)');
-    brightGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    
-    ctx.fillStyle = brightGrad;
-    ctx.fillRect(bx - bSize, by - bSize, bSize * 2, bSize * 2);
-  }
-  ctx.restore();
-
-  // === STEP 6: Overall warm color grading overlay ===
-  // Subtle tint to unify the palette toward Bitcoin orange
-  ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
-  const tintGrad = ctx.createRadialGradient(
-    size * 0.5, size * 0.5, 0,
-    size * 0.5, size * 0.5, size * 0.6
-  );
-  tintGrad.addColorStop(0, 'rgba(255, 200, 140, 0.08)');
-  tintGrad.addColorStop(0.6, 'rgba(255, 160, 80, 0.06)');
-  tintGrad.addColorStop(1, 'rgba(40, 20, 10, 0.3)');
-  ctx.fillStyle = tintGrad;
-  ctx.fillRect(0, 0, size, size);
-  ctx.restore();
-
-  // Convert canvas to Three.js texture
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
+  ctx.globalCompositeOperation = 'source-over';
+  
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
 }
 
 interface InteractiveSphere3DProps {
@@ -237,6 +297,7 @@ export default function InteractiveSphere3D({
   satelliteColor = DEFAULT_SATELLITE_COLOR,
 }: InteractiveSphere3DProps) {
   const meshRef = useRef<THREE.Mesh | null>(null);
+  const starMaterialRef = useRef<StarMaterial>(new StarMaterial());
   const [dragging, setDragging] = useState(false);
   const startXRef = useRef(0);
   const startRotRef = useRef(0);
@@ -379,53 +440,18 @@ export default function InteractiveSphere3D({
   // Allow the browser's native zoom (Ctrl + + / -) to scale the canvas just like other DOM content.
   // No extra handlers here; the Goofy Mode canvas now mirrors the Lobby behavior.
 
-  useFrame((state: any, delta: number) => {
-    if (meshRef.current && !dragging) {
-      meshRef.current.rotation.y += delta * 0.4; // slower rotation
-    }
-    // gentle vertical bobbing when not dragging
-    if (meshRef.current && !dragging) {
-      const bobAmp = radius * 0.025; // amplitude relative to planet radius
-      const bobFreq = 0.9; // speed of bobbing
-      const t = state.clock.elapsedTime;
-      const desiredY = (baseYRef.current ?? 0) + Math.sin(t * bobFreq) * bobAmp;
-      // smooth the motion
-      meshRef.current.position.y = THREE.MathUtils.lerp(meshRef.current.position.y, desiredY, 0.08);
-    }
-    
-    // Subtle cinematic camera animation (slow orbit around the scene)
-    cameraAnimTime.current += delta * 0.08;
-    if (controlsRef?.current && !dragging) {
-      const offset = 0.15; // subtle movement
-      const newX = Math.sin(cameraAnimTime.current) * offset;
-      const newY = Math.cos(cameraAnimTime.current * 0.5) * offset * 0.5;
-      
-      // Apply subtle camera position offset (doesn't interfere with OrbitControls target)
-      if (camera.position) {
-        const baseDistance = Math.sqrt(
-          camera.position.x * camera.position.x +
-          camera.position.y * camera.position.y +
-          camera.position.z * camera.position.z
-        );
-        const angle = cameraAnimTime.current * 0.05;
-        camera.position.x += Math.sin(angle) * 0.002;
-        camera.position.y += Math.cos(angle * 0.7) * 0.001;
-      }
-    }
-  });
-
   // Add a small warm key light near the top-right and a soft cool fill light
   // These will be added as scene-level lights via three objects inside the component
   // (works when this component is used inside a Canvas)
   const keyLightRef = useRef<THREE.PointLight | null>(null);
   const fillLightRef = useRef<THREE.PointLight | null>(null);
-  // (removed halo mesh — no persistent camera-facing halo to avoid large circle on zoom out)
   
-  // Volumetric nebula background texture
-  // Rich orange/gold cosmic clouds with scattered stars
-  const nebulaTexture = useMemo(() => createNebulaTexture(2048), []);
+  // Cinematic camera animation time
+  const cameraAnimTime = useRef(0);
 
-  // Procedural bump/normal map for surface irregularities (craters, roughness)
+  // Background texture removed - will rebuild from scratch
+
+  // Procedural bump/normal map for surface irregularities (solar storms, surface activity)
   const planetBumpTexture = useMemo(() => {
     const size = 512;
     const canvas = document.createElement('canvas');
@@ -473,8 +499,8 @@ export default function InteractiveSphere3D({
     return tex;
   }, []);
 
-  // Canvas texture for a centered white ₿ symbol to paint on the sphere surface.
-  // We use it as an emissiveMap so the symbol appears white over the orange base color.
+  // Canvas texture for Bitcoin symbol - optimized for emissive material
+  // White/bright areas will glow intensely, dark areas less so
   const btcSymbolTexture = useMemo(() => {
     const size = 1024;
     const canvas = document.createElement('canvas');
@@ -482,24 +508,21 @@ export default function InteractiveSphere3D({
     canvas.height = size;
     const ctx = canvas.getContext('2d')!;
 
-    // Transparent background
-    ctx.clearRect(0, 0, size, size);
+    // Bright base for maximum glow
+    ctx.fillStyle = '#ffdd88';
+    ctx.fillRect(0, 0, size, size);
 
-  // Draw a slightly smaller, semi-translucent white ₿ centered
-  const fontSize = Math.floor(size * 0.45);
-  // Use the requested gold color (#d7b649) with translucency
-  ctx.fillStyle = 'rgba(215,182,73,0.65)';
+    // Draw bright Bitcoin symbol that will emit strongly
+    const fontSize = Math.floor(size * 0.45);
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    // Use a thick font weight; fall back to sans-serif if serif not available
     ctx.font = `700 ${fontSize}px serif, Arial, sans-serif`;
-    // Slight stroke to make the glyph crisper against the sphere shading
-  ctx.lineWidth = Math.max(3, Math.floor(size * 0.006));
-  ctx.strokeStyle = 'rgba(215,182,73,0.9)';
-  // Slight vertical offset to visually center on the sphere
-  const yOffset = Math.floor(size * 0.02);
-  ctx.strokeText('₿', size / 2, size / 2 + yOffset);
-  ctx.fillText('₿', size / 2, size / 2 + yOffset);
+    ctx.lineWidth = Math.max(2, Math.floor(size * 0.004));
+    ctx.strokeStyle = '#ffffff';
+    const yOffset = Math.floor(size * 0.02);
+    ctx.strokeText('₿', size / 2, size / 2 + yOffset);
+    ctx.fillText('₿', size / 2, size / 2 + yOffset);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
@@ -510,9 +533,350 @@ export default function InteractiveSphere3D({
   }, []);
 
   // TwinklingStars logic moved to src/components/TwinklingStars.tsx
+
+  // Atmospheric halo refs for pulsing animation
+  const innerHaloRef = useRef<THREE.Mesh | null>(null);
+  const outerHaloRef = useRef<THREE.Mesh | null>(null);
   
-  // Cinematic camera animation time
-  const cameraAnimTime = useRef(0);
+  // Create a procedural star field background (skybox sphere)
+  const starFieldTexture = useMemo(() => {
+    const size = 4096; // High resolution for quality
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Pure black background
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, size, size);
+    
+    // Add distant stars (small white dots)
+    const starCount = 3000;
+    for (let i = 0; i < starCount; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const starSize = Math.random() * 1.5 + 0.3;
+      const brightness = Math.random() * 0.5 + 0.5;
+      
+      ctx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
+      ctx.beginPath();
+      ctx.arc(x, y, starSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Some stars have a subtle glow
+      if (Math.random() > 0.95) {
+        const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, starSize * 3);
+        glowGrad.addColorStop(0, `rgba(255, 255, 255, ${brightness * 0.3})`);
+        glowGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(x, y, starSize * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Helper functions to draw different galaxy types
+    const drawSpiralGalaxy = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: string[]) => {
+      // Core
+      const coreGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 0.2);
+      coreGrad.addColorStop(0, colors[0] + 'dd');
+      coreGrad.addColorStop(0.5, colors[0] + '66');
+      coreGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Spiral arms
+      const rotation = Math.random() * Math.PI * 2;
+      const armCount = 2 + Math.floor(Math.random() * 2); // 2-3 arms
+      
+      for (let arm = 0; arm < armCount; arm++) {
+        const armOffset = (arm / armCount) * Math.PI * 2;
+        for (let j = 0; j < 150; j++) {
+          const t = j / 150;
+          const angle = t * Math.PI * 3 + rotation + armOffset;
+          const distance = t * size;
+          const spread = (Math.random() - 0.5) * size * 0.2;
+          
+          const px = x + Math.cos(angle) * distance + Math.cos(angle + Math.PI / 2) * spread;
+          const py = y + Math.sin(angle) * distance + Math.sin(angle + Math.PI / 2) * spread;
+          
+          const alpha = (1 - t) * (0.3 + Math.random() * 0.4);
+          const particleSize = Math.random() * 1.5 + 0.5;
+          
+          ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+          ctx.beginPath();
+          ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+    
+    const drawBarredSpiralGalaxy = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: string[]) => {
+      // Central bar
+      const barLength = size * 0.5;
+      const barWidth = size * 0.15;
+      const barAngle = Math.random() * Math.PI;
+      
+      for (let i = 0; i < 100; i++) {
+        const t = (Math.random() - 0.5) * barLength;
+        const spread = (Math.random() - 0.5) * barWidth;
+        const px = x + Math.cos(barAngle) * t + Math.cos(barAngle + Math.PI / 2) * spread;
+        const py = y + Math.sin(barAngle) * t + Math.sin(barAngle + Math.PI / 2) * spread;
+        
+        const alpha = 0.4 + Math.random() * 0.4;
+        ctx.fillStyle = colors[0] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.arc(px, py, 1 + Math.random() * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Spiral arms starting from bar ends
+      for (let side = 0; side < 2; side++) {
+        const startX = x + Math.cos(barAngle + side * Math.PI) * barLength * 0.5;
+        const startY = y + Math.sin(barAngle + side * Math.PI) * barLength * 0.5;
+        
+        for (let j = 0; j < 100; j++) {
+          const t = j / 100;
+          const angle = t * Math.PI * 2 + barAngle + side * Math.PI;
+          const distance = t * size * 0.7;
+          const spread = (Math.random() - 0.5) * size * 0.2;
+          
+          const px = startX + Math.cos(angle) * distance + Math.cos(angle + Math.PI / 2) * spread;
+          const py = startY + Math.sin(angle) * distance + Math.sin(angle + Math.PI / 2) * spread;
+          
+          const alpha = (1 - t) * (0.3 + Math.random() * 0.3);
+          ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+          ctx.beginPath();
+          ctx.arc(px, py, Math.random() * 1.2 + 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      
+      // Bright core
+      const coreGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 0.15);
+      coreGrad.addColorStop(0, colors[0] + 'ff');
+      coreGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    
+    const drawEllipticalGalaxy = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: string[]) => {
+      const aspectRatio = 0.4 + Math.random() * 0.5; // Ellipticity
+      const rotation = Math.random() * Math.PI;
+      
+      // Smooth elliptical distribution
+      for (let i = 0; i < 200; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * size * 0.7;
+        const ellipseX = r * Math.cos(angle);
+        const ellipseY = r * Math.sin(angle) * aspectRatio;
+        
+        // Rotate
+        const px = x + ellipseX * Math.cos(rotation) - ellipseY * Math.sin(rotation);
+        const py = y + ellipseX * Math.sin(rotation) + ellipseY * Math.cos(rotation);
+        
+        const distFactor = r / (size * 0.7);
+        const alpha = (1 - distFactor * 0.7) * (0.3 + Math.random() * 0.4);
+        
+        ctx.fillStyle = colors[0] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.arc(px, py, Math.random() * 1.5 + 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Bright core
+      const coreGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 0.25);
+      coreGrad.addColorStop(0, colors[0] + 'ee');
+      coreGrad.addColorStop(0.6, colors[0] + '44');
+      coreGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = coreGrad;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rotation);
+      ctx.scale(1, aspectRatio);
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    
+    const drawIrregularGalaxy = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: string[]) => {
+      // Chaotic, clumpy distribution
+      const clumpCount = 3 + Math.floor(Math.random() * 4);
+      
+      for (let c = 0; c < clumpCount; c++) {
+        const clumpAngle = Math.random() * Math.PI * 2;
+        const clumpDist = Math.random() * size * 0.5;
+        const clumpX = x + Math.cos(clumpAngle) * clumpDist;
+        const clumpY = y + Math.sin(clumpAngle) * clumpDist;
+        const clumpSize = size * (0.2 + Math.random() * 0.3);
+        
+        for (let i = 0; i < 50; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = Math.random() * clumpSize;
+          const px = clumpX + Math.cos(angle) * r;
+          const py = clumpY + Math.sin(angle) * r;
+          
+          const alpha = (0.3 + Math.random() * 0.5) * (1 - r / clumpSize) * 0.8;
+          ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+          ctx.beginPath();
+          ctx.arc(px, py, Math.random() * 2 + 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+    
+    const drawLenticularGalaxy = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: string[]) => {
+      // Disk-like with prominent bulge, no spiral arms
+      const rotation = Math.random() * Math.PI;
+      const diskAspect = 0.25 + Math.random() * 0.15; // Very flat disk
+      
+      // Disk
+      for (let i = 0; i < 150; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * size * 0.8;
+        const diskX = r * Math.cos(angle);
+        const diskY = r * Math.sin(angle) * diskAspect;
+        
+        const px = x + diskX * Math.cos(rotation) - diskY * Math.sin(rotation);
+        const py = y + diskX * Math.sin(rotation) + diskY * Math.cos(rotation);
+        
+        const distFactor = r / (size * 0.8);
+        const alpha = (1 - distFactor) * (0.2 + Math.random() * 0.3);
+        
+        ctx.fillStyle = colors[0] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.arc(px, py, Math.random() * 1 + 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Prominent central bulge
+      const bulgeGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 0.3);
+      bulgeGrad.addColorStop(0, colors[0] + 'ff');
+      bulgeGrad.addColorStop(0.5, colors[0] + '88');
+      bulgeGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = bulgeGrad;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    
+    const drawPeculiarGalaxy = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: string[]) => {
+      // Distorted/interacting galaxy with tidal tails
+      const coreX = x;
+      const coreY = y;
+      
+      // Main body (slightly elongated)
+      for (let i = 0; i < 100; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * size * 0.5;
+        const px = coreX + Math.cos(angle) * r * 1.3;
+        const py = coreY + Math.sin(angle) * r * 0.7;
+        
+        const alpha = 0.3 + Math.random() * 0.4;
+        ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.arc(px, py, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Tidal tails (2 opposite directions)
+      for (let tail = 0; tail < 2; tail++) {
+        const tailAngle = Math.random() * Math.PI * 2;
+        const direction = tail === 0 ? 1 : -1;
+        
+        for (let j = 0; j < 80; j++) {
+          const t = j / 80;
+          const distance = size * 0.3 + t * size * 1.2;
+          const curve = Math.sin(t * Math.PI) * size * 0.3;
+          
+          const px = coreX + Math.cos(tailAngle) * distance * direction + Math.cos(tailAngle + Math.PI / 2) * curve;
+          const py = coreY + Math.sin(tailAngle) * distance * direction + Math.sin(tailAngle + Math.PI / 2) * curve;
+          
+          const alpha = (1 - t) * (0.2 + Math.random() * 0.3);
+          ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+          ctx.beginPath();
+          ctx.arc(px, py, Math.random() * 1.2 + 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      
+      // Bright disturbed core
+      const coreGrad = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, size * 0.2);
+      coreGrad.addColorStop(0, colors[0] + 'ff');
+      coreGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(coreX, coreY, size * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    
+    // Add distant galaxies with Bitcoin colors and varied morphologies
+    const galaxyCount = 30;
+    const colorCombinations = [
+      [BITCOIN_COLORS.orange, BITCOIN_COLORS.white],
+      [BITCOIN_COLORS.blue, BITCOIN_COLORS.white],
+      [BITCOIN_COLORS.green, BITCOIN_COLORS.orange],
+      [BITCOIN_COLORS.orange, BITCOIN_COLORS.gray],
+    ];
+    
+    const galaxyTypes = [
+      drawSpiralGalaxy,
+      drawBarredSpiralGalaxy,
+      drawEllipticalGalaxy,
+      drawIrregularGalaxy,
+      drawLenticularGalaxy,
+      drawPeculiarGalaxy,
+    ];
+    
+    ctx.globalCompositeOperation = 'lighter';
+    
+    for (let i = 0; i < galaxyCount; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      
+      // 15% chance of being a very large, prominent galaxy (closer to us)
+      const isLargeGalaxy = Math.random() < 0.15;
+      const galaxySize = isLargeGalaxy 
+        ? 200 + Math.random() * 400  // Large galaxies: 200-600px
+        : 50 + Math.random() * 150;   // Normal galaxies: 50-200px
+      
+      const colors = colorCombinations[Math.floor(Math.random() * colorCombinations.length)];
+      const galaxyType = galaxyTypes[Math.floor(Math.random() * galaxyTypes.length)];
+      
+      galaxyType(ctx, x, y, galaxySize, colors);
+    }
+    
+    ctx.globalCompositeOperation = 'source-over';
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }, []);
+  
+  // Floating particles system
+  const particlesRef = useRef<THREE.Points | null>(null);
+  const particlePositions = useMemo(() => {
+    const positions = new Float32Array(800 * 3); // 800 particles
+    const particleRadius = radius * 5; // particles within 5x planet radius
+    
+    for (let i = 0; i < 800; i++) {
+      // Random spherical distribution around the planet
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = radius * 2 + Math.random() * particleRadius;
+      
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+    }
+    
+    return positions;
+  }, [radius]);
 
   // Desired camera distance from the planet on initial load / when returning to planet.
   // Increased multiplier and minimum so the initial framing is noticeably further back.
@@ -546,12 +910,23 @@ export default function InteractiveSphere3D({
   const satRefs = useRef<Array<THREE.Group | null>>([]);
   const orbitLineRefs = useRef<Array<THREE.Line | null>>([]);
   const [hoveredSatId, setHoveredSatId] = useState<string | null>(null);
+  const hoverClearTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userRingRefs = useRef<Array<THREE.Mesh | null>>([]);
   
   // Individual speed multipliers per satellite for hover slowdown effect
   const satelliteSpeedMultipliers = useRef<number[]>([]);
   // Per-satellite angle accumulators to avoid discontinuities when changing speed
   const satelliteAngles = useRef<number[]>([]);
   
+    useEffect(() => {
+      return () => {
+        if (hoverClearTimeout.current) {
+          clearTimeout(hoverClearTimeout.current);
+          hoverClearTimeout.current = null;
+        }
+      };
+    }, []);
+
   // create satellites based on provided users or generate random ones
   const satellites = useMemo(() => {
     const palette = SATELLITE_COLOR_PALETTES[satelliteColor] ?? SATELLITE_COLOR_PALETTES[DEFAULT_SATELLITE_COLOR];
@@ -568,7 +943,8 @@ export default function InteractiveSphere3D({
         const verticalAmp = (Math.random() - 0.5) * radius * 0.25;
         const verticalFreq = 0.5 + Math.random() * 1.2;
         const orbitEuler = new THREE.Euler(inclination, orbitRotation, 0, "XYZ");
-        const color = palette[idx % palette.length];
+        // Use custom color if provided, otherwise use palette color
+        const color = user.color || palette[idx % palette.length];
 
         return {
           size,
@@ -647,9 +1023,19 @@ export default function InteractiveSphere3D({
     }
   }, [selectedSatelliteId, camera, controlsRef, satellites]);
 
+  // Clean up user ring refs when satellites change
+  useEffect(() => {
+    userRingRefs.current = [];
+  }, [satellites]);
+
   // animate satellites
   const orbitTime = useRef(0);
   useFrame((state: any, delta: number) => {
+    // Update star shader time uniform for animated turbulence
+    if (starMaterialRef.current) {
+      starMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+    }
+    
     // regular orbit time for scene-level effects (glow, camera subtle motion)
     orbitTime.current += delta;
 
@@ -732,6 +1118,20 @@ export default function InteractiveSphere3D({
       }
     }
 
+    // Animate floating particles - slow drift and rotation
+    if (particlesRef.current) {
+      particlesRef.current.rotation.y += delta * 0.02;
+      particlesRef.current.rotation.x += delta * 0.01;
+      
+      // Subtle vertical wave motion
+      const positions = particlesRef.current.geometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < positions.length; i += 3) {
+        const originalY = positions[i + 1];
+        positions[i + 1] = originalY + Math.sin(orbitTime.current * 0.3 + i * 0.1) * 0.002;
+      }
+      particlesRef.current.geometry.attributes.position.needsUpdate = true;
+    }
+
     // Ensure arrays are initialized and match satellite count
     if (satelliteSpeedMultipliers.current.length !== satellites.length) {
       satelliteSpeedMultipliers.current = satellites.map(() => 1.0);
@@ -769,6 +1169,14 @@ export default function InteractiveSphere3D({
 
       ref.position.copy(pos);
       ref.lookAt(meshRef.current?.position || new THREE.Vector3(0, 0, 0));
+    });
+    
+    // Animate user planet indicator rings
+    userRingRefs.current.forEach((ring) => {
+      if (ring && ring.material) {
+        const pulsate = 0.6 + Math.sin(state.clock.elapsedTime * 3) * 0.3;
+        (ring.material as THREE.MeshBasicMaterial).opacity = pulsate;
+      }
     });
   });
 
@@ -812,60 +1220,74 @@ export default function InteractiveSphere3D({
 
   return (
     <>
-      {/* Volumetric nebula background - inverted sphere (sky dome) */}
-      <mesh scale={[-1, 1, 1]} position={[0, 0, 0]}>
-        <sphereGeometry args={[100, 64, 64]} />
-        <meshBasicMaterial map={nebulaTexture} side={THREE.BackSide} />
+      {/* Background Skybox - Sphere with star field and galaxies covering 360° */}
+      <mesh>
+        <sphereGeometry args={[radius * 200, 64, 64]} />
+        <meshBasicMaterial 
+          map={starFieldTexture} 
+          side={THREE.BackSide}
+          transparent={false}
+          depthWrite={false}
+        />
       </mesh>
-        {/* Twinkling background stars to add subtle motion */}
-        <TwinklingStars count={2500} radius={95} />
 
-      {/* Ambient light for general scene illumination */}
-      <ambientLight intensity={0.25} color="#4a5f8f" />
+      {/* Very low ambient light - creates strong contrast between lit and dark sides */}
+      <ambientLight intensity={0.05} color="#0a0a1a" />
       
-      {/* Warm key light (sun-like) */}
-      <pointLight ref={keyLightRef} color="#ffb347" intensity={2.2} distance={25} decay={2} position={[8, 5, 3]} castShadow />
+      {/* Remove external key/fill lights - the Bitcoin star is the primary light source */}
       
-      {/* Subtle cool fill light */}
-      <pointLight ref={fillLightRef} color="#7fb6ff" intensity={0.25} distance={35} decay={2} position={[-6, -3, -4]} />
-      
-      {/* Orange placeholder sphere inserted where the planet was. Keeps the same pointer handlers so
-          dragging / clicking behavior remains functional. */}
+      {/* Bitcoin Star - Realistic animated star with shader-based turbulence */}
       <mesh
         ref={meshRef as any}
         position={initialPosition as any}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        castShadow
-        receiveShadow
       >
-        <sphereGeometry args={[radius, 96, 96]} />
-        <meshStandardMaterial
-          color="#ff8a00"
-          metalness={0.2}
-          roughness={0.5}
-          // Bump map for surface irregularities (craters, roughness)
-          bumpMap={planetBumpTexture}
-          bumpScale={0.15}
-          // Make the planet glow like a sun - high emissive intensity
-          emissive={'#ff8a00'}
-          emissiveIntensity={1.2}
-          emissiveMap={btcSymbolTexture}
-        />
+        <sphereGeometry args={[radius, 256, 256]} />
+        <primitive object={starMaterialRef.current} attach="material" />
       </mesh>
 
-      {/* Internal point light at planet center to make it glow like a star */}
+      {/* Real point light attached to the star - illuminates satellites with falloff */}
       <pointLight 
         position={initialPosition as any} 
-        color="#ffaa33" 
-        intensity={3.5} 
-        distance={radius * 8} 
-        decay={2} 
+        color="#f7931a"
+        intensity={150}
+        distance={0}
+        decay={2}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-near={0.1}
+        shadow-camera-far={100}
       />
 
+      {/* Floating cosmic particles */}
+      <points ref={particlesRef}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={particlePositions.length / 3}
+            array={particlePositions}
+            itemSize={3}
+            args={[particlePositions, 3]}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          size={0.08}
+          color="#ffd699"
+          transparent
+          opacity={0.6}
+          sizeAttenuation
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </points>
+
       {/* Orbiting moons/satellites with orbit lines */}
-      {satellites.map((sat, i) => (
+      {satellites.map((sat, i) => {
+        const isUserPlanet = sat.user?.displayName?.includes('Tu planeta');
+        return (
         <React.Fragment key={`sat-${i}`}>
           {/* Visible orbit line */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
@@ -873,7 +1295,7 @@ export default function InteractiveSphere3D({
             <meshBasicMaterial
               color={sat.color}
               transparent
-              opacity={hoveredSatId === sat.user?.id ? 0.5 : 0.2}
+              opacity={hoveredSatId === sat.user?.id ? 0.5 : (isUserPlanet ? 0.4 : 0.2)}
               side={THREE.DoubleSide}
             />
           </mesh>
@@ -883,17 +1305,31 @@ export default function InteractiveSphere3D({
             ref={(el) => {
               satRefs.current[i] = el;
             }}
-            onPointerOver={(e) => {
+            onPointerEnter={(e) => {
               e.stopPropagation();
-              if (sat.user) {
+              if (hoverClearTimeout.current) {
+                clearTimeout(hoverClearTimeout.current);
+                hoverClearTimeout.current = null;
+              }
+              if (sat.user && hoveredSatId !== sat.user.id) {
                 setHoveredSatId(sat.user.id);
                 document.body.style.cursor = 'pointer';
               }
             }}
-            onPointerOut={(e) => {
+            onPointerLeave={(e) => {
               e.stopPropagation();
-              setHoveredSatId(null);
-              document.body.style.cursor = 'auto';
+              if (sat.user?.id) {
+                if (hoverClearTimeout.current) clearTimeout(hoverClearTimeout.current);
+                hoverClearTimeout.current = setTimeout(() => {
+                  setHoveredSatId((current) => {
+                    if (current === sat.user?.id) {
+                      document.body.style.cursor = 'auto';
+                      return null;
+                    }
+                    return current;
+                  });
+                }, 120);
+              }
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -935,30 +1371,77 @@ export default function InteractiveSphere3D({
               }
             }}
           >
+            {/* Satellite sphere with realistic lighting - illuminated and dark sides */}
             <mesh castShadow receiveShadow>
-              <sphereGeometry args={[sat.size, 32, 32]} />
+              <sphereGeometry args={[sat.size, 64, 64]} />
               <meshStandardMaterial 
                 color={sat.color} 
-                metalness={0.3 + Math.random() * 0.2} 
-                roughness={0.5 + Math.random() * 0.2} 
+                metalness={0.2} 
+                roughness={0.7}
+                // Reduced emissive for realistic lighting
                 emissive={sat.color}
-                emissiveIntensity={hoveredSatId === sat.user?.id ? 0.4 : 0.15}
+                emissiveIntensity={hoveredSatId === sat.user?.id ? 0.08 : 0.02}
               />
             </mesh>
-            {/* Small glow around each moon */}
-            <mesh scale={[1.3, 1.3, 1.3]}>
-              <sphereGeometry args={[sat.size, 16, 16]} />
-              <meshBasicMaterial
-                color={sat.color}
-                transparent
-                opacity={hoveredSatId === sat.user?.id ? 0.3 : 0.18}
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-              />
-            </mesh>
+            {/* Small subtle glow only when hovered */}
+            {hoveredSatId === sat.user?.id && (
+              <mesh scale={[1.15, 1.15, 1.15]}>
+                <sphereGeometry args={[sat.size, 16, 16]} />
+                <meshBasicMaterial
+                  color={sat.color}
+                  transparent
+                  opacity={0.15}
+                  depthWrite={false}
+                  blending={THREE.AdditiveBlending}
+                />
+              </mesh>
+            )}
+            
+            {/* Indicator for user's own planet - pulsating ring */}
+            {isUserPlanet && (
+              <>
+                <mesh 
+                  rotation={[Math.PI / 2, 0, 0]}
+                  ref={(el) => {
+                    if (el && !userRingRefs.current.includes(el)) {
+                      userRingRefs.current.push(el);
+                    }
+                  }}
+                >
+                  <ringGeometry args={[sat.size * 1.3, sat.size * 1.4, 32]} />
+                  <meshBasicMaterial
+                    color="#ffffff"
+                    transparent
+                    opacity={0.6}
+                    side={THREE.DoubleSide}
+                    depthWrite={false}
+                    blending={THREE.AdditiveBlending}
+                  />
+                </mesh>
+                <mesh 
+                  rotation={[0, 0, 0]}
+                  ref={(el) => {
+                    if (el && !userRingRefs.current.includes(el)) {
+                      userRingRefs.current.push(el);
+                    }
+                  }}
+                >
+                  <ringGeometry args={[sat.size * 1.3, sat.size * 1.4, 32]} />
+                  <meshBasicMaterial
+                    color="#ffffff"
+                    transparent
+                    opacity={0.6}
+                    side={THREE.DoubleSide}
+                    depthWrite={false}
+                    blending={THREE.AdditiveBlending}
+                  />
+                </mesh>
+              </>
+            )}
           </group>
         </React.Fragment>
-      ))}
+        );
+      })}
     </>
   );
 }
