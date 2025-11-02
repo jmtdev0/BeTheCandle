@@ -3,7 +3,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, Float, Environment, Lightformer, OrbitControls, Text, useCursor } from "@react-three/drei";
-import { Suspense, useMemo, useRef, useState, useEffect } from "react";
+import { Suspense, useMemo, useRef, useState, useEffect, useCallback } from "react";
 import * as THREE from "three";
 import logger from '@/lib/loggerClient';
 
@@ -43,12 +43,78 @@ function RotatingSphere({ scale, autoRotate = false }: { scale: number; autoRota
   const tiltGroupRef = useRef<THREE.Group>(null);
   const three = useThree();
   const controls = (three as any).controls;
+  const camera = three.camera as THREE.PerspectiveCamera;
   const gl = (three as any).gl;
   const canvasEl: HTMLCanvasElement | null = gl?.domElement ?? null;
   const draggingRef = useRef(false);
   const lastXRef = useRef(0);
   const windowMoveRef = useRef<(e: PointerEvent) => void>();
   const windowUpRef = useRef<(e: PointerEvent) => void>();
+  const touchPointsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchDistanceRef = useRef<number | null>(null);
+
+  const applyZoomDelta = useCallback(
+    (delta: number) => {
+      if (!controls || !camera || delta === 0) return;
+      const amount = Math.min(Math.abs(delta) * 0.0025, 0.25);
+      if (amount <= 0) return;
+      const factor = 1 + amount;
+      const orbitControls = controls as any;
+      const zoomOut = delta > 0;
+
+      const applyManualZoom = () => {
+        const target: THREE.Vector3 = orbitControls?.target
+          ? (orbitControls.target as THREE.Vector3)
+          : new THREE.Vector3(0, 0, 0);
+        const current = camera.position.clone();
+        const direction = current.sub(target).normalize();
+        const distance = camera.position.distanceTo(target);
+        const minDistance = orbitControls?.minDistance ?? 0.1;
+        const maxDistance = orbitControls?.maxDistance ?? Infinity;
+        const nextDistance = THREE.MathUtils.clamp(
+          distance * (zoomOut ? factor : 1 / factor),
+          minDistance,
+          maxDistance,
+        );
+        camera.position.copy(target.clone().add(direction.multiplyScalar(nextDistance)));
+      };
+
+      if (zoomOut) {
+        if (typeof orbitControls?.dollyOut === "function") {
+          orbitControls.dollyOut(factor);
+        } else {
+          applyManualZoom();
+        }
+      } else {
+        if (typeof orbitControls?.dollyIn === "function") {
+          orbitControls.dollyIn(factor);
+        } else {
+          applyManualZoom();
+        }
+      }
+
+      orbitControls?.update?.();
+    },
+    [controls, camera],
+  );
+
+  const upsertTouchPoint = useCallback((pointerId: number, x: number, y: number) => {
+    const map = touchPointsRef.current;
+    map.set(pointerId, { x, y });
+    if (map.size >= 2) {
+      const points = Array.from(map.values());
+      return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    }
+    return null;
+  }, []);
+
+  const removeTouchPoint = useCallback((pointerId: number) => {
+    const map = touchPointsRef.current;
+    map.delete(pointerId);
+    if (map.size < 2) {
+      pinchDistanceRef.current = null;
+    }
+  }, []);
 
   // Log component mount
   useEffect(() => {
@@ -65,36 +131,69 @@ function RotatingSphere({ scale, autoRotate = false }: { scale: number; autoRota
       if (ev.button !== 0) return;
       const rect = el.getBoundingClientRect();
       if (ev.clientX < rect.left || ev.clientX > rect.right || ev.clientY < rect.top || ev.clientY > rect.bottom) return;
+      const pid = ev.pointerId ?? 1;
+      if (ev.pointerType === "touch") {
+        const distance = upsertTouchPoint(pid, ev.clientX, ev.clientY);
+        if (touchPointsRef.current.size >= 2) {
+          pinchDistanceRef.current = distance ?? pinchDistanceRef.current;
+          draggingRef.current = false;
+          return;
+        }
+      }
       ev.preventDefault();
       ev.stopPropagation();
-  const pid = ev.pointerId ?? 1;
-  try { el.setPointerCapture?.(pid); } catch {}
-  draggingRef.current = true;
-  lastXRef.current = ev.clientX;
-  if (controls) controls.enabled = false;
-  try { logger.log({ type: 'pointerdown', payload: { clientX: ev.clientX, clientY: ev.clientY, pointerId: pid } }); } catch {}
+      try { el.setPointerCapture?.(pid); } catch {}
+      draggingRef.current = true;
+      lastXRef.current = ev.clientX;
+      if (controls) controls.enabled = false;
+      try {
+        logger.log({ type: "pointerdown", payload: { clientX: ev.clientX, clientY: ev.clientY, pointerId: pid } });
+      } catch {}
 
       const onWinMove = (e: PointerEvent) => {
-        if (!draggingRef.current) return;
         e.preventDefault();
+        if (e.pointerType === "touch") {
+          const pointerId = e.pointerId ?? pid;
+          const distance = upsertTouchPoint(pointerId, e.clientX, e.clientY);
+          if (touchPointsRef.current.size >= 2 && distance != null) {
+            if (pinchDistanceRef.current == null) {
+              pinchDistanceRef.current = distance;
+            } else {
+              applyZoomDelta(distance - pinchDistanceRef.current);
+              pinchDistanceRef.current = distance;
+            }
+            return;
+          }
+        }
+        if (!draggingRef.current) return;
         const clientX = e.clientX;
         const dx = clientX - lastXRef.current;
         lastXRef.current = clientX;
         const sensitivity = 0.008;
         if (rotationGroupRef.current) {
           rotationGroupRef.current.rotation.y += dx * sensitivity;
-          try { logger.log({ type: 'pointermove', payload: { clientX, clientY: e.clientY, dx, rotationY: rotationGroupRef.current.rotation.y } }); } catch {}
+          try {
+            logger.log({
+              type: "pointermove",
+              payload: { clientX, clientY: e.clientY, dx, rotationY: rotationGroupRef.current.rotation.y },
+            });
+          } catch {}
         }
       };
 
       const onWinUp = (e: PointerEvent) => {
         const id = e.pointerId ?? pid;
         try { el.releasePointerCapture?.(id); } catch (err) {}
+        if (e.pointerType === "touch") {
+          removeTouchPoint(id);
+        }
         draggingRef.current = false;
         if (controls) controls.enabled = true;
         window.removeEventListener('pointermove', onWinMove as EventListener);
         window.removeEventListener('pointerup', onWinUp as EventListener);
-        try { logger.log({ type: 'pointerup', payload: { pointerId: id } }); } catch {}
+        try {
+          logger.log({ type: "pointerup", payload: { pointerId: id } });
+        } catch {}
       };
 
       window.addEventListener('pointermove', onWinMove as EventListener, { passive: false });
@@ -106,7 +205,7 @@ function RotatingSphere({ scale, autoRotate = false }: { scale: number; autoRota
     return () => {
       try { el.removeEventListener('pointerdown', onDomPointerDown as EventListener, { capture: true } as any); } catch {}
     };
-  }, [gl, controls, rotationGroupRef]);
+  }, [gl, controls, rotationGroupRef, upsertTouchPoint, removeTouchPoint, applyZoomDelta]);
 
   const surfaceTexture = useMemo(() => {
     if (typeof document === "undefined") return undefined;
@@ -257,10 +356,18 @@ function RotatingSphere({ scale, autoRotate = false }: { scale: number; autoRota
 
   // Pointer drag handlers - rotate planet in place while user drags horizontally
   const handlePointerDown = (e: any) => {
-    e.stopPropagation();
-    e.preventDefault?.();
     const src = e?.sourceEvent ?? e;
     const pid = src.pointerId ?? e.pointerId ?? 1;
+    if (src?.pointerType === "touch") {
+      const distance = upsertTouchPoint(pid, src.clientX ?? 0, src.clientY ?? 0);
+      if (touchPointsRef.current.size >= 2) {
+        pinchDistanceRef.current = distance ?? pinchDistanceRef.current;
+        draggingRef.current = false;
+        return;
+      }
+    }
+    e.stopPropagation();
+    e.preventDefault?.();
     // try to set pointer capture on the canvas element (more reliable)
     try {
       if (canvasEl && canvasEl.setPointerCapture) canvasEl.setPointerCapture(pid);
@@ -288,11 +395,22 @@ function RotatingSphere({ scale, autoRotate = false }: { scale: number; autoRota
   };
 
   const handlePointerMove = (e: any) => {
-    if (!draggingRef.current) return;
-    // don't stopPropagation here because this may be called from window-level handler
     const src = e?.sourceEvent ?? e;
-    // if event has preventDefault, try to call to avoid touch scrolling
     src?.preventDefault?.();
+    if (src?.pointerType === "touch") {
+      const pointerId = src.pointerId ?? e.pointerId ?? 1;
+      const distance = upsertTouchPoint(pointerId, src.clientX ?? 0, src.clientY ?? 0);
+      if (touchPointsRef.current.size >= 2 && distance != null) {
+        if (pinchDistanceRef.current == null) {
+          pinchDistanceRef.current = distance;
+        } else {
+          applyZoomDelta(distance - pinchDistanceRef.current);
+          pinchDistanceRef.current = distance;
+        }
+        return;
+      }
+    }
+    if (!draggingRef.current) return;
     console.debug("GoofySphere: pointermove", { clientX: src.clientX, clientY: src.clientY });
     const clientX = src.clientX ?? 0;
     const dx = clientX - lastXRef.current;
@@ -317,6 +435,9 @@ function RotatingSphere({ scale, autoRotate = false }: { scale: number; autoRota
       console.debug('releasePointerCapture ignored:', err && err.message);
     }
     console.debug("GoofySphere: pointerup", { id: e?.pointerId ?? src?.pointerId });
+    if (src?.pointerType === "touch" && pid != null) {
+      removeTouchPoint(pid);
+    }
     draggingRef.current = false;
     if (controls) controls.enabled = true;
 
