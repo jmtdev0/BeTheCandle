@@ -11,7 +11,7 @@ create table if not exists public.donations (
 	created_at timestamptz not null default timezone('utc', now())
 );
 
-comment on table public.donations is 'Live donations powering the GoofySphere satellites';
+comment on table public.donations is 'Live donations powering the donation orbit';
 
 create index if not exists donations_created_at_idx on public.donations (created_at desc);
 

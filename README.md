@@ -43,9 +43,9 @@ src/
 │   ├── goofy-mode/page.tsx     # Goofy Mode entry point
 │   └── even-goofier-mode/      # Experimental playground
 └── components/
-    ├── GoofySphere.tsx         # Core 3D planet + orbit logic
-    ├── InteractiveSphere3D.tsx # Higher-level scene composition
-    └── SatelliteInfoCard.tsx   # Overlay with supporter details
+   ├── DonationBubble.tsx      # Lobby orbit with animated donation bubbles
+   ├── InteractiveSphere3D.tsx # Higher-level scene composition
+   └── SatelliteInfoCard.tsx   # Overlay with supporter details
 ```
 
 ## Scripts

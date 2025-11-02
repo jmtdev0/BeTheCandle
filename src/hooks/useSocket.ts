@@ -14,9 +14,13 @@ export function useSocket() {
 
   useEffect(() => {
     // Initialize socket connection
-    const initSocket = async () => {
-      const socketInstance: ClientSocket = io({
-        path: '/socket.io',
+  const initSocket = async (): Promise<ClientSocket> => {
+      const url = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
+      const path = process.env.NEXT_PUBLIC_SOCKET_PATH?.trim() || '/socket.io';
+
+      const socketInstance: ClientSocket = io(url || undefined, {
+        path,
+        transports: ['websocket', 'polling'],
       });
 
       socketInstance.on('connect', () => {
@@ -53,13 +57,17 @@ export function useSocket() {
       });
 
       setSocket(socketInstance);
+      return socketInstance;
     };
 
-    initSocket();
+    let currentSocket: ClientSocket | null = null;
+    initSocket().then((instance) => {
+      currentSocket = instance;
+    });
 
     return () => {
-      if (socket) {
-        socket.disconnect();
+      if (currentSocket) {
+        currentSocket.disconnect();
       }
     };
   }, []);
