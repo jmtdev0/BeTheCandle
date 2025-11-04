@@ -962,14 +962,16 @@ export default function InteractiveSphere3D({
   // Floating particles system
   const particlesRef = useRef<THREE.Points | null>(null);
   const particlePositions = useMemo(() => {
-    const positions = new Float32Array(800 * 3); // 800 particles
-    const particleRadius = radius * 5; // particles within 5x planet radius
+    const particleCount = 1600; // denser field so zoomed-out view stays rich
+    const positions = new Float32Array(particleCount * 3);
+    const minRadius = radius * 3; // start a little away from the star glow
+    const maxRadius = radius * 25; // extend far into space for wide zooms
     
-    for (let i = 0; i < 800; i++) {
+    for (let i = 0; i < particleCount; i++) {
       // Random spherical distribution around the planet
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const r = radius * 2 + Math.random() * particleRadius;
+      const r = minRadius + Math.random() * (maxRadius - minRadius);
       
       positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);

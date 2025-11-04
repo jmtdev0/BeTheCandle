@@ -1,16 +1,29 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const menuItems = [
-  { label: "Goofy Mode", href: "/goofy-mode" },
-  { label: "Even Goofier Mode", href: "/even-goofier-mode" },
+interface MenuItem {
+  label: string;
+  href: string;
+  icon: string;
+  badge?: ReactNode;
+}
+
+const menuItems: MenuItem[] = [
+  { label: "Lobby", href: "/lobby", icon: "🌍" },
+  { label: "Community Pot", href: "/community-pot", icon: "🌌" },
+  { label: "Even Goofier Mode", href: "/even-goofier-mode", icon: "🎪" },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  lobbyUserCount?: number;
+  isLobbyConnected?: boolean;
+}
+
+export default function Sidebar({ lobbyUserCount, isLobbyConnected }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -52,6 +65,8 @@ export default function Sidebar() {
             <nav className="flex-1 space-y-4">
               {menuItems.map((item, index) => {
                 const isActive = pathname === item.href;
+                const isLobby = item.href === "/lobby";
+                
                 return (
                   <motion.div
                     key={item.href}
@@ -61,13 +76,24 @@ export default function Sidebar() {
                   >
                     <Link
                       href={item.href}
-                      className={`block px-4 py-3 rounded-lg transition-all ${
+                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                         isActive
                           ? "bg-gradient-to-r from-orange-500/20 to-yellow-500/20 border border-orange-500/50 text-orange-300"
                           : "hover:bg-slate-700/50 text-slate-300 hover:text-orange-200"
                       }`}
                     >
-                      <span className="text-sm font-medium">{item.label}</span>
+                      <span className="text-xl">{item.icon}</span>
+                      <div className="flex-1">
+                        <span className="text-sm font-medium">{item.label}</span>
+                        {isLobby && lobbyUserCount !== undefined && (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${isLobbyConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
+                            <span className="text-xs text-slate-400">
+                              {lobbyUserCount} online
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </Link>
                   </motion.div>
                 );

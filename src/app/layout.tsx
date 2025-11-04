@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import SidebarWithLobbyStatus from "@/components/common/SidebarWithLobbyStatus";
 
 export const metadata: Metadata = {
   title: "Bitcoin Daily Collection - Donation Platform",
@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Sidebar />
+        <SidebarWithLobbyStatus />
         {children}
       </body>
     </html>

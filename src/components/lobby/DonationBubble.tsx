@@ -419,15 +419,15 @@ export default function DonationBubble({
                 )}
                 <div className="mt-5 space-y-2 text-sm text-slate-200">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Contacto</span>
+                    <span className="text-slate-400">Contact</span>
                     <span className="font-medium text-amber-200">{selectedSatellite.contact}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Meta</span>
+                    <span className="text-slate-400">Goal</span>
                     <span className="font-medium">{selectedSatellite.goalBTC.toFixed(3)} BTC</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Donado</span>
+                    <span className="text-slate-400">Donated</span>
                     <span className="font-medium text-emerald-200">{selectedSatellite.donatedBTC.toFixed(3)} BTC</span>
                   </div>
                 </div>
@@ -441,7 +441,7 @@ export default function DonationBubble({
                     />
                   </div>
                   <p className="mt-2 text-xs text-slate-400">
-                    {Math.round(selectedProgress * 100)}% de la meta alcanzada
+                    {Math.round(selectedProgress * 100)}% of goal reached
                   </p>
                 </div>
               </motion.div>

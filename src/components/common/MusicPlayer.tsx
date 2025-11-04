@@ -168,7 +168,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Music size={16} className="text-orange-400 flex-shrink-0" />
             <span className="text-xs text-gray-400 truncate">
-              {isCollapsed ? "Reproductor" : (currentTrack ? currentTrack.displayName : "Sin música")}
+              {isCollapsed ? "Player" : (currentTrack ? currentTrack.displayName : "No music")}
             </span>
           </div>
           <div className="flex items-center gap-1">
@@ -240,7 +240,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
                   ? "bg-gray-700 cursor-not-allowed opacity-50" 
                   : "bg-orange-500 hover:bg-orange-600"
               }`}
-              title={tracks.length === 0 ? "Sin música disponible" : (isPlaying ? "Pausar" : "Reproducir")}
+              title={tracks.length === 0 ? "No music available" : (isPlaying ? "Pause" : "Play")}
             >
               {isPlaying ? (
                 <div className="flex gap-1">

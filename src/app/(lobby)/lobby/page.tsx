@@ -5,10 +5,10 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
-import InteractiveSphere3D, { SatelliteUser } from "@/components/InteractiveSphere3D";
-import SatelliteInfoCard from "@/components/SatelliteInfoCard";
-import SatelliteColorPicker from "@/components/SatelliteColorPicker";
-import MusicPlayer from "@/components/MusicPlayer";
+import InteractiveSphere3D, { SatelliteUser } from "@/components/lobby/InteractiveSphere3D";
+import SatelliteInfoCard from "@/components/lobby/SatelliteInfoCard";
+import AutoHideColorPicker from "@/components/lobby/AutoHideColorPicker";
+import AutoHideMusicPlayer from "@/components/lobby/AutoHideMusicPlayer";
 import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
 import { useSocket } from "@/hooks/useSocket";
 import { Planet } from "@/types/socket";
@@ -16,12 +16,12 @@ import { Planet } from "@/types/socket";
 // Convert Planet to SatelliteUser format
 const planetToSatelliteUser = (planet: Planet, isCurrentUser: boolean): SatelliteUser => ({
   id: planet.userId,
-  displayName: isCurrentUser ? "Tu planeta 🌟" : (planet.userName || `Visitante ${planet.userId.slice(0, 6)}`),
+  displayName: isCurrentUser ? "Your Planet 🌟" : (planet.userName || `Visitor ${planet.userId.slice(0, 6)}`),
   currentBTC: "N/A",
   goalBTC: 0,
   purpose: isCurrentUser 
-    ? "Este es tu planeta personal. Personaliza su color usando el selector de color." 
-    : "Otro usuario explorando el universo Bitcoin.",
+    ? "This is your personal planet. Customize its color using the color picker." 
+    : "Another user exploring the Bitcoin universe.",
   avatar: isCurrentUser ? "👤" : "🪐",
   color: planet.color, // Pass the color to the satellite
 });
@@ -73,29 +73,13 @@ export default function GoofyModePage() {
 
   return (
     <div className="relative w-full h-screen flex items-center justify-center bg-gradient-to-b from-[#030712] via-[#050b1a] to-[#030712] overflow-hidden">
-      <div className="absolute top-6 right-6 z-[60]">
-        <SatelliteColorPicker
-          value={satelliteColor}
-          onChange={setSatelliteColor}
-          className="relative"
-        />
-      </div>
+      {/* Auto-hide Color Picker (top-right) */}
+      <AutoHideColorPicker
+        value={satelliteColor}
+        onChange={setSatelliteColor}
+      />
       
-      {/* Connection Status Indicator */}
-      <div className="absolute top-6 left-6 z-[60]">
-        <div className={`px-4 py-2 rounded-lg backdrop-blur-md ${
-          isConnected 
-            ? 'bg-green-500/20 border border-green-500/50 text-green-300' 
-            : 'bg-red-500/20 border border-red-500/50 text-red-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
-            <span className="text-sm font-medium">
-              {isConnected ? `Conectado · ${planets.length} planetas` : 'Conectando...'}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* Removed connection indicator - now shown in Sidebar */}
 
       <Canvas 
         shadows 
@@ -138,8 +122,8 @@ export default function GoofyModePage() {
     <>
       <SatelliteInfoCard user={selectedUser} onClose={handleCloseCard} screenPosition={selectedScreenPos} />
       
-      {/* Music Player - Carga automáticamente la música de /public/background_music/ */}
-      <MusicPlayer />
+      {/* Auto-hide Music Player (bottom-left) */}
+      <AutoHideMusicPlayer />
     </>
   )}
     </div>
