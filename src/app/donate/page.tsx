@@ -1,11 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Bitcoin, Copy, Check, ExternalLink } from "lucide-react";
 
-export default function DonatePage() {
+const LoadingFallback = () => (
+  <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex items-center justify-center px-4 py-16">
+    <div className="w-full max-w-xl rounded-3xl border border-amber-400/15 bg-slate-900/70 backdrop-blur-xl shadow-2xl p-8 text-center space-y-4">
+      <div className="inline-flex items-center justify-center h-10 w-10 rounded-full border border-amber-400/40 bg-amber-400/10 text-amber-100 animate-pulse">
+        <Bitcoin className="h-5 w-5" />
+      </div>
+      <p className="text-sm text-slate-300">Charging donation interface…</p>
+    </div>
+  </div>
+);
+
+function DonateContent() {
   const searchParams = useSearchParams();
   const [copied, setCopied] = useState(false);
 
@@ -99,5 +110,13 @@ export default function DonatePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function DonatePage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <DonateContent />
+    </Suspense>
   );
 }
