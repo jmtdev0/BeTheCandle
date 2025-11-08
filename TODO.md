@@ -8,10 +8,19 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras
 
-* Traducir a inglés textos de la pestaña Goofy Mode.
-* Cambiar nombre de pestaña Goofy Mode a Lobby (también en la URL)
-* El mensaje "Conectado • N planetas" se está mostrando por encima del menú lateral izquierdo y lo está tapando. Sustituirlo por un subtexto en la sección de Lobby del menú lateral que indique el número de usuarios online.
-* Del mismo que el menú lateral izquierdo aparece cuando el usuario acerca el ratón a esa zona de la pantalla, que el Player (sonido) y la configuración del color del satélite aparezcan solo cuando el usuario se acerca con el ratón a sus posiciones.
+* El botón del color del satélite que se encuentra ahora mismo en la esquina superior izquierda se puede integrar también en la configuración del perfil del usuario.
+* Añadir una flechita o un texto o algo con lo que el usuario pueda identificar visualmente en todo momento cuál es su satélite.
+* Al cargar la página de Lobby, se está simulando un click izquierdo en el ratón sobre la estrella Bitcoin, vamos a desactivar este click inicial. Si no sabes a qué me refiero, me dices.
+* Al hacer hover sobre los satélites, es un poco complicado a veces atinar con el ratón, sobre todo con los que son más pequeños. Es necesario ampliar el área de hover en los satélites para que el usuario tenga mayor facilidad para pinchar el que quiere. Si en ese área de hover circulan varios satélites, se reducirá la velocidad de todos ellos. Es como si el ratón llevara consigo un área de reducción de velocidad de los satélites.
+
+# Ajustes y mejoras II
+
+* Responsive total. Adaptación a móvil
+
+# Pijotadas
+
+* Que el favicon cambie continuamente. Que sea como un GIF de una estrella que flota y se mueve suavemente de arriba a abajo.
+
 
 # Comentarios
 

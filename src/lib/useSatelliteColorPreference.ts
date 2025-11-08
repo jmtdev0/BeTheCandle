@@ -9,6 +9,7 @@ import {
 
 const COOKIE_NAME = "satelliteColor";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365; // 1 year
+const EVENT_NAME = "btc-satellite-color-change";
 
 const isValidOption = (value: string): value is SatelliteColorOption => {
   return SATELLITE_COLOR_OPTIONS.includes(value as SatelliteColorOption);
@@ -32,9 +33,27 @@ export function useSatelliteColorPreference(initialValue: SatelliteColorOption =
     }
   }, [initialValue]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleColorChange = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      const next = customEvent.detail;
+      if (next && isValidOption(next) && next !== color) {
+        setColor(next);
+      }
+    };
+
+    window.addEventListener(EVENT_NAME, handleColorChange as EventListener);
+    return () => window.removeEventListener(EVENT_NAME, handleColorChange as EventListener);
+  }, [color]);
+
   const updateColor = useCallback((next: SatelliteColorOption) => {
     setColor(next);
     document.cookie = `${COOKIE_NAME}=${next}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}`;
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: next }));
+    }
   }, []);
 
   return {

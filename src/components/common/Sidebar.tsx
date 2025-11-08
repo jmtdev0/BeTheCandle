@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { User } from "lucide-react";
 
 interface MenuItem {
   label: string;
@@ -21,9 +22,10 @@ const menuItems: MenuItem[] = [
 interface SidebarProps {
   lobbyUserCount?: number;
   isLobbyConnected?: boolean;
+  onProfileClick?: () => void;
 }
 
-export default function Sidebar({ lobbyUserCount, isLobbyConnected }: SidebarProps) {
+export default function Sidebar({ lobbyUserCount, isLobbyConnected, onProfileClick }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -100,9 +102,24 @@ export default function Sidebar({ lobbyUserCount, isLobbyConnected }: SidebarPro
               })}
             </nav>
 
-            {/* Footer hint */}
+            {/* Profile Button */}
             <div className="mt-auto pt-4 border-t border-slate-700">
-              <p className="text-xs text-slate-500 text-center">
+              <button
+                onClick={onProfileClick}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all hover:bg-slate-700/50 text-slate-300 hover:text-orange-200 group"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-yellow-400 flex items-center justify-center text-slate-900">
+                  <User size={18} />
+                </div>
+                <div className="flex-1 text-left">
+                  <span className="text-sm font-medium block">My Profile</span>
+                  <span className="text-xs text-slate-500 group-hover:text-slate-400">
+                    Edit settings
+                  </span>
+                </div>
+              </button>
+              
+              <p className="text-xs text-slate-500 text-center mt-3">
                 Move mouse away to hide
               </p>
             </div>

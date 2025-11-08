@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { ExternalLink, Link as LinkIcon, Loader2, Bitcoin } from "lucide-react";
 import { SatelliteUser } from "./InteractiveSphere3D";
 
 interface SatelliteInfoCardProps {
@@ -12,24 +14,107 @@ interface SatelliteInfoCardProps {
   screenPosition?: { x: number; y: number } | null;
 }
 
+type PublicProfile = {
+  display_name: string;
+  preferred_name?: string | null;
+  bio?: string | null;
+  social_links?: { platform: string; url: string }[] | null;
+  btc_address?: string | null;
+};
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
 export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardProps) {
   // Move all hooks BEFORE the early return
-  const cardWidth = 360;
-  const cardHeight = 240;
+  const DEFAULT_CARD_WIDTH = 380;
+  const DEFAULT_CARD_HEIGHT = 360;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
   const pointerOffsetRef = useRef({ x: 0, y: 0 });
 
+  const supabaseClient = useMemo<SupabaseClient | null>(() => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.warn("SatelliteInfoCard: Supabase credentials missing");
+      return null;
+    }
+    return createClient(supabaseUrl, supabaseAnonKey);
+  }, []);
+
+  const getDimensions = () => {
+    const width = containerRef.current?.offsetWidth ?? DEFAULT_CARD_WIDTH;
+    const height = containerRef.current?.offsetHeight ?? DEFAULT_CARD_HEIGHT;
+    return { width, height };
+  };
+
   const [pos, setPos] = useState(() => ({ left: 0, top: 0 }));
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const profileLookupName = useMemo(() => {
+    if (!user) return null;
+    const candidate = user.profileDisplayName ?? user.displayName;
+    if (!candidate) return null;
+    const normalized = candidate.trim();
+    if (!normalized || normalized.toLowerCase().startsWith("visitor")) return null;
+    return normalized;
+  }, [user]);
+
+  useEffect(() => {
+    if (!profileLookupName || !supabaseClient) {
+      setProfile(null);
+      setProfileError(null);
+      setLoadingProfile(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const fetchProfile = async () => {
+      setLoadingProfile(true);
+      setProfileError(null);
+      try {
+        const { data, error } = await supabaseClient
+          .from("user_profiles")
+          .select("display_name, preferred_name, bio, social_links, btc_address")
+          .eq("display_name", profileLookupName)
+          .maybeSingle();
+
+        if (isCancelled) return;
+
+        if (error) {
+          throw error;
+        }
+
+        setProfile(data ?? null);
+      } catch (err) {
+        if (isCancelled) return;
+        console.error("SatelliteInfoCard: failed to fetch profile", err);
+        setProfile(null);
+        setProfileError("Profile details unavailable");
+      } finally {
+        if (!isCancelled) {
+          setLoadingProfile(false);
+        }
+      }
+    };
+
+    fetchProfile();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [profileLookupName, supabaseClient]);
 
   // initialize position on mount to center vertically and slightly right of center
   useEffect(() => {
     const calc = () => {
       if (typeof window === "undefined") return;
-      // Shift a bit more to the right by default (user requested slightly further right)
-      const left = Math.round(window.innerWidth * 0.62 - cardWidth / 2);
-      const top = Math.round(window.innerHeight / 2 - cardHeight / 2);
+  // Shift a bit more to the right by default
+  const { width, height } = getDimensions();
+  const left = Math.round(window.innerWidth * 0.62 - width / 2);
+  const top = Math.round(window.innerHeight / 2 - height / 2);
       setPos({ left, top });
     };
     calc();
@@ -43,11 +128,12 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
     const onPointerMove = (e: PointerEvent) => {
       if (!draggingRef.current) return;
       e.preventDefault();
-      const newLeft = Math.round(e.clientX - pointerOffsetRef.current.x);
-      const newTop = Math.round(e.clientY - pointerOffsetRef.current.y);
-      // clamp to viewport with small margin
-      const clampedLeft = Math.max(8, Math.min(newLeft, window.innerWidth - cardWidth - 8));
-      const clampedTop = Math.max(8, Math.min(newTop, window.innerHeight - cardHeight - 8));
+  const newLeft = Math.round(e.clientX - pointerOffsetRef.current.x);
+  const newTop = Math.round(e.clientY - pointerOffsetRef.current.y);
+  const { width, height } = getDimensions();
+  // clamp to viewport with small margin
+  const clampedLeft = Math.max(8, Math.min(newLeft, window.innerWidth - width - 8));
+  const clampedTop = Math.max(8, Math.min(newTop, window.innerHeight - height - 8));
       setPos({ left: clampedLeft, top: clampedTop });
     };
 
@@ -75,10 +161,11 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
     const onPointerMove = (ev: PointerEvent) => {
       if (!draggingRef.current) return;
       ev.preventDefault();
-      const newLeft = Math.round(ev.clientX - pointerOffsetRef.current.x);
-      const newTop = Math.round(ev.clientY - pointerOffsetRef.current.y);
-      const clampedLeft = Math.max(8, Math.min(newLeft, window.innerWidth - cardWidth - 8));
-      const clampedTop = Math.max(8, Math.min(newTop, window.innerHeight - cardHeight - 8));
+  const newLeft = Math.round(ev.clientX - pointerOffsetRef.current.x);
+  const newTop = Math.round(ev.clientY - pointerOffsetRef.current.y);
+  const { width, height } = getDimensions();
+  const clampedLeft = Math.max(8, Math.min(newLeft, window.innerWidth - width - 8));
+  const clampedTop = Math.max(8, Math.min(newTop, window.innerHeight - height - 8));
       setPos({ left: clampedLeft, top: clampedTop });
     };
 
@@ -96,6 +183,18 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
 
   // NOW check if user is null after all hooks
   if (!user) return null;
+
+  const preferredName = profile?.preferred_name?.trim() || null;
+  const sanitizedBio = profile?.bio?.trim() || null;
+  const socialLinks = Array.isArray(profile?.social_links)
+    ? profile.social_links.filter((link) => link && link.platform && link.url)
+    : [];
+  const donationAddress = profile?.btc_address?.trim() || user.walletAddress || null;
+  const headingName = preferredName || profile?.display_name || profileLookupName || user.displayName;
+  const subtitleName = profile?.display_name || profileLookupName || user.profileDisplayName || user.displayName;
+  const donateHref = donationAddress
+    ? `/donate?address=${encodeURIComponent(donationAddress)}&name=${encodeURIComponent(headingName)}`
+    : null;
 
   // NOTE: The card can be rendered as a small positioned overlay next to the satellite
   // if screenPosition is provided. Otherwise fall back to centered modal behavior.
@@ -120,25 +219,37 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
             </div>
 
             {/* User name */}
-            <div>
-              <h3 className="text-lg font-bold text-white">
-                {user.displayName}
+            <div className="min-w-0">
+              <h3 className="text-lg font-bold text-white truncate">
+                {headingName}
               </h3>
-                      <p className="text-xs text-orange-300 mt-0.5">
-                        Platform User
-                      </p>
-                      {/* Wallet / donation address (optional) */}
-                      {user.walletAddress ? (
-                        <div className="mt-1 text-xs text-slate-300 flex items-center gap-2">
-                          <code className="font-mono text-xs truncate max-w-[220px]">{user.walletAddress}</code>
-                        </div>
-                      ) : null}
+              <p className="text-xs text-orange-300 mt-0.5 truncate" title={subtitleName ?? undefined}>
+                {subtitleName || "Platform user"}
+              </p>
+              {donationAddress && (
+                <div className="mt-2 text-[11px] text-slate-200/80 font-mono truncate max-w-[220px]" title={donationAddress}>
+                  {donationAddress}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Content */}
         <div className="p-4 space-y-4">
+          {(loadingProfile || profileError) && (
+            <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-400 flex items-center gap-2">
+              {loadingProfile ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Fetching latest profile details…</span>
+                </>
+              ) : (
+                <span>{profileError}</span>
+              )}
+            </div>
+          )}
+
           {/* Current BTC holdings */}
           <div>
             <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
@@ -165,10 +276,77 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
               </div>
             </div>
           </div>
+
+          {/* Bio */}
+          <div>
+            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+              Bio
+            </div>
+            <div className="bg-slate-800/45 rounded-lg border border-slate-700/50 mt-2 p-3">
+              {sanitizedBio ? (
+                <p className="text-sm leading-relaxed text-slate-200">
+                  {sanitizedBio}
+                </p>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  This user hasn’t shared a bio yet.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Social Links */}
+          <div>
+            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+              Links
+            </div>
+            {socialLinks.length > 0 ? (
+              <ul className="mt-2 space-y-2">
+                {socialLinks.map((link, index) => (
+                  <li key={`${link.platform}-${index}`}>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-800/40 px-3 py-2 text-sm text-slate-100 hover:border-amber-400/40 hover:text-amber-100 transition"
+                    >
+                      <LinkIcon className="h-4 w-4 text-amber-300" />
+                      <span className="font-medium truncate">{link.platform}</span>
+                      <span className="text-xs text-slate-400 truncate">{link.url}</span>
+                      <ExternalLink className="h-3.5 w-3.5 text-slate-500 ml-auto" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">
+                No public links yet.
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 flex flex-col gap-3">
+          {donateHref ? (
+            <a
+              href={donateHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/15 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/30"
+            >
+              <Bitcoin className="h-4 w-4" />
+              Donate BTC
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2 text-sm font-semibold text-slate-400 opacity-70 cursor-not-allowed"
+            >
+              Donate BTC
+            </button>
+          )}
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
             <span>Active satellite in orbit</span>
@@ -184,7 +362,7 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
       {/* Draggable card container */}
       <div
         ref={containerRef}
-        style={{ position: "fixed", left: pos.left, top: pos.top, width: cardWidth, zIndex: 50 }}
+  style={{ position: "fixed", left: pos.left, top: pos.top, width: getDimensions().width, zIndex: 50 }}
         className="pointer-events-auto"
       >
         {/* Make header draggable */}

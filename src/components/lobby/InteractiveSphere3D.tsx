@@ -3,6 +3,7 @@
 import React, { useRef, useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame, useThree, extend } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import {
   DEFAULT_SATELLITE_COLOR,
   SATELLITE_COLOR_PALETTES,
@@ -184,6 +185,8 @@ export interface SatelliteUser {
   walletAddress?: string;
   // Optional color for the satellite (will override default palette)
   color?: string;
+  // Actual display name used for profile lookup
+  profileDisplayName?: string | null;
 }
 
 /**
@@ -285,6 +288,7 @@ interface InteractiveSphere3DProps {
   onSatelliteClick?: (user: SatelliteUser, screenPos?: { x: number; y: number }) => void;
   selectedSatelliteId?: string; // ID of selected satellite for camera focus
   satelliteColor?: SatelliteColorOption;
+  currentUserId?: string | null;
 }
 
 export default function InteractiveSphere3D({ 
@@ -295,6 +299,7 @@ export default function InteractiveSphere3D({
   onSatelliteClick,
   selectedSatelliteId,
   satelliteColor = DEFAULT_SATELLITE_COLOR,
+  currentUserId = null,
 }: InteractiveSphere3DProps) {
   const meshRef = useRef<THREE.Mesh | null>(null);
   const starMaterialRef = useRef<StarMaterial>(new StarMaterial());
@@ -444,99 +449,6 @@ export default function InteractiveSphere3D({
       element.removeEventListener("touchcancel", handleTouchEnd as any);
     };
   }, [gl, camera, controlsRef]);
-
-  // Programmatically perform a tiny synthetic drag (pointerdown -> few pointermoves -> pointerup)
-  // so the scene behaves as if the user slightly dragged the planet on load.
-  useEffect(() => {
-    if (!gl || typeof window === "undefined") return;
-    const el = gl.domElement as HTMLCanvasElement | undefined;
-    if (!el) return;
-
-    const triggerSyntheticDrag = () => {
-      try {
-        const rect = el.getBoundingClientRect();
-        const startX = rect.left + rect.width / 2;
-        const startY = rect.top + rect.height / 2;
-        const steps = 4;
-        const totalDx = Math.max(24, Math.min(120, rect.width * 0.06)); // small drag distance in px
-        const dt = 30; // ms between moves
-
-        // dispatch pointerdown on the canvas so handlers attach window listeners
-        const down = new PointerEvent("pointerdown", {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          pointerType: "mouse",
-          clientX: startX,
-          clientY: startY,
-          button: 0,
-        } as PointerEventInit);
-        el.dispatchEvent(down);
-
-        // schedule a few pointermove events on window to simulate a drag
-        for (let i = 1; i <= steps; i++) {
-          const moveX = startX + (totalDx * i) / steps;
-          const move = new PointerEvent("pointermove", {
-            bubbles: true,
-            cancelable: true,
-            composed: true,
-            pointerType: "mouse",
-            clientX: moveX,
-            clientY: startY,
-            button: 0,
-          } as PointerEventInit);
-          setTimeout(() => window.dispatchEvent(move), dt * i);
-        }
-
-        // final pointerup
-        const up = new PointerEvent("pointerup", {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          pointerType: "mouse",
-          clientX: startX + totalDx,
-          clientY: startY,
-          button: 0,
-        } as PointerEventInit);
-        const upTime = dt * (steps + 1);
-        setTimeout(() => window.dispatchEvent(up), upTime);
-
-        // After the drag finishes, perform a small synthetic click at the final position
-        const clickDelay = upTime + 80; // ms after initial down
-        setTimeout(() => {
-          try {
-            const clickDown = new PointerEvent("pointerdown", {
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-              pointerType: "mouse",
-              clientX: startX + totalDx,
-              clientY: startY,
-              button: 0,
-            } as PointerEventInit);
-            window.dispatchEvent(clickDown);
-            const clickUp = new PointerEvent("pointerup", {
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-              pointerType: "mouse",
-              clientX: startX + totalDx,
-              clientY: startY,
-              button: 0,
-            } as PointerEventInit);
-            setTimeout(() => window.dispatchEvent(clickUp), 40);
-          } catch (err) {
-            console.debug("InteractiveSphere3D: synthetic click after drag failed", err);
-          }
-        }, clickDelay);
-      } catch (err) {
-        console.debug("InteractiveSphere3D: synthetic drag failed", err);
-      }
-    };
-
-    const t = window.setTimeout(triggerSyntheticDrag, 350);
-    return () => window.clearTimeout(t);
-  }, [gl]);
 
   // Allow the browser's native zoom (Ctrl + + / -) to scale the canvas just like other DOM content.
   // No extra handlers here; the Goofy Mode canvas now mirrors the Lobby behavior.
@@ -1389,7 +1301,11 @@ export default function InteractiveSphere3D({
 
       {/* Orbiting moons/satellites with orbit lines */}
       {satellites.map((sat, i) => {
-        const isUserPlanet = sat.user?.displayName?.includes('Tu planeta');
+        const displayName = sat.user?.displayName?.toLowerCase() ?? "";
+        const fallbackMatch = displayName.includes("your planet") || displayName.includes("tu planeta");
+        const isUserPlanet = currentUserId
+          ? sat.user?.id === currentUserId
+          : fallbackMatch;
         return (
         <React.Fragment key={`sat-${i}`}>
           {/* Visible orbit line */}
@@ -1503,6 +1419,19 @@ export default function InteractiveSphere3D({
             {/* Indicator for user's own planet - pulsating ring */}
             {isUserPlanet && (
               <>
+                <Html
+                  position={[0, sat.size * 1.8, 0]}
+                  center
+                  distanceFactor={10}
+                  style={{ pointerEvents: "none" }}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="rounded-full bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-slate-900 shadow-lg">
+                      You
+                    </span>
+                    <span className="h-4 w-0.5 rounded-full bg-amber-300/80" />
+                  </div>
+                </Html>
                 <mesh 
                   rotation={[Math.PI / 2, 0, 0]}
                   ref={(el) => {

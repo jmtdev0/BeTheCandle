@@ -7,24 +7,27 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import InteractiveSphere3D, { SatelliteUser } from "@/components/lobby/InteractiveSphere3D";
 import SatelliteInfoCard from "@/components/lobby/SatelliteInfoCard";
-import AutoHideColorPicker from "@/components/lobby/AutoHideColorPicker";
-import AutoHideMusicPlayer from "@/components/lobby/AutoHideMusicPlayer";
 import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
 import { useSocket } from "@/hooks/useSocket";
 import { Planet } from "@/types/socket";
 
 // Convert Planet to SatelliteUser format
-const planetToSatelliteUser = (planet: Planet, isCurrentUser: boolean): SatelliteUser => ({
-  id: planet.userId,
-  displayName: isCurrentUser ? "Your Planet 🌟" : (planet.userName || `Visitor ${planet.userId.slice(0, 6)}`),
-  currentBTC: "N/A",
-  goalBTC: 0,
-  purpose: isCurrentUser 
-    ? "This is your personal planet. Customize its color using the color picker." 
-    : "Another user exploring the Bitcoin universe.",
-  avatar: isCurrentUser ? "👤" : "🪐",
-  color: planet.color, // Pass the color to the satellite
-});
+const planetToSatelliteUser = (planet: Planet, isCurrentUser: boolean): SatelliteUser => {
+  const actualDisplayName = planet.userName || `Visitor ${planet.userId.slice(0, 6)}`;
+
+  return {
+    id: planet.userId,
+    displayName: isCurrentUser ? "Your Planet 🌟" : actualDisplayName,
+    currentBTC: "N/A",
+    goalBTC: 0,
+    purpose: isCurrentUser 
+      ? "This is your personal planet. Customize its color from your profile settings." 
+      : "Another user exploring the Bitcoin universe.",
+    avatar: isCurrentUser ? "👤" : "🪐",
+    color: planet.color,
+    profileDisplayName: planet.userName ?? null,
+  };
+};
 
 export default function GoofyModePage() {
   const controlsRef = useRef<any>(null);
@@ -73,11 +76,6 @@ export default function GoofyModePage() {
 
   return (
     <div className="relative w-full h-screen flex items-center justify-center bg-gradient-to-b from-[#030712] via-[#050b1a] to-[#030712] overflow-hidden">
-      {/* Auto-hide Color Picker (top-right) */}
-      <AutoHideColorPicker
-        value={satelliteColor}
-        onChange={setSatelliteColor}
-      />
       
       {/* Removed connection indicator - now shown in Sidebar */}
 
@@ -101,6 +99,7 @@ export default function GoofyModePage() {
           onSatelliteClick={handleSatelliteClick}
           selectedSatelliteId={selectedUser?.id}
           satelliteColor={satelliteColor}
+          currentUserId={myPlanetId}
         />
         {/* Allow zoom but restrict min/max so user cannot zoom out indefinitely */}
         <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} minDistance={4} maxDistance={60} />
@@ -119,12 +118,7 @@ export default function GoofyModePage() {
 
   {/* Satellite info card overlay (render only after client mount to avoid SSR/client mismatch) */}
   {mounted && (
-    <>
-      <SatelliteInfoCard user={selectedUser} onClose={handleCloseCard} screenPosition={selectedScreenPos} />
-      
-      {/* Auto-hide Music Player (bottom-left) */}
-      <AutoHideMusicPlayer />
-    </>
+    <SatelliteInfoCard user={selectedUser} onClose={handleCloseCard} screenPosition={selectedScreenPos} />
   )}
     </div>
   );
