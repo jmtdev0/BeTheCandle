@@ -24,6 +24,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previousVolumeRef = useRef(0.3);
   const hasAutoPlayedRef = useRef(false);
+  const lastPlayedTrackRef = useRef<number>(-1); // Track the last played track to avoid immediate repeats
 
   // Cargar música automáticamente desde la API
   useEffect(() => {
@@ -111,8 +112,23 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
   }, [volume, isMuted]);
 
   const handleTrackEnd = () => {
-    // Pasar a la siguiente canción automáticamente
-    const nextIndex = (currentTrackIndex + 1) % tracks.length;
+    // Select next random track, excluding the one that just finished
+    if (tracks.length <= 1) {
+      // If only 1 track, just replay it
+      setCurrentTrackIndex(0);
+      return;
+    }
+
+    let nextIndex;
+    const maxAttempts = 10;
+    let attempts = 0;
+
+    do {
+      nextIndex = Math.floor(Math.random() * tracks.length);
+      attempts++;
+    } while (nextIndex === currentTrackIndex && attempts < maxAttempts);
+
+    lastPlayedTrackRef.current = currentTrackIndex;
     setCurrentTrackIndex(nextIndex);
   };
 

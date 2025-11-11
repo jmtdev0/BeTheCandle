@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
@@ -9,55 +9,52 @@ import InteractiveSphere3D, { SatelliteUser } from "@/components/lobby/Interacti
 import SatelliteInfoCard from "@/components/lobby/SatelliteInfoCard";
 import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
 import { useSocket } from "@/hooks/useSocket";
-import { Planet } from "@/types/socket";
-
-// Convert Planet to SatelliteUser format
-const planetToSatelliteUser = (planet: Planet, isCurrentUser: boolean): SatelliteUser => {
-  const actualDisplayName = planet.userName || `Visitor ${planet.userId.slice(0, 6)}`;
-
-  return {
-    id: planet.userId,
-    displayName: isCurrentUser ? "Your Planet 🌟" : actualDisplayName,
-    currentBTC: "N/A",
-    goalBTC: 0,
-    purpose: isCurrentUser 
-      ? "This is your personal planet. Customize its color from your profile settings." 
-      : "Another user exploring the Bitcoin universe.",
-    avatar: isCurrentUser ? "👤" : "🪐",
-    color: planet.color,
-    profileDisplayName: planet.userName ?? null,
-  };
-};
+import { useLobbyProfiles } from "@/hooks/useLobbyProfiles";
 
 export default function GoofyModePage() {
   const controlsRef = useRef<any>(null);
   const [selectedUser, setSelectedUser] = useState<SatelliteUser | null>(null);
   const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [mounted, setMounted] = useState(false);
-  const { color: satelliteColor, setColor: setSatelliteColor } = useSatelliteColorPreference();
+  const { color: satelliteColor } = useSatelliteColorPreference();
   
   // Socket integration
-  const { planets, myPlanetId, isConnected, joinAsPlanet, updateColor } = useSocket();
-  const hasJoined = useRef(false);
+  const { planets, myPlanetId, isConnected, updateColor } = useSocket();
 
-  // Join as planet when connected and color is available
-  useEffect(() => {
-    if (isConnected && satelliteColor && !hasJoined.current) {
-      joinAsPlanet(satelliteColor);
-      hasJoined.current = true;
-    }
-  }, [isConnected, satelliteColor, joinAsPlanet]);
+  // Load profiles for all connected users
+  const userNames = useMemo(() => 
+    planets.map(p => p.userName).filter(Boolean) as string[], 
+    [planets]
+  );
+  const { profilesMap } = useLobbyProfiles(userNames);
 
-  // Update color when user changes it
   useEffect(() => {
-    if (isConnected && hasJoined.current && satelliteColor) {
-      updateColor(satelliteColor);
-    }
-  }, [satelliteColor, isConnected, updateColor]);
+    if (!isConnected || !myPlanetId || !satelliteColor) return;
+    updateColor(satelliteColor);
+  }, [satelliteColor, isConnected, myPlanetId, updateColor]);
 
   // Convert planets to satellite users
-  const satelliteUsers: SatelliteUser[] = planets.map(planet => 
-    planetToSatelliteUser(planet, planet.userId === myPlanetId)
+  const satelliteUsers: SatelliteUser[] = useMemo(() => 
+    planets.map(planet => {
+      const isCurrentUser = planet.userId === myPlanetId;
+      const actualDisplayName = planet.userName || `Visitor ${planet.userId.slice(0, 6)}`;
+      const profile = planet.userName ? profilesMap[planet.userName] : null;
+
+      return {
+        id: planet.userId,
+        displayName: isCurrentUser ? "Your Planet 🌟" : actualDisplayName,
+        currentBTC: "N/A",
+        goalBTC: 0,
+        purpose: isCurrentUser 
+          ? "This is your personal planet. Customize its color from your profile settings." 
+          : "Another user exploring the Bitcoin universe.",
+        avatar: isCurrentUser ? "👤" : "🪐",
+        color: planet.color,
+        profileDisplayName: planet.userName ?? null,
+        orbitSpeedMultiplier: profile?.orbit_speed_multiplier ?? 1.0,
+      };
+    }), 
+    [planets, myPlanetId, profilesMap]
   );
 
   useEffect(() => {
@@ -76,7 +73,6 @@ export default function GoofyModePage() {
 
   return (
     <div className="relative w-full h-screen flex items-center justify-center bg-gradient-to-b from-[#030712] via-[#050b1a] to-[#030712] overflow-hidden">
-      
       {/* Removed connection indicator - now shown in Sidebar */}
 
       <Canvas 

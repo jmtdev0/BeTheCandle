@@ -58,7 +58,7 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
     const candidate = user.profileDisplayName ?? user.displayName;
     if (!candidate) return null;
     const normalized = candidate.trim();
-    if (!normalized || normalized.toLowerCase().startsWith("visitor")) return null;
+    if (!normalized) return null;
     return normalized;
   }, [user]);
 
@@ -111,10 +111,11 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
   useEffect(() => {
     const calc = () => {
       if (typeof window === "undefined") return;
-  // Shift a bit more to the right by default
-  const { width, height } = getDimensions();
-  const left = Math.round(window.innerWidth * 0.62 - width / 2);
-  const top = Math.round(window.innerHeight / 2 - height / 2);
+      // Position card to the right of center (approximately 60% from left)
+      // This ensures the satellite remains visible on the left side
+      const { width, height } = getDimensions();
+      const left = Math.round(window.innerWidth * 0.60 - width / 2);
+      const top = Math.round(window.innerHeight / 2 - height / 2);
       setPos({ left, top });
     };
     calc();

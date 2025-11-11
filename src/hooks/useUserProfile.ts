@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-interface SocialLink {
+export interface SocialLink {
   platform: string;
   url: string;
 }
@@ -16,9 +16,17 @@ export interface UserProfile {
   social_links: SocialLink[];
   btc_address?: string;
   avatar_seed?: string;
+  orbit_speed_multiplier?: number;
 }
 
-export function useUserProfile(displayName: string | null) {
+type RegisterUserResult = {
+  id: string;
+  display_name: string;
+  created_at: string;
+  last_seen_at: string;
+};
+
+export function useUserProfile(displayName: string | null, userId?: string | null) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,51 +75,42 @@ export function useUserProfile(displayName: string | null) {
   };
 
   const saveProfile = async (updatedProfile: UserProfile) => {
-    if (!displayName) return;
+    if (!displayName) {
+      throw new Error("Display name is required");
+    }
+    if (!userId) {
+      throw new Error("User identifier is missing");
+    }
 
     setLoading(true);
     setError(null);
 
     try {
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data, error: rpcError } = await supabase.rpc("register_user_profile", {
+        p_user_id: userId,
+        p_display_name: displayName,
+        p_preferred_name: updatedProfile.preferred_name ?? null,
+        p_bio: updatedProfile.bio ?? null,
+        p_social_links: updatedProfile.social_links ?? [],
+        p_btc_address: updatedProfile.btc_address ?? null,
+        p_orbit_speed_multiplier: updatedProfile.orbit_speed_multiplier ?? 1.0,
+      });
 
-      // Check if profile exists
-      const { data: existing } = await supabase
-        .from("user_profiles")
-        .select("id")
-        .eq("display_name", displayName)
-        .single();
-
-      if (existing) {
-        // Update existing profile
-        const { error: updateError } = await supabase
-          .from("user_profiles")
-          .update({
-            preferred_name: updatedProfile.preferred_name,
-            bio: updatedProfile.bio,
-            social_links: updatedProfile.social_links,
-            btc_address: updatedProfile.btc_address,
-          })
-          .eq("display_name", displayName);
-
-        if (updateError) throw updateError;
-      } else {
-        // Insert new profile
-        const { error: insertError } = await supabase
-          .from("user_profiles")
-          .insert({
-            display_name: displayName,
-            preferred_name: updatedProfile.preferred_name,
-            bio: updatedProfile.bio,
-            social_links: updatedProfile.social_links,
-            btc_address: updatedProfile.btc_address,
-            avatar_seed: displayName, // Use display_name as seed
-          });
-
-        if (insertError) throw insertError;
+      if (rpcError) {
+        throw rpcError;
       }
 
-      setProfile(updatedProfile);
+      const userRecord: RegisterUserResult | null = Array.isArray(data)
+        ? (data[0] ?? null)
+        : (data as RegisterUserResult | null);
+
+      setProfile({
+        ...updatedProfile,
+        display_name: displayName,
+      });
+
+      return userRecord;
     } catch (err) {
       console.error("Error saving profile:", err);
       setError(err instanceof Error ? err.message : "Failed to save profile");

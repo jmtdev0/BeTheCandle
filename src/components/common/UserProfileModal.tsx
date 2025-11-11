@@ -22,6 +22,7 @@ interface UserProfile {
   social_links: SocialLink[];
   btc_address?: string;
   avatar_seed?: string;
+  orbit_speed_multiplier?: number; // 0.1 to 3.0
 }
 
 interface UserProfileModalProps {
@@ -46,6 +47,7 @@ export default function UserProfileModal({
   const [bio, setBio] = useState("");
   const [btcAddress, setBtcAddress] = useState("");
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [orbitSpeed, setOrbitSpeed] = useState(1.0); // Default 1.0x
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -57,6 +59,7 @@ export default function UserProfileModal({
       setBio(profile.bio || "");
       setBtcAddress(profile.btc_address || "");
       setSocialLinks(profile.social_links || []);
+      setOrbitSpeed(profile.orbit_speed_multiplier || 1.0);
     }
   }, [isOpen, profile]);
 
@@ -105,6 +108,7 @@ export default function UserProfileModal({
         bio,
         social_links: validSocialLinks,
         btc_address: btcAddress,
+        orbit_speed_multiplier: orbitSpeed,
       });
 
       onClose();
@@ -259,6 +263,44 @@ export default function UserProfileModal({
                   </p>
                 </div>
               )}
+
+              {/* Orbit Speed */}
+              <div>
+                <label className="mb-2 flex items-center justify-between text-sm font-medium text-slate-300">
+                  <span className="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                    Orbit Speed
+                  </span>
+                  <span className="text-amber-400 font-mono text-xs">
+                    {orbitSpeed.toFixed(1)}x
+                  </span>
+                </label>
+                <div className="px-2">
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="3.0"
+                    step="0.1"
+                    value={orbitSpeed}
+                    onChange={(e) => setOrbitSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-thumb"
+                    style={{
+                      background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${((orbitSpeed - 0.1) / 2.9) * 100}%, #334155 ${((orbitSpeed - 0.1) / 2.9) * 100}%, #334155 100%)`
+                    }}
+                  />
+                  <div className="flex justify-between mt-1 text-xs text-slate-500">
+                    <span>0.1x (Very slow)</span>
+                    <span>1.0x (Normal)</span>
+                    <span>3.0x (Very fast)</span>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Control how fast your satellite orbits around the Bitcoin star
+                </p>
+              </div>
 
               {/* Bitcoin Address */}
               <div>

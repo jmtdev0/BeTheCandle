@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { createClient } from '@supabase/supabase-js';
 import type { Planet } from '@/types/socket';
+import { getOrCreateUserId } from '@/lib/userId';
 
 interface PlanetPresencePayload {
   userId: string;
@@ -76,13 +77,6 @@ function createSupabaseClient(): SupabaseClient | null {
   });
 }
 
-function generateClientId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function hashString(input: string) {
   let hash = 0;
   for (let i = 0; i < input.length; i += 1) {
@@ -129,13 +123,33 @@ export function useSocket() {
   const [planets, setPlanets] = useState<Planet[]>(MOCK_PLANETS);
   const [myPlanetId, setMyPlanetId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isClientReady, setIsClientReady] = useState(false);
 
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const presenceKeyRef = useRef(generateClientId());
+  const presenceKeyRef = useRef<string>('');
   const lastPresenceRef = useRef<PlanetPresencePayload | null>(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      presenceKeyRef.current = getOrCreateUserId();
+    } catch (err) {
+      console.error('Failed to initialize user id for socket', err);
+      presenceKeyRef.current = `temp-${Math.random().toString(36).slice(2, 10)}`;
+    } finally {
+      setIsClientReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isClientReady) {
+      return;
+    }
+
     const supabase = createSupabaseClient();
     supabaseRef.current = supabase;
 
@@ -189,15 +203,24 @@ export function useSocket() {
       setPlanets(MOCK_PLANETS);
       setMyPlanetId(null);
     };
-  }, []);
+  }, [isClientReady]);
 
-  const joinAsPlanet = useCallback((color: string, userName?: string) => {
+  const joinAsPlanet = useCallback(({
+    color,
+    userId,
+    userName,
+  }: {
+    color: string;
+    userId: string;
+    userName?: string;
+  }) => {
     const channel = channelRef.current;
     if (!channel) return;
 
-    const attributes = derivePlanetAttributes(presenceKeyRef.current);
+    presenceKeyRef.current = userId;
+    const attributes = derivePlanetAttributes(userId);
     const payload: PlanetPresencePayload = {
-      userId: presenceKeyRef.current,
+      userId,
       color,
       userName,
       joinedAt: new Date().toISOString(),

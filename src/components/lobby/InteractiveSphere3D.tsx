@@ -32,6 +32,8 @@ const starFragmentShader = `
   uniform vec3 uBaseColor;
   uniform vec3 uHotColor;
   uniform float uIntensity;
+  uniform sampler2D uSymbolMap;
+  uniform float uSymbolStrength;
   
   varying vec3 vNormal;
   varying vec3 vPosition;
@@ -140,8 +142,11 @@ const starFragmentShader = `
     // Add intensity variation
     float brightness = 1.0 + turbulence * 0.5;
     
-    // Emissive output
-    gl_FragColor = vec4(finalColor * brightness * uIntensity, 1.0);
+    vec4 symbolSample = texture2D(uSymbolMap, vUv);
+    float symbolAlpha = symbolSample.a * uSymbolStrength;
+    vec3 symbolColor = symbolSample.rgb;
+    vec3 combinedColor = mix(finalColor, symbolColor, clamp(symbolAlpha, 0.0, 1.0));
+    gl_FragColor = vec4(combinedColor * brightness * uIntensity, 1.0);
   }
 `;
 
@@ -156,6 +161,8 @@ class StarMaterial extends THREE.ShaderMaterial {
         uBaseColor: { value: new THREE.Color('#ffd27a') }, // Warm yellow-orange base
         uHotColor: { value: new THREE.Color('#f7931a') },  // Bitcoin orange for hot regions
         uIntensity: { value: 1.8 },
+        uSymbolMap: { value: null },
+        uSymbolStrength: { value: 1.0 },
       },
     });
   }
@@ -187,18 +194,77 @@ export interface SatelliteUser {
   color?: string;
   // Actual display name used for profile lookup
   profileDisplayName?: string | null;
+  // User-configurable orbit speed multiplier (0.1 to 3.0, default 1.0)
+  orbitSpeedMultiplier?: number;
 }
 
 /**
  * Bitcoin Color Palette for Distant Galaxies
  */
 const BITCOIN_COLORS = {
-  orange: '#f7931a',   // (247,147,26) - Bitcoin orange
-  white: '#ffffff',    // (255,255,255) - Pure white
-  gray: '#4d4d4d',     // (77,77,77) - Gray
-  blue: '#0d579b',     // (13,87,155) - Bitcoin blue
-  green: '#329239',    // (50,146,57) - Bitcoin green
+  orange: '#f7931a',
+  white: '#ffffff',
+  gray: '#4d4d4d',
+  blue: '#0d579b',
+  green: '#329239',
 };
+
+interface OrbitSeed {
+  sizeFactor: number;
+  distanceFactor: number;
+  speed: number;
+  phase: number;
+  eccentricity: number;
+  verticalAmpFactor: number;
+  verticalFreq: number;
+  inclination: number;
+  orbitRotation: number;
+}
+
+function hashString(value: string) {
+  let hash = 1779033703 ^ value.length;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = Math.imul(hash ^ value.charCodeAt(i), 3432918353);
+    hash = (hash << 13) | (hash >>> 19);
+  }
+  hash = Math.imul(hash ^ (hash >>> 16), 2246822507);
+  hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
+  return (hash ^ (hash >>> 16)) >>> 0;
+}
+
+function createSeededRandom(seed: string) {
+  let state = hashString(seed) || 0x1a2b3c4d;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function createOrbitSeed(seedKey: string, orderHint: number): OrbitSeed {
+  const rng = createSeededRandom(`${seedKey}-${orderHint}`);
+  const sizeFactor = 0.06 + rng() * 0.08;
+  const distanceFactor = 1.8 + orderHint * 0.55 + rng() * 0.35;
+  const speed = (0.3 + rng() * 1.5) * 0.4;
+  const phase = rng() * Math.PI * 2;
+  const inclination = (rng() - 0.5) * 0.7;
+  const orbitRotation = rng() * Math.PI * 2;
+  const eccentricity = 0.85 + rng() * 0.3;
+  const verticalAmpFactor = (rng() - 0.5) * 0.25;
+  const verticalFreq = 0.5 + rng() * 1.2;
+  return {
+    sizeFactor,
+    distanceFactor,
+    speed,
+    phase,
+    eccentricity,
+    verticalAmpFactor,
+    verticalFreq,
+    inclination,
+    orbitRotation,
+  };
+}
 
 /**
  * Creates a galaxy texture with Bitcoin color palette
@@ -306,9 +372,30 @@ export default function InteractiveSphere3D({
   const [dragging, setDragging] = useState(false);
   const startXRef = useRef(0);
   const startRotRef = useRef(0);
-  const rotateSensitivity = 0.005; // radians per pixel
+  const rotateSensitivity = 0.003;
   // base Y for subtle bobbing motion
   const baseYRef = React.useRef<number>(initialPosition[1] ?? 0);
+  const starCenterRef = useRef(new THREE.Vector3(initialPosition[0] ?? 0, initialPosition[1] ?? 0, initialPosition[2] ?? 0));
+  const tempVecA = useRef(new THREE.Vector3());
+  const tempVecB = useRef(new THREE.Vector3());
+  const tempVecC = useRef(new THREE.Vector3());
+  const tempVecD = useRef(new THREE.Vector3());
+  const pointerWorldRef = useRef(new THREE.Vector3());
+  const pointerLightRef = useRef<THREE.PointLight | null>(null);
+  const pointerLightPositionRef = useRef(new THREE.Vector3());
+  const pointerLightActiveRef = useRef(false);
+  const pointerLightPulseRef = useRef(0);
+  const pointerSlowStatesRef = useRef<boolean[]>([]);
+  const pointerSlowCountRef = useRef(0);
+  const preFocusCameraPositionRef = useRef(new THREE.Vector3());
+  const preFocusCameraTargetRef = useRef(new THREE.Vector3());
+  const hasPreFocusRef = useRef(false);
+  const cameraApproachDirectionRef = useRef(new THREE.Vector3());
+  const cameraApproachDistanceRef = useRef(2.5);
+  const initialCameraPositionedRef = useRef(false);
+  const lastSelectedIdRef = useRef<string | null>(null);
+  const [userLabelVisibility, setUserLabelVisibility] = useState<Record<string, boolean>>({});
+  const userLabelVisibilityRef = useRef<Record<string, boolean>>({});
 
   // NOTE: Bitcoin planet texture and mesh removed as requested. The nebula, stars and satellites
   // remain. If you want to re-enable the planet later, re-add the texture generation and the
@@ -317,34 +404,26 @@ export default function InteractiveSphere3D({
   // Get camera and gl from useThree hook (only once)
   const { camera, gl } = useThree();
   
-  // Raycaster logic to toggle OrbitControls rotation only when clicking the sphere
+  // Allow rotating and zooming the scene from anywhere on the canvas
   useEffect(() => {
-    if (!gl || !camera) return;
-    const raycaster = new THREE.Raycaster();
+    if (!gl) return;
+
+    if (controlsRef?.current) {
+      controlsRef.current.enableRotate = true;
+      controlsRef.current.enableZoom = true;
+    }
 
     const activeTouchIds = new Set<number>();
+    const element = gl.domElement as HTMLElement;
 
     const handlePointerDown = (ev: PointerEvent) => {
-      try {
-        const rect = gl.domElement.getBoundingClientRect();
-        const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-        const y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(new THREE.Vector2(x, y), camera as THREE.Camera);
-        const hit = meshRef.current ? raycaster.intersectObject(meshRef.current, true) : [];
-        const hitSphere = hit && hit.length > 0;
-        if (controlsRef && controlsRef.current) {
-          controlsRef.current.enableRotate = !!hitSphere;
-          // also allow zooming the camera only when the sphere is clicked
-          controlsRef.current.enableZoom = !!hitSphere;
-        }
-        if (ev.pointerType === "touch") {
-          activeTouchIds.add(ev.pointerId);
-          if (controlsRef?.current) {
-            controlsRef.current.enableZoom = true;
-          }
-        }
-      } catch (err) {
-        // ignore
+      if (controlsRef?.current) {
+        controlsRef.current.enableRotate = true;
+        controlsRef.current.enableZoom = true;
+      }
+
+      if (ev.pointerType === "touch") {
+        activeTouchIds.add(ev.pointerId);
       }
     };
 
@@ -366,21 +445,24 @@ export default function InteractiveSphere3D({
       }
     };
 
-    // initialize controls as disabled until a sphere click occurs
-    if (controlsRef && controlsRef.current) {
-      controlsRef.current.enableRotate = false;
-      controlsRef.current.enableZoom = false;
-    }
-    const element = gl.domElement as HTMLElement;
     element.addEventListener("pointerdown", handlePointerDown, { passive: true });
     element.addEventListener("pointerup", handlePointerUp, { passive: true });
     element.addEventListener("pointercancel", handlePointerCancel, { passive: true });
+
     return () => {
       element.removeEventListener("pointerdown", handlePointerDown as any);
       element.removeEventListener("pointerup", handlePointerUp as any);
       element.removeEventListener("pointercancel", handlePointerCancel as any);
     };
-  }, [gl, camera, controlsRef]);
+  }, [gl, controlsRef]);
+
+  useEffect(() => {
+    starCenterRef.current.set(
+      initialPosition[0] ?? 0,
+      initialPosition[1] ?? 0,
+      initialPosition[2] ?? 0,
+    );
+  }, [initialPosition]);
 
   // Custom pinch-to-zoom handling for touch devices
   useEffect(() => {
@@ -521,18 +603,27 @@ export default function InteractiveSphere3D({
     canvas.height = size;
     const ctx = canvas.getContext('2d')!;
 
-    // Bright base for maximum glow
-    ctx.fillStyle = '#ffdd88';
-    ctx.fillRect(0, 0, size, size);
+    ctx.clearRect(0, 0, size, size);
 
-    // Draw bright Bitcoin symbol that will emit strongly
-    const fontSize = Math.floor(size * 0.45);
-    ctx.fillStyle = '#ffffff';
+    const center = size / 2;
+    const outerRadius = size * 0.48;
+    const haloGradient = ctx.createRadialGradient(center, center, size * 0.05, center, center, outerRadius);
+    haloGradient.addColorStop(0, 'rgba(255, 210, 120, 0.4)');
+    haloGradient.addColorStop(0.4, 'rgba(255, 210, 120, 0.22)');
+    haloGradient.addColorStop(1, 'rgba(255, 210, 120, 0.0)');
+    ctx.fillStyle = haloGradient;
+    ctx.beginPath();
+    ctx.arc(center, center, outerRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+  // Draw bright Bitcoin symbol that will emit strongly
+  const fontSize = Math.floor(size * 0.42);
+  ctx.fillStyle = 'rgba(255, 155, 33, 0.78)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `700 ${fontSize}px serif, Arial, sans-serif`;
-    ctx.lineWidth = Math.max(2, Math.floor(size * 0.004));
-    ctx.strokeStyle = '#ffffff';
+  ctx.font = `700 ${fontSize}px "Segoe UI", Arial, sans-serif`;
+  ctx.lineWidth = Math.max(2, Math.floor(size * 0.004));
+  ctx.strokeStyle = 'rgba(255, 196, 120, 0.85)';
     const yOffset = Math.floor(size * 0.02);
     ctx.strokeText('₿', size / 2, size / 2 + yOffset);
     ctx.fillText('₿', size / 2, size / 2 + yOffset);
@@ -544,6 +635,14 @@ export default function InteractiveSphere3D({
     try { tex.colorSpace = THREE.SRGBColorSpace; } catch {}
     return tex;
   }, []);
+
+  useEffect(() => {
+    if (starMaterialRef.current && btcSymbolTexture) {
+      starMaterialRef.current.uniforms.uSymbolMap.value = btcSymbolTexture;
+  starMaterialRef.current.uniforms.uSymbolStrength.value = 0.65;
+      btcSymbolTexture.needsUpdate = true;
+    }
+  }, [btcSymbolTexture]);
 
   // TwinklingStars logic moved to src/components/TwinklingStars.tsx
 
@@ -901,7 +1000,7 @@ export default function InteractiveSphere3D({
   // On mount, ensure the camera isn't too close to the planet. If it is, move it back
   // along the current camera direction so the scene loads with a comfortable framing.
   useEffect(() => {
-    if (!camera) return;
+    if (!camera || initialCameraPositionedRef.current) return;
     try {
       const planetPos = new THREE.Vector3(...(initialPosition as [number, number, number]));
       const curDist = camera.position.distanceTo(planetPos);
@@ -915,6 +1014,7 @@ export default function InteractiveSphere3D({
           controlsRef.current.update();
         }
       }
+      initialCameraPositionedRef.current = true;
     } catch (err) {
       // ignore
     }
@@ -932,6 +1032,9 @@ export default function InteractiveSphere3D({
   const satelliteSpeedMultipliers = useRef<number[]>([]);
   // Per-satellite angle accumulators to avoid discontinuities when changing speed
   const satelliteAngles = useRef<number[]>([]);
+  const pointerActiveRef = useRef(false);
+  const orbitSeedCache = useRef<Map<string, OrbitSeed>>(new Map());
+  const fallbackOrbitSeedsRef = useRef<OrbitSeed[]>([]);
   
     useEffect(() => {
       return () => {
@@ -946,65 +1049,229 @@ export default function InteractiveSphere3D({
   const satellites = useMemo(() => {
     const palette = SATELLITE_COLOR_PALETTES[satelliteColor] ?? SATELLITE_COLOR_PALETTES[DEFAULT_SATELLITE_COLOR];
     if (satelliteUsers && satelliteUsers.length > 0) {
-      // Use provided satellite users
-      return satelliteUsers.map((user, idx) => {
-        const size = radius * (0.06 + Math.random() * 0.08);
-        const distance = radius * (1.8 + idx * 0.6 + Math.random() * 0.4);
-        const speed = (0.3 + Math.random() * 1.5) * 0.4;
-        const phase = Math.random() * Math.PI * 2;
-        const inclination = (Math.random() - 0.5) * 0.7;
-        const orbitRotation = Math.random() * Math.PI * 2;
-        const eccentricity = 0.85 + Math.random() * 0.3;
-        const verticalAmp = (Math.random() - 0.5) * radius * 0.25;
-        const verticalFreq = 0.5 + Math.random() * 1.2;
-        const orbitEuler = new THREE.Euler(inclination, orbitRotation, 0, "XYZ");
-        // Use custom color if provided, otherwise use palette color
-        const color = user.color || palette[idx % palette.length];
+      const activeIds = new Set<string>();
+      const result = satelliteUsers.map((user, idx) => {
+        const seedKey = user.id || `anon-${idx}`;
+        activeIds.add(seedKey);
+
+        let seed = orbitSeedCache.current.get(seedKey);
+        if (!seed) {
+          seed = createOrbitSeed(seedKey, idx);
+          orbitSeedCache.current.set(seedKey, seed);
+        }
+
+        const orbitEuler = new THREE.Euler(seed.inclination, seed.orbitRotation, 0, "XYZ");
 
         return {
-          size,
-          distance,
-          speed,
-          phase,
-          eccentricity,
-          verticalAmp,
-          verticalFreq,
+          size: radius * seed.sizeFactor,
+          distance: radius * seed.distanceFactor,
+          speed: seed.speed,
+          phase: seed.phase,
+          eccentricity: seed.eccentricity,
+          verticalAmp: radius * seed.verticalAmpFactor,
+          verticalFreq: seed.verticalFreq,
           orbitEuler,
-          color,
-          user, // Attach user data
+          color: user.color || palette[idx % palette.length],
+          user,
         };
       });
+
+      orbitSeedCache.current.forEach((_, key) => {
+        if (!activeIds.has(key)) {
+          orbitSeedCache.current.delete(key);
+        }
+      });
+
+      return result;
     } else {
-      // Generate random satellites as before
-      const count = 3 + Math.floor(Math.random() * 2);
-      return Array.from({ length: count }).map((_, idx) => {
-        const size = radius * (0.06 + Math.random() * 0.08);
-        const distance = radius * (1.8 + idx * 0.6 + Math.random() * 0.4);
-        const speed = (0.3 + Math.random() * 1.5) * 0.4;
-        const phase = Math.random() * Math.PI * 2;
-        const inclination = (Math.random() - 0.5) * 0.7;
-        const orbitRotation = Math.random() * Math.PI * 2;
-        const eccentricity = 0.85 + Math.random() * 0.3;
-        const verticalAmp = (Math.random() - 0.5) * radius * 0.25;
-        const verticalFreq = 0.5 + Math.random() * 1.2;
-        const orbitEuler = new THREE.Euler(inclination, orbitRotation, 0, "XYZ");
-        const color = palette[idx % palette.length];
+      if (fallbackOrbitSeedsRef.current.length === 0) {
+        const fallbackCount = 4;
+        fallbackOrbitSeedsRef.current = Array.from({ length: fallbackCount }).map((_, idx) =>
+          createOrbitSeed(`fallback-${idx}`, idx),
+        );
+      }
 
-        return {
-          size,
-          distance,
-          speed,
-          phase,
-          eccentricity,
-          verticalAmp,
-          verticalFreq,
-          orbitEuler,
-          color,
-          user: undefined,
-        };
-      });
+      return fallbackOrbitSeedsRef.current.map((seed, idx) => ({
+        size: radius * seed.sizeFactor,
+        distance: radius * seed.distanceFactor,
+        speed: seed.speed,
+        phase: seed.phase,
+        eccentricity: seed.eccentricity,
+        verticalAmp: radius * seed.verticalAmpFactor,
+        verticalFreq: seed.verticalFreq,
+        orbitEuler: new THREE.Euler(seed.inclination, seed.orbitRotation, 0, "XYZ"),
+        color: palette[idx % palette.length],
+        user: undefined,
+      }));
     }
   }, [radius, satelliteUsers, satelliteColor]);
+
+  useEffect(() => {
+    pointerSlowStatesRef.current = satellites.map(() => false);
+    pointerSlowCountRef.current = 0;
+    const nextKeys = new Set<string>();
+    satellites.forEach((sat, idx) => {
+      const displayName = sat.user?.displayName?.toLowerCase() ?? "";
+      const fallbackMatch = displayName.includes("your planet") || displayName.includes("tu planeta");
+      const isUserPlanet = currentUserId ? sat.user?.id === currentUserId : fallbackMatch;
+      if (isUserPlanet) {
+        const key = sat.user?.id ?? `__user-${idx}`;
+        nextKeys.add(key);
+        if (userLabelVisibilityRef.current[key] === undefined) {
+          userLabelVisibilityRef.current[key] = true;
+        }
+      }
+    });
+    setUserLabelVisibility((prev) => {
+      const updated: Record<string, boolean> = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        if (!nextKeys.has(key)) {
+          delete updated[key];
+          delete userLabelVisibilityRef.current[key];
+        }
+      });
+      nextKeys.forEach((key) => {
+        if (updated[key] === undefined) {
+          updated[key] = true;
+        }
+      });
+      return updated;
+    });
+  }, [satellites, currentUserId]);
+
+  useEffect(() => {
+    if (!gl || !camera) return;
+
+    const element = gl.domElement as HTMLElement;
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+  const hoverSphere = new THREE.Sphere(starCenterRef.current.clone(), Math.max(radius * 4.5, desiredPlanetDistance * 0.75));
+  const interactionPlane = new THREE.Plane();
+  const intersectionPoint = new THREE.Vector3();
+  const satWorld = new THREE.Vector3();
+  const planeNormal = new THREE.Vector3();
+
+    const updateHoverSphere = () => {
+      hoverSphere.center.copy(starCenterRef.current);
+  hoverSphere.radius = Math.max(radius * 4.5, desiredPlanetDistance * 0.75);
+    };
+
+    const updatePointerSlowStates = (point: THREE.Vector3 | null) => {
+      pointerSlowCountRef.current = 0;
+      for (let i = 0; i < satellites.length; i += 1) {
+        let inRange = false;
+        const satGroup = satRefs.current[i];
+        if (point && satGroup) {
+          satGroup.getWorldPosition(satWorld);
+          const slowRadius = Math.max(radius * 1.2, satellites[i]?.size ? satellites[i].size * 14 : radius * 1.2);
+          if (satWorld.distanceTo(point) <= slowRadius) {
+            inRange = true;
+            pointerSlowCountRef.current += 1;
+          }
+        }
+        pointerSlowStatesRef.current[i] = inRange;
+      }
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      updateHoverSphere();
+      const rect = element.getBoundingClientRect();
+      const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      ndc.set(x, y);
+      raycaster.setFromCamera(ndc, camera as THREE.Camera);
+
+      let point: THREE.Vector3 | null = null;
+      if (raycaster.ray.intersectSphere(hoverSphere, intersectionPoint)) {
+        point = intersectionPoint;
+      } else {
+        planeNormal.copy(starCenterRef.current).sub(camera.position).normalize();
+        if (planeNormal.lengthSq() > 0) {
+          interactionPlane.setFromNormalAndCoplanarPoint(planeNormal, starCenterRef.current);
+          if (raycaster.ray.intersectPlane(interactionPlane, intersectionPoint)) {
+            point = intersectionPoint;
+          }
+        }
+      }
+
+      if (point) {
+        pointerWorldRef.current.copy(point);
+        pointerLightPositionRef.current.copy(point);
+        pointerLightActiveRef.current = true;
+      } else {
+        pointerLightActiveRef.current = false;
+      }
+      updatePointerSlowStates(point ? pointerWorldRef.current : null);
+    };
+
+    const handlePointerLeave = () => {
+      pointerLightActiveRef.current = false;
+      updatePointerSlowStates(null);
+    };
+
+    element.addEventListener("pointermove", handlePointerMove, { passive: true });
+    element.addEventListener("pointerleave", handlePointerLeave, { passive: true });
+
+    return () => {
+      element.removeEventListener("pointermove", handlePointerMove as any);
+      element.removeEventListener("pointerleave", handlePointerLeave as any);
+    };
+  }, [gl, camera, radius, desiredPlanetDistance, satellites]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const baseUrl = "https://iqokybiidqksdrbqeitp.supabase.co/functions/v1/get-hello-table";
+
+    const callEdgeFunction = async (queryParams?: Record<string, string>) => {
+      const url = new URL(baseUrl);
+      if (queryParams) {
+        Object.entries(queryParams).forEach(([key, value]) => {
+          if (typeof value === "string") {
+            url.searchParams.set(key, value);
+          }
+        });
+      }
+
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (supabaseAnonKey) {
+        headers.apikey = supabaseAnonKey;
+        headers.Authorization = `Bearer ${supabaseAnonKey}`;
+      }
+
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers,
+      });
+
+      const raw = await response.text();
+      let payload: unknown = raw;
+      try {
+        payload = raw ? JSON.parse(raw) : raw;
+      } catch {
+        payload = raw;
+      }
+
+      if (!response.ok) {
+        const error: Error & { payload?: unknown } = new Error(
+          `Edge function responded with ${response.status}`
+        );
+        error.payload = payload;
+        console.error("[EdgeFunction] get-hello-table request failed", error);
+        throw error;
+      }
+
+      console.info("[EdgeFunction] get-hello-table response", payload);
+      return payload;
+    };
+
+    (window as any).callHelloEdgeFunction = callEdgeFunction;
+
+    return () => {
+      delete (window as any).callHelloEdgeFunction;
+    };
+  }, []);
 
   // Camera animation state for tracking selected satellite
   const cameraAnimationProgress = useRef(0);
@@ -1021,20 +1288,61 @@ export default function InteractiveSphere3D({
   useEffect(() => {
     if (!camera || !controlsRef?.current) return;
 
-    // Reset animation
+    if (selectedSatelliteId === lastSelectedIdRef.current && selectedSatelliteId) {
+      const index = satellites.findIndex((sat) => sat.user?.id === selectedSatelliteId);
+      selectedSatelliteIndex.current = index;
+      return;
+    }
+
+    if (!selectedSatelliteId) {
+      if (lastSelectedIdRef.current) {
+        lastSelectedIdRef.current = null;
+        isAnimatingCamera.current = true;
+        cameraAnimationProgress.current = 0;
+        cameraStartPosition.current.copy(camera.position);
+        cameraStartTarget.current.copy(controlsRef.current.target);
+        selectedSatelliteIndex.current = -1;
+        cameraOffsetRef.current.set(0, 0, 0);
+        return;
+      }
+      selectedSatelliteIndex.current = -1;
+      cameraOffsetRef.current.set(0, 0, 0);
+      return;
+    }
+
+    lastSelectedIdRef.current = selectedSatelliteId;
     isAnimatingCamera.current = true;
     cameraAnimationProgress.current = 0;
     cameraStartPosition.current.copy(camera.position);
     cameraStartTarget.current.copy(controlsRef.current.target);
 
-    if (selectedSatelliteId) {
-      // Find the selected satellite index
-      const index = satellites.findIndex(sat => sat.user?.id === selectedSatelliteId);
-      selectedSatelliteIndex.current = index;
-    } else {
-      selectedSatelliteIndex.current = -1;
-      // clear any stored camera offset when returning to planet focus
-      cameraOffsetRef.current.set(0, 0, 0);
+    const index = satellites.findIndex((sat) => sat.user?.id === selectedSatelliteId);
+    selectedSatelliteIndex.current = index;
+
+    if (index >= 0) {
+      const satGroup = satRefs.current[index];
+      const satData = satellites[index];
+
+      hasPreFocusRef.current = true;
+      preFocusCameraPositionRef.current.copy(camera.position);
+      preFocusCameraTargetRef.current.copy(controlsRef.current.target);
+
+      if (satGroup) {
+        satGroup.getWorldPosition(tempVecA.current);
+        cameraApproachDirectionRef.current.copy(camera.position).sub(tempVecA.current).normalize();
+      } else {
+        cameraApproachDirectionRef.current.copy(camera.position).sub(starCenterRef.current).normalize();
+      }
+
+      if (cameraApproachDirectionRef.current.lengthSq() < 1e-6) {
+        cameraApproachDirectionRef.current.set(1.5, 0.8, 2.0).normalize();
+      }
+
+      const approachDistance = THREE.MathUtils.clamp(satData.size * 22, 2.5, 4.5);
+      cameraApproachDistanceRef.current = approachDistance;
+      cameraOffsetRef.current
+        .copy(cameraApproachDirectionRef.current)
+        .multiplyScalar(cameraApproachDistanceRef.current);
     }
   }, [selectedSatelliteId, camera, controlsRef, satellites]);
 
@@ -1052,84 +1360,97 @@ export default function InteractiveSphere3D({
     }
     
     // regular orbit time for scene-level effects (glow, camera subtle motion)
-    orbitTime.current += delta;
+  orbitTime.current += delta;
+  pointerLightPulseRef.current += delta;
 
     // planet glow removed
 
+    if (pointerLightRef.current) {
+      const pulse = 1 + Math.sin(pointerLightPulseRef.current * 6) * 0.25;
+      const targetIntensity = pointerLightActiveRef.current ? 1.1 * pulse : 0;
+      pointerLightRef.current.intensity = THREE.MathUtils.lerp(
+        pointerLightRef.current.intensity,
+        targetIntensity,
+        0.18,
+      );
+      pointerLightRef.current.position.lerp(pointerLightPositionRef.current, 0.24);
+      const targetDistance = pointerLightActiveRef.current ? radius * 12 : radius * 4;
+      pointerLightRef.current.distance = THREE.MathUtils.lerp(pointerLightRef.current.distance, targetDistance, 0.18);
+    }
+
+    // Subtle autonomous star rotation so the surface appears alive when idle
+    if (meshRef.current && !pointerActiveRef.current) {
+      meshRef.current.rotation.y += delta * 0.25;
+      const tiltTarget = Math.sin(state.clock.elapsedTime * 0.12) * 0.12;
+      meshRef.current.rotation.x = THREE.MathUtils.lerp(
+        meshRef.current.rotation.x,
+        tiltTarget,
+        0.04,
+      );
+    }
+
+    // Keep the Bitcoin symbol gently facing the viewer on the star surface
+
     // Handle camera animation and tracking for selected satellite
     if (selectedSatelliteIndex.current >= 0 && controlsRef?.current) {
-      const satRef = satRefs.current[selectedSatelliteIndex.current];
-      
-      if (satRef) {
-        const satPosition = satRef.position.clone();
-        
+      const satGroup = satRefs.current[selectedSatelliteIndex.current];
+
+      if (satGroup) {
+        const satWorldPos = tempVecD.current;
+        satGroup.getWorldPosition(satWorldPos);
+
         if (isAnimatingCamera.current) {
-          // During animation: perform an ease-out interpolation of camera position
           const duration = 1.2;
           cameraAnimationProgress.current += delta / duration;
-
-          const finished = cameraAnimationProgress.current >= 1;
-          if (finished) cameraAnimationProgress.current = 1;
-
-          // Ease-out cubic
-          const t = 1 - Math.pow(1 - cameraAnimationProgress.current, 3);
-
-          // Calculate target camera position (a point offset from the satellite)
-          const distanceFromSat = 2.5;
-          const currentCamDir = new THREE.Vector3().subVectors(camera.position, satPosition).normalize();
-
-          if (currentCamDir.length() < 0.1) {
-            currentCamDir.set(1.5, 0.8, 2.0).normalize();
+          if (cameraAnimationProgress.current >= 1) {
+            cameraAnimationProgress.current = 1;
           }
 
-          const targetCamPos = satPosition.clone().add(currentCamDir.multiplyScalar(distanceFromSat));
+          const t = 1 - Math.pow(1 - cameraAnimationProgress.current, 3);
+          const targetCamPos = tempVecB.current
+            .copy(satWorldPos)
+            .add(tempVecC.current.copy(cameraOffsetRef.current));
 
-          // Interpolate camera position and target
           camera.position.lerpVectors(cameraStartPosition.current, targetCamPos, t);
-          controlsRef.current.target.lerpVectors(cameraStartTarget.current, satPosition, t);
+          controlsRef.current.target.lerpVectors(cameraStartTarget.current, satWorldPos, t);
           controlsRef.current.update();
 
-          // If animation just finished, record the camera offset relative to the satellite
-          if (finished) {
+          if (cameraAnimationProgress.current >= 1) {
             isAnimatingCamera.current = false;
-            // store offset so subsequent frames keep the camera at the same relative position
-            cameraOffsetRef.current.copy(camera.position).sub(satPosition);
+            cameraOffsetRef.current.copy(targetCamPos).sub(satWorldPos);
           }
         } else {
-          // After animation: keep camera locked at satPosition + offset so the satellite
-          // remains at a constant offset from the camera while it orbits.
-          const desiredCamPos = satPosition.clone().add(cameraOffsetRef.current);
-          // Smoothly follow to avoid jitter when satellite moves fast
+          const desiredCamPos = tempVecB.current
+            .copy(satWorldPos)
+            .add(tempVecC.current.copy(cameraOffsetRef.current));
           camera.position.lerp(desiredCamPos, 0.18);
-          // Keep the controls target locked on the satellite (smooth as well)
-          controlsRef.current.target.lerp(satPosition, 0.18);
+          controlsRef.current.target.lerp(satWorldPos, 0.18);
           controlsRef.current.update();
         }
       }
-    } else if (selectedSatelliteIndex.current === -1 && controlsRef?.current) {
-      // Return to planet focus
-        const planetPosition = new THREE.Vector3(...(initialPosition as [number, number, number]));
-        // Use desiredPlanetDistance so the return-to-planet framing matches the initial load distance
-        const defaultCameraPosition = planetPosition.clone().add(new THREE.Vector3(0, 0, desiredPlanetDistance));
-      
-      if (isAnimatingCamera.current) {
-        const duration = 1.2;
-        cameraAnimationProgress.current += delta / duration;
-        
-        if (cameraAnimationProgress.current >= 1) {
-          cameraAnimationProgress.current = 1;
-          isAnimatingCamera.current = false;
+    } else if (selectedSatelliteIndex.current === -1 && controlsRef?.current && isAnimatingCamera.current) {
+      const duration = 1.2;
+      cameraAnimationProgress.current += delta / duration;
+      if (cameraAnimationProgress.current >= 1) {
+        cameraAnimationProgress.current = 1;
+      }
+
+      const t = 1 - Math.pow(1 - cameraAnimationProgress.current, 3);
+      const fallbackPosition = tempVecB.current
+        .copy(starCenterRef.current)
+        .add(tempVecC.current.set(0, 0, desiredPlanetDistance));
+      const targetPosition = hasPreFocusRef.current ? preFocusCameraPositionRef.current : fallbackPosition;
+      const targetLook = hasPreFocusRef.current ? preFocusCameraTargetRef.current : starCenterRef.current;
+
+      camera.position.lerpVectors(cameraStartPosition.current, targetPosition, t);
+      controlsRef.current.target.lerpVectors(cameraStartTarget.current, targetLook, t);
+      controlsRef.current.update();
+
+      if (cameraAnimationProgress.current >= 1) {
+        isAnimatingCamera.current = false;
+        if (hasPreFocusRef.current) {
+          hasPreFocusRef.current = false;
         }
-        
-        const t = 1 - Math.pow(1 - cameraAnimationProgress.current, 3);
-        
-        camera.position.lerpVectors(cameraStartPosition.current, defaultCameraPosition, t);
-        controlsRef.current.target.lerpVectors(cameraStartTarget.current, planetPosition, t);
-        controlsRef.current.update();
-      } else {
-        // Keep focused on planet
-        controlsRef.current.target.copy(planetPosition);
-        controlsRef.current.update();
       }
     }
 
@@ -1155,6 +1476,9 @@ export default function InteractiveSphere3D({
       satelliteAngles.current = satellites.map((s) => s.phase || 0);
     }
 
+    const pointerSlowFlags = pointerSlowStatesRef.current;
+    const pointerSlowCount = pointerSlowCountRef.current;
+
     // Update each satellite's angle incrementally to avoid discontinuities
     satellites.forEach((sat, i) => {
       const ref = satRefs.current[i];
@@ -1163,15 +1487,26 @@ export default function InteractiveSphere3D({
       // Smooth speed transition for the hovered satellite only
       const hoverSpeedReduction = 0.25; // Reduce to 25% speed when hovering this satellite
       const isHovered = sat.user?.id === hoveredSatId;
-      const targetSpeed = isHovered ? hoverSpeedReduction : 1.0;
+      const isPointerClose = pointerSlowFlags[i] ?? false;
+      let targetSpeed = 1.0;
+      if (isPointerClose) {
+        const pointerSlowFactor = pointerSlowCount > 1 ? 0.35 : 0.6;
+        targetSpeed = Math.min(targetSpeed, pointerSlowFactor);
+      }
+      if (isHovered) {
+        targetSpeed = Math.min(targetSpeed, hoverSpeedReduction);
+      }
       satelliteSpeedMultipliers.current[i] = THREE.MathUtils.lerp(
         satelliteSpeedMultipliers.current[i],
         targetSpeed,
         0.12 // Smooth transition
       );
 
-      // Increment the stored angle by delta * speed * multiplier
-      satelliteAngles.current[i] += delta * sat.speed * satelliteSpeedMultipliers.current[i];
+      // Apply user's custom orbit speed multiplier (from profile settings)
+      const userSpeedMultiplier = sat.user?.orbitSpeedMultiplier ?? 1.0;
+
+      // Increment the stored angle by delta * speed * multiplier * userSpeedMultiplier
+      satelliteAngles.current[i] += delta * sat.speed * satelliteSpeedMultipliers.current[i] * userSpeedMultiplier;
       const t = satelliteAngles.current[i];
 
       // parametric circular orbit then transform into the satellite's orbital plane
@@ -1184,6 +1519,46 @@ export default function InteractiveSphere3D({
 
       ref.position.copy(pos);
       ref.lookAt(meshRef.current?.position || new THREE.Vector3(0, 0, 0));
+
+      const displayName = sat.user?.displayName?.toLowerCase() ?? "";
+      const fallbackMatch = displayName.includes("your planet") || displayName.includes("tu planeta");
+      const isUserPlanet = currentUserId ? sat.user?.id === currentUserId : fallbackMatch;
+      const userKey = sat.user?.id ?? `__user-${i}`;
+      if (isUserPlanet) {
+        const satWorldPos = tempVecD.current;
+        ref.getWorldPosition(satWorldPos);
+
+        const camPos = camera.position;
+        const camToSat = tempVecA.current.copy(satWorldPos).sub(camPos);
+        const camToSatLength = camToSat.length();
+        let visible = true;
+
+        if (camToSatLength > 1e-3) {
+          const camToSatDir = tempVecB.current.copy(camToSat).divideScalar(camToSatLength);
+          const camToStar = tempVecC.current.copy(starCenterRef.current).sub(camPos);
+          const projectionLength = camToStar.dot(camToSatDir);
+
+          if (projectionLength > 0 && projectionLength < camToSatLength) {
+            const closestPoint = tempVecB.current
+              .copy(camPos)
+              .addScaledVector(camToSatDir, projectionLength);
+            const distanceToStar = closestPoint.distanceTo(starCenterRef.current);
+            const occlusionRadius = radius * 1.04;
+            if (distanceToStar < occlusionRadius) {
+              visible = false;
+            }
+          }
+        }
+
+        const prev = userLabelVisibilityRef.current[userKey];
+        if (prev === undefined || prev !== visible) {
+          userLabelVisibilityRef.current[userKey] = visible;
+          setUserLabelVisibility((state) => {
+            const next = { ...state, [userKey]: visible };
+            return next;
+          });
+        }
+      }
     });
     
     // Animate user planet indicator rings
@@ -1194,9 +1569,6 @@ export default function InteractiveSphere3D({
       }
     });
   });
-
-  // Only start rotating if the initial pointerdown is on the sphere mesh itself.
-  const pointerActiveRef = useRef(false);
 
   const onPointerDown = (e: any) => {
     // Ensure the event is targeting our mesh (robust against bubbling)
@@ -1248,6 +1620,13 @@ export default function InteractiveSphere3D({
 
       {/* Very low ambient light - creates strong contrast between lit and dark sides */}
       <ambientLight intensity={0.05} color="#0a0a1a" />
+      <pointLight
+        ref={pointerLightRef}
+        color="#ffddaa"
+        intensity={0}
+        distance={radius * 4}
+        decay={1.6}
+      />
       
       {/* Remove external key/fill lights - the Bitcoin star is the primary light source */}
       
@@ -1306,6 +1685,8 @@ export default function InteractiveSphere3D({
         const isUserPlanet = currentUserId
           ? sat.user?.id === currentUserId
           : fallbackMatch;
+        const userKey = sat.user?.id ?? `__user-${i}`;
+        const labelVisible = userLabelVisibility[userKey] ?? true;
         return (
         <React.Fragment key={`sat-${i}`}>
           {/* Visible orbit line */}
@@ -1390,6 +1771,11 @@ export default function InteractiveSphere3D({
               }
             }}
           >
+            {/* Invisible collider to enlarge interaction area */}
+            <mesh scale={[1.8, 1.8, 1.8]}>
+              <sphereGeometry args={[sat.size, 32, 32]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} depthTest={false} />
+            </mesh>
             {/* Satellite sphere with realistic lighting - illuminated and dark sides */}
             <mesh castShadow receiveShadow>
               <sphereGeometry args={[sat.size, 64, 64]} />
@@ -1422,8 +1808,16 @@ export default function InteractiveSphere3D({
                 <Html
                   position={[0, sat.size * 1.8, 0]}
                   center
+                  sprite
                   distanceFactor={10}
-                  style={{ pointerEvents: "none" }}
+                  zIndexRange={[5, 5]}
+                  style={{
+                    pointerEvents: "none",
+                    visibility: labelVisible ? "visible" : "hidden",
+                    opacity: labelVisible ? 1 : 0,
+                    transition: "opacity 0.18s ease",
+                    zIndex: 5,
+                  }}
                 >
                   <div className="flex flex-col items-center gap-1">
                     <span className="rounded-full bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-slate-900 shadow-lg">

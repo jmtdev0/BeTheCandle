@@ -23,9 +23,23 @@ interface SidebarProps {
   lobbyUserCount?: number;
   isLobbyConnected?: boolean;
   onProfileClick?: () => void;
+  onActivateClick?: () => void;
+  hasSatellite?: boolean;
+  isActivatingSatellite?: boolean;
+  canActivateSatellite?: boolean;
+  activationError?: string | null;
 }
 
-export default function Sidebar({ lobbyUserCount, isLobbyConnected, onProfileClick }: SidebarProps) {
+export default function Sidebar({
+  lobbyUserCount,
+  isLobbyConnected,
+  onProfileClick,
+  onActivateClick,
+  hasSatellite,
+  isActivatingSatellite,
+  canActivateSatellite,
+  activationError,
+}: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -102,23 +116,43 @@ export default function Sidebar({ lobbyUserCount, isLobbyConnected, onProfileCli
               })}
             </nav>
 
-            {/* Profile Button */}
+            {/* Satellite CTA / Profile Button */}
             <div className="mt-auto pt-4 border-t border-slate-700">
-              <button
-                onClick={onProfileClick}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all hover:bg-slate-700/50 text-slate-300 hover:text-orange-200 group"
-              >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-yellow-400 flex items-center justify-center text-slate-900">
-                  <User size={18} />
-                </div>
-                <div className="flex-1 text-left">
-                  <span className="text-sm font-medium block">My Profile</span>
-                  <span className="text-xs text-slate-500 group-hover:text-slate-400">
-                    Edit settings
-                  </span>
-                </div>
-              </button>
-              
+              {hasSatellite ? (
+                <button
+                  onClick={onProfileClick}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all hover:bg-slate-700/50 text-slate-300 hover:text-orange-200 group"
+                >
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-yellow-400 flex items-center justify-center text-slate-900">
+                    <User size={18} />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <span className="text-sm font-medium block">My Profile</span>
+                    <span className="text-xs text-slate-500 group-hover:text-slate-400">
+                      Edit settings
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={onActivateClick}
+                    disabled={isActivatingSatellite || !canActivateSatellite}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all bg-gradient-to-r from-orange-500 to-amber-400 text-slate-900 font-semibold shadow-lg hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 disabled:shadow-none"
+                  >
+                    {isActivatingSatellite ? "Preparing your orbit..." : "Create your satellite"}
+                  </button>
+                  <p className="text-xs text-slate-500 text-center mt-3">
+                    Explora libremente y únete cuando quieras
+                  </p>
+                  {activationError && (
+                    <p className="text-xs text-red-300 text-center mt-2">
+                      {activationError}
+                    </p>
+                  )}
+                </>
+              )}
+
               <p className="text-xs text-slate-500 text-center mt-3">
                 Move mouse away to hide
               </p>
