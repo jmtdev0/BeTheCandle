@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
+import { persistUserId } from "@/lib/userId";
 
 interface AuthContextValue {
   session: Session | null;
@@ -22,6 +23,7 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   continueWithoutAuth: () => void;
   requireAuthForSatellite: () => Promise<boolean>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -96,6 +98,8 @@ export function SupabaseAuthProvider({ children }: AuthProviderProps) {
       if (!currentSession) {
         setPromptReason("initial");
         setIsPromptOpen(true);
+      } else if (currentSession.user?.id) {
+        persistUserId(currentSession.user.id);
       }
     });
 
@@ -106,6 +110,9 @@ export function SupabaseAuthProvider({ children }: AuthProviderProps) {
       if (authSession) {
         setIsPromptOpen(false);
         sessionStorage.removeItem("postAuthAction");
+        if (authSession.user?.id) {
+          persistUserId(authSession.user.id);
+        }
       }
     });
 
@@ -135,6 +142,18 @@ export function SupabaseAuthProvider({ children }: AuthProviderProps) {
   const continueWithoutAuth = useCallback(() => {
     setIsPromptOpen(false);
   }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Failed to sign out", error);
+    } finally {
+      setSession(null);
+      setUser(null);
+      setStatus("unauthenticated");
+    }
+  }, [supabase]);
 
   const openAuthPrompt = useCallback((reason: AuthPromptReason = "action") => {
     setPromptReason(reason);
@@ -169,7 +188,8 @@ export function SupabaseAuthProvider({ children }: AuthProviderProps) {
     signInWithGoogle,
     continueWithoutAuth,
     requireAuthForSatellite,
-  }), [session, user, status, isPromptOpen, openAuthPrompt, closeAuthPrompt, signInWithGoogle, continueWithoutAuth, requireAuthForSatellite]);
+    signOut,
+  }), [session, user, status, isPromptOpen, openAuthPrompt, closeAuthPrompt, signInWithGoogle, continueWithoutAuth, requireAuthForSatellite, signOut]);
 
   return (
     <AuthContext.Provider value={value}>

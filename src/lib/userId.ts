@@ -44,3 +44,11 @@ export function readUserIdCookie(): string | undefined {
   const existing = readCookie(USER_ID_COOKIE);
   return existing && UUID_REGEX.test(existing) ? existing : undefined;
 }
+
+export function persistUserId(userId: string) {
+  if (typeof document === "undefined") return;
+  if (!UUID_REGEX.test(userId)) return;
+  const existing = readCookie(USER_ID_COOKIE);
+  if (existing === userId) return;
+  writeCookie(USER_ID_COOKIE, userId);
+}

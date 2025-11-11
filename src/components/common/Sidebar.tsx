@@ -24,6 +24,7 @@ interface SidebarProps {
   isLobbyConnected?: boolean;
   onProfileClick?: () => void;
   onActivateClick?: () => void;
+  onSignOutClick?: () => void;
   hasSatellite?: boolean;
   isActivatingSatellite?: boolean;
   canActivateSatellite?: boolean;
@@ -35,6 +36,7 @@ export default function Sidebar({
   isLobbyConnected,
   onProfileClick,
   onActivateClick,
+  onSignOutClick,
   hasSatellite,
   isActivatingSatellite,
   canActivateSatellite,
@@ -119,20 +121,28 @@ export default function Sidebar({
             {/* Satellite CTA / Profile Button */}
             <div className="mt-auto pt-4 border-t border-slate-700">
               {hasSatellite ? (
-                <button
-                  onClick={onProfileClick}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all hover:bg-slate-700/50 text-slate-300 hover:text-orange-200 group"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-yellow-400 flex items-center justify-center text-slate-900">
-                    <User size={18} />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <span className="text-sm font-medium block">My Profile</span>
-                    <span className="text-xs text-slate-500 group-hover:text-slate-400">
-                      Edit settings
-                    </span>
-                  </div>
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={onProfileClick}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all hover:bg-slate-700/50 text-slate-300 hover:text-orange-200 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-yellow-400 flex items-center justify-center text-slate-900">
+                      <User size={18} />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <span className="text-sm font-medium block">My Profile</span>
+                      <span className="text-xs text-slate-500 group-hover:text-slate-400">
+                        Edit settings
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={onSignOutClick}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                  >
+                    Log out
+                  </button>
+                </div>
               ) : (
                 <>
                   <button

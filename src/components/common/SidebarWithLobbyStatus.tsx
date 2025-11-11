@@ -7,7 +7,7 @@ import Sidebar from "./Sidebar";
 import UserProfileModal from "./UserProfileModal";
 import { useUserProfile, type UserProfile as UserProfileData } from "@/hooks/useUserProfile";
 import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
-import { getOrCreateUserId } from "@/lib/userId";
+import { getOrCreateUserId, persistUserId } from "@/lib/userId";
 import { useSupabaseAuth } from "@/components/common/AuthProvider";
 
 export default function SidebarWithLobbyStatus() {
@@ -22,7 +22,7 @@ export default function SidebarWithLobbyStatus() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isActivating, setIsActivating] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<{ userId: string; userName?: string } | null>(null);
-  const { session, requireAuthForSatellite, openAuthPrompt } = useSupabaseAuth();
+  const { session, requireAuthForSatellite, openAuthPrompt, signOut, closeAuthPrompt } = useSupabaseAuth();
   
   // Get current user's display name from socket
   const currentUser = planets.find(p => p.userId === myPlanetId);
@@ -69,12 +69,18 @@ export default function SidebarWithLobbyStatus() {
   const { color: satelliteColor, setColor: setSatelliteColor } = useSatelliteColorPreference();
 
   useEffect(() => {
+    if (session?.user?.id) {
+      setUserId(session.user.id);
+      persistUserId(session.user.id);
+      return;
+    }
+
     try {
       setUserId(getOrCreateUserId());
     } catch (err) {
       console.error("Failed to read user id", err);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (!pendingJoin || !isConnected) return;
@@ -98,8 +104,9 @@ export default function SidebarWithLobbyStatus() {
         sessionStorage.removeItem("postAuthAction");
         setIsProfileModalOpen(true);
       }
+      closeAuthPrompt();
     }
-  }, [session]);
+  }, [session, closeAuthPrompt]);
 
   const handleActivateSatellite = async () => {
     if (!userId || isActivating) return;
@@ -150,6 +157,11 @@ export default function SidebarWithLobbyStatus() {
             return;
           }
           setIsProfileModalOpen(true);
+        }}
+        onSignOutClick={() => {
+          signOut().catch(() => {
+            // Error already logged; keep UI responsive
+          });
         }}
         onActivateClick={handleActivateSatellite}
         hasSatellite={Boolean(session)}

@@ -19,6 +19,7 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras II
 
+* Logout
 * Responsive total. Adaptación a móvil
 * Ampliar el área de hover ralentizador del ratón. Estaría bien incluso que el usuario arrojara algo de luz sobre la escena cuando me mueve su ratón a un punto concreto de ella
 

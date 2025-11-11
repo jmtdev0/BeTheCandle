@@ -40,6 +40,11 @@ begin
   returning * into v_user;
 
   -- Upsert the profile tied to this user id
+  update user_profiles
+    set user_id = v_user.id
+  where display_name = p_display_name
+    and (user_id is distinct from v_user.id or user_id is null);
+
   insert into user_profiles (
     user_id,
     display_name,
@@ -69,6 +74,7 @@ begin
         social_links = excluded.social_links,
         btc_address = excluded.btc_address,
         orbit_speed_multiplier = excluded.orbit_speed_multiplier,
+        avatar_seed = excluded.avatar_seed,
         updated_at = timezone('utc', now());
 
   return v_user;

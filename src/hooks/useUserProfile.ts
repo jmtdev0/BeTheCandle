@@ -32,20 +32,42 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!displayName) {
+    if (!displayName && !userId) {
       setProfile(null);
       return;
     }
 
-    loadProfile(displayName);
-  }, [displayName]);
+    loadProfile(displayName, userId ?? null);
+  }, [displayName, userId]);
 
-  const loadProfile = async (name: string) => {
+  const loadProfile = async (name: string | null, id: string | null) => {
     setLoading(true);
     setError(null);
 
     try {
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      if (id) {
+        const { data: profileByUserId, error: profileByUserIdError } = await supabase
+          .from("user_profiles")
+          .select("*")
+          .eq("user_id", id)
+          .maybeSingle();
+
+        if (!profileByUserIdError && profileByUserId) {
+          setProfile(profileByUserId);
+          return;
+        }
+
+        if (profileByUserIdError && profileByUserIdError.code !== "PGRST116") {
+          throw profileByUserIdError;
+        }
+      }
+
+      if (!name) {
+        setProfile(null);
+        return;
+      }
+
       const { data, error: fetchError } = await supabase
         .from("user_profiles")
         .select("*")
@@ -125,6 +147,6 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
     loading,
     error,
     saveProfile,
-    reloadProfile: () => displayName && loadProfile(displayName),
+    reloadProfile: () => loadProfile(displayName, userId ?? null),
   };
 }
