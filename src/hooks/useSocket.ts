@@ -171,7 +171,12 @@ export function useSocket() {
 
     const handleSync = () => {
       const state = channel.presenceState() as Record<string, PlanetPresencePayload[]>;
-      const members = Object.values(state).flat();
+      const members = Object.entries(state)
+        .map(([key, metas]) => {
+          const latest = metas[metas.length - 1];
+          return latest ? { ...latest, userId: latest.userId ?? key } : null;
+        })
+        .filter((meta): meta is PlanetPresencePayload => Boolean(meta));
       const dynamicPlanets = members.map((member) => presenceToPlanet(member, presenceKeyRef.current));
       setPlanets([...MOCK_PLANETS, ...dynamicPlanets]);
       const selfPresence = members.find((member) => member.userId === presenceKeyRef.current) || null;
@@ -216,6 +221,10 @@ export function useSocket() {
   }) => {
     const channel = channelRef.current;
     if (!channel) return;
+
+    if (presenceKeyRef.current && presenceKeyRef.current !== userId) {
+      channel.untrack().catch(() => {});
+    }
 
     presenceKeyRef.current = userId;
     const attributes = derivePlanetAttributes(userId);

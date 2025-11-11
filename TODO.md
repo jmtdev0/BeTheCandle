@@ -8,24 +8,26 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras
 
-* Al darle a Create your satellite, se abre directamente el login con Google
+* El color del satélite no lo estamos guardando en base de datos.
+* Popup de información situado en la parte superior central (aparece al pasar el ratón)
+* Al darle a Create your satellite, se está abriendo directamente el login con Google. Tiene que pulsar el usuario en el botón del popup.
 * Google will allow iqokybiidqksdrbqeitp.supabase.co to access this info about you
 * ✅ El usuario puede configurar también la velocidad a la que orbita su satélite mediante de un slider.
 * ✅ Las órbitas de los satélites (ya visibles con anillos)
 * ✅ Al cerrar la tarjeta de información de un satélite, la cámara debe volver a poner el foco en la estrella Bitcoin.
 * ✅ Cuando termina una canción, debe sonar otra aleatoriamente, pero no la que acaba de terminar.
 * ✅ Favicon: Quitar fondo negro de la imagen, que no tenga fondo.
-* Que no esté bloqueado el giro de la cámara cuando ves un satélite.
+* Que no esté bloqueado el giro de la cámara cuando ves un satélite. Que con el scroll puedas salir de la vista.
 
 # Ajustes y mejoras II
 
-* Logout
+* Al terminar una canción, se debe pasar a otra distinta aleatoria.
+* Logout. Ocultar el planeta YOU.
 * Responsive total. Adaptación a móvil
 * Ampliar el área de hover ralentizador del ratón. Estaría bien incluso que el usuario arrojara algo de luz sobre la escena cuando me mueve su ratón a un punto concreto de ella
 
 # Pijotadas
 
-* Que el favicon cambie continuamente. Que sea como un GIF de una estrella que flota y se mueve suavemente de arriba a abajo.
 
 
 # Comentarios
