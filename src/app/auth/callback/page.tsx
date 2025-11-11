@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
-
-export default function AuthCallbackPage() {
+function CallbackHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = getSupabaseBrowserClient();
@@ -39,6 +38,10 @@ export default function AuthCallbackPage() {
       });
   }, [router, searchParams, supabase]);
 
+  return <LoadingState />;
+}
+
+function LoadingState() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-200">
       <div className="text-center space-y-3">
@@ -46,5 +49,13 @@ export default function AuthCallbackPage() {
         <p className="text-sm text-slate-400">Finalizing Google sign-in. This won&apos;t take long.</p>
       </div>
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <CallbackHandler />
+    </Suspense>
   );
 }
