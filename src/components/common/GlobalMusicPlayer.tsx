@@ -1,13 +1,15 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import MusicPlayer from "./MusicPlayer";
 
 export default function GlobalMusicPlayer() {
   const [isVisible, setIsVisible] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
   const pathname = usePathname();
+  const playerRef = useRef<HTMLDivElement | null>(null);
 
   // Only show music player on lobby and community-pot pages
   const shouldShowPlayer = pathname === "/lobby" || pathname === "/community-pot";
@@ -25,14 +27,14 @@ export default function GlobalMusicPlayer() {
       
       if (distanceFromRight <= 150 && distanceFromBottom <= 150) {
         setIsVisible(true);
-      } else if (distanceFromRight > 250 || distanceFromBottom > 250) {
+      } else if (!isHovering && (distanceFromRight > 250 || distanceFromBottom > 250)) {
         setIsVisible(false);
       }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [shouldShowPlayer]);
+  }, [shouldShowPlayer, isHovering]);
 
   if (!shouldShowPlayer) {
     return null;
@@ -40,14 +42,23 @@ export default function GlobalMusicPlayer() {
 
   return (
     <motion.div
+      ref={playerRef}
       className="pointer-events-none fixed bottom-6 right-6 z-[60]"
-      initial={{ opacity: 0, scale: 1 }}
+      initial={{ opacity: 0 }}
       animate={{
-        opacity: isVisible ? 1 : 0,
-        scale: isVisible ? 1 : 0.98,
+        opacity: isVisible || isHovering ? 1 : 0,
       }}
-      transition={{ type: "spring", stiffness: 260, damping: 22 }}
-      style={{ pointerEvents: isVisible ? "auto" : "none" }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      style={{
+        pointerEvents: isVisible || isHovering ? "auto" : "none",
+      }}
+      onPointerEnter={() => {
+        setIsHovering(true);
+        setIsVisible(true);
+      }}
+      onPointerLeave={() => {
+        setIsHovering(false);
+      }}
     >
       <MusicPlayer />
     </motion.div>

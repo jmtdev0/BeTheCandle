@@ -17,6 +17,7 @@ export interface UserProfile {
   btc_address?: string;
   avatar_seed?: string;
   orbit_speed_multiplier?: number;
+  satellite_color?: string;
 }
 
 type RegisterUserResult = {
@@ -117,15 +118,15 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
         p_social_links: updatedProfile.social_links ?? [],
         p_btc_address: updatedProfile.btc_address ?? null,
         p_orbit_speed_multiplier: updatedProfile.orbit_speed_multiplier ?? 1.0,
+        p_satellite_color: updatedProfile.satellite_color ?? null,
       });
 
       if (rpcError) {
         throw rpcError;
       }
 
-      const userRecord: RegisterUserResult | null = Array.isArray(data)
-        ? (data[0] ?? null)
-        : (data as RegisterUserResult | null);
+      const userRecord: RegisterUserResult | null =
+        (Array.isArray(data) ? data[0] ?? null : data) as RegisterUserResult | null;
 
       setProfile({
         ...updatedProfile,

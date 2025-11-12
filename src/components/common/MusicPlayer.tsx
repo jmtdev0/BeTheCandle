@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, Minimize2, Maximize2 } from "lucide-react";
+import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 
 interface Track {
   name: string;
   path: string;
   displayName: string;
+  link?: string | null;
 }
 
 interface MusicPlayerProps {
@@ -20,7 +21,6 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previousVolumeRef = useRef(0.3);
   const hasAutoPlayedRef = useRef(false);
@@ -170,7 +170,6 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
 
   const selectTrack = (index: number) => {
     setCurrentTrackIndex(index);
-    setIsExpanded(false);
   };
 
   // Siempre mostrar el reproductor, incluso sin canciones (para que sea visible)
@@ -184,67 +183,70 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Music size={16} className="text-orange-400 flex-shrink-0" />
             <span className="text-xs text-gray-400 truncate">
-              {isCollapsed ? "Player" : (currentTrack ? currentTrack.displayName : "No music")}
+              {currentTrack ? currentTrack.displayName : "No music"}
             </span>
           </div>
-          <div className="flex items-center gap-1">
-            {/* Botón expandir lista (solo si hay múltiples canciones y no está colapsado) */}
-            {!isCollapsed && tracks.length > 1 && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="p-1 hover:bg-gray-700/50 rounded transition-colors"
-                title={isExpanded ? "Ocultar lista" : "Mostrar lista"}
-              >
-                {isExpanded ? (
-                  <ChevronDown size={14} className="text-gray-400" />
-                ) : (
-                  <ChevronUp size={14} className="text-gray-400" />
-                )}
-              </button>
-            )}
-            {/* Botón colapsar/expandir */}
+          {/* Botón expandir lista (solo si hay múltiples canciones) */}
+          {tracks.length > 1 && (
             <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
+              onClick={() => setIsExpanded(!isExpanded)}
               className="p-1 hover:bg-gray-700/50 rounded transition-colors"
-              title={isCollapsed ? "Expandir reproductor" : "Colapsar reproductor"}
+              title={isExpanded ? "Ocultar lista" : "Mostrar lista"}
             >
-              {isCollapsed ? (
-                <Maximize2 size={14} className="text-gray-400" />
+              {isExpanded ? (
+                <ChevronDown size={14} className="text-gray-400" />
               ) : (
-                <Minimize2 size={14} className="text-gray-400" />
+                <ChevronUp size={14} className="text-gray-400" />
               )}
             </button>
-          </div>
+          )}
         </div>
 
         {/* Panel expandible de selección de canciones */}
-        {!isCollapsed && isExpanded && tracks.length > 0 && (
-          <div className="max-h-64 overflow-y-auto border-b border-gray-700/50">
+        {isExpanded && tracks.length > 0 && (
+          <div className="max-h-[240px] overflow-y-auto border-b border-gray-700/50 w-[320px]">
             {tracks.map((track, index) => (
-              <button
+              <div
                 key={track.path}
-                onClick={() => selectTrack(index)}
-                className={`w-full px-4 py-3 text-left text-sm hover:bg-gray-800/50 transition-colors ${
+                className={`w-full px-4 py-3 text-left text-sm transition-colors ${
                   index === currentTrackIndex
-                    ? "bg-orange-500/20 text-orange-400"
-                    : "text-gray-300"
+                    ? "bg-orange-500/20"
+                    : "hover:bg-gray-800/50"
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <Music size={14} />
-                  <span className="truncate">{track.displayName}</span>
-                  {index === currentTrackIndex && isPlaying && (
-                    <span className="ml-auto text-orange-400">♪</span>
+                  <button
+                    onClick={() => selectTrack(index)}
+                    className="flex items-center gap-2 flex-1 min-w-0"
+                  >
+                    <Music size={14} className={index === currentTrackIndex ? "text-orange-400" : "text-gray-400"} />
+                    <span className={`truncate ${index === currentTrackIndex ? "text-orange-400" : "text-gray-300"}`}>
+                      {track.displayName}
+                    </span>
+                    {index === currentTrackIndex && isPlaying && (
+                      <span className="ml-auto text-orange-400">♪</span>
+                    )}
+                  </button>
+                  {track.link && (
+                    <a
+                      href={track.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0 p-1 text-gray-400 hover:text-orange-400 transition-colors"
+                      title="Ver en YouTube"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ExternalLink size={14} />
+                    </a>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
 
-        {/* Panel principal - solo visible si no está colapsado */}
-        {!isCollapsed && (
-        <div className="p-4 min-w-[280px]">
+        {/* Panel principal */}
+        <div className="p-4 w-[320px]">
           {/* Controles de reproducción y volumen */}
           <div className="flex items-center gap-3">
             {/* Botón Play/Pause - deshabilitado si no hay canciones */}
@@ -305,12 +307,8 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
             </div>
           </div>
 
-          {/* Indicador de cantidad de canciones o mensaje sin música */}
-          {tracks.length > 1 ? (
-            <div className="mt-2 text-xs text-gray-500 text-center">
-              {currentTrackIndex + 1} / {tracks.length}
-            </div>
-          ) : tracks.length === 0 ? (
+          {/* Mensaje sin música */}
+          {tracks.length === 0 && (
             <div className="mt-3 pt-3 border-t border-gray-700/50">
               <p className="text-xs text-gray-500 text-center leading-relaxed">
                 📁 Añade archivos MP3 a<br />
@@ -321,9 +319,8 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
                 <span className="text-green-400/70">¡Se detectarán automáticamente!</span>
               </p>
             </div>
-          ) : null}
+          )}
         </div>
-        )}
       </div>
 
       {/* Estilos para el slider */}

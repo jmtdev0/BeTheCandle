@@ -7,6 +7,7 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import InteractiveSphere3D, { SatelliteUser } from "@/components/lobby/InteractiveSphere3D";
 import SatelliteInfoCard from "@/components/lobby/SatelliteInfoCard";
+import InfoPopup from "@/components/common/InfoPopup";
 import { useSatelliteColorPreference } from "@/lib/useSatelliteColorPreference";
 import { useSocket } from "@/hooks/useSocket";
 import { useLobbyProfiles } from "@/hooks/useLobbyProfiles";
@@ -73,6 +74,20 @@ export default function GoofyModePage() {
 
   return (
     <div className="relative w-full h-screen flex items-center justify-center bg-gradient-to-b from-[#030712] via-[#050b1a] to-[#030712] overflow-hidden">
+      {/* Info Popup */}
+      <InfoPopup
+        title="Welcome to the Lobby"
+        content={`This is the Lobby - a real-time social space where Bitcoin supporters gather around a digital star.
+
+Each orbiting satellite represents a connected user. When you sign in with Google and create your satellite, you'll join the orbit with your own customizable presence.
+
+• Click on any satellite to view profile details
+• Customize your satellite color from your profile
+• See who else is exploring the Bitcoin universe
+
+The central star symbolizes Bitcoin itself - the gravitational center bringing us all together.`}
+      />
+
       {/* Removed connection indicator - now shown in Sidebar */}
 
       <Canvas 

@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Link as LinkIcon, Bitcoin, FileText, Palette } from "lucide-react";
+import { X, User, Link as LinkIcon, Bitcoin, FileText, Palette, Check } from "lucide-react";
 import {
-  SATELLITE_COLOR_LABELS,
-  SATELLITE_COLOR_OPTIONS,
-  SATELLITE_COLOR_PALETTES,
-  type SatelliteColorOption,
+  SATELLITE_COLOR_PRESETS,
+  findPresetByHex,
+  isValidHexColor,
+  normalizeSatelliteColor,
 } from "@/lib/satelliteColors";
 
 interface SocialLink {
@@ -23,6 +23,7 @@ interface UserProfile {
   btc_address?: string;
   avatar_seed?: string;
   orbit_speed_multiplier?: number; // 0.1 to 3.0
+  satellite_color?: string;
 }
 
 interface UserProfileModalProps {
@@ -30,8 +31,8 @@ interface UserProfileModalProps {
   onClose: () => void;
   profile: UserProfile | null;
   onSave: (profile: UserProfile) => Promise<void>;
-  satelliteColor?: SatelliteColorOption;
-  onColorChange?: (color: SatelliteColorOption) => void;
+  satelliteColor?: string;
+  onColorChange?: (color: string) => void;
 }
 
 export default function UserProfileModal({
@@ -50,6 +51,44 @@ export default function UserProfileModal({
   const [orbitSpeed, setOrbitSpeed] = useState(1.0); // Default 1.0x
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [draftColor, setDraftColor] = useState(() => normalizeSatelliteColor(satelliteColor));
+  const [hexInput, setHexInput] = useState(() => normalizeSatelliteColor(satelliteColor));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const normalized = normalizeSatelliteColor(satelliteColor);
+    setDraftColor(normalized);
+    setHexInput(normalized);
+  }, [isOpen, satelliteColor]);
+
+  const applyColor = (nextColor: string) => {
+    const normalized = normalizeSatelliteColor(nextColor);
+    setHexInput(normalized);
+    if (normalized === draftColor) return;
+    setDraftColor(normalized);
+    onColorChange?.(normalized);
+  };
+
+  const handleHexInputChange = (value: string) => {
+    setHexInput(value);
+    if (isValidHexColor(value)) {
+      applyColor(value);
+    }
+  };
+
+  const handleHexInputBlur = () => {
+    if (!isValidHexColor(hexInput)) {
+      setHexInput(draftColor);
+      return;
+    }
+    const normalized = normalizeSatelliteColor(hexInput);
+    setHexInput(normalized);
+    applyColor(normalized);
+  };
+
+  const matchingPreset = findPresetByHex(draftColor);
+  const hexIsValid = isValidHexColor(hexInput);
+  const showHexWarning = hexInput.trim().length > 0 && !hexIsValid;
 
   // Load profile data when modal opens
   useEffect(() => {
@@ -60,6 +99,9 @@ export default function UserProfileModal({
       setBtcAddress(profile.btc_address || "");
       setSocialLinks(profile.social_links || []);
       setOrbitSpeed(profile.orbit_speed_multiplier || 1.0);
+      if (profile.satellite_color) {
+        applyColor(profile.satellite_color);
+      }
     }
   }, [isOpen, profile]);
 
@@ -109,6 +151,7 @@ export default function UserProfileModal({
         social_links: validSocialLinks,
         btc_address: btcAddress,
         orbit_speed_multiplier: orbitSpeed,
+        satellite_color: draftColor,
       });
 
       onClose();
@@ -224,42 +267,78 @@ export default function UserProfileModal({
               </div>
 
               {/* Satellite Color */}
-              {satelliteColor && onColorChange && (
+              {onColorChange && (
                 <div>
                   <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
                     <Palette size={16} />
                     Satellite Color
                   </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {SATELLITE_COLOR_OPTIONS.map((option) => {
-                      const palette = SATELLITE_COLOR_PALETTES[option];
-                      const swatchColor = palette[0];
-                      const isActive = satelliteColor === option;
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                      <input
+                        type="color"
+                        value={draftColor}
+                        onChange={(event) => applyColor(event.target.value)}
+                        className="h-12 w-12 rounded-full border border-white/40 bg-transparent p-0 shadow-inner"
+                        aria-label="Select satellite color"
+                      />
+                      <div className="flex-1">
+                        <label className="text-xs uppercase tracking-widest text-slate-400">
+                          Hex Value
+                        </label>
+                        <input
+                          type="text"
+                          value={hexInput}
+                          onChange={(event) => handleHexInputChange(event.target.value)}
+                          onBlur={handleHexInputBlur}
+                          placeholder="#F97316"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 font-mono text-sm text-slate-100 transition focus:border-amber-400/40 focus:outline-none focus:ring-2 focus:ring-amber-400/20"
+                        />
+                        {showHexWarning ? (
+                          <p className="mt-1 text-xs text-red-300">
+                            Use the format #RRGGBB to save your custom color.
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Pick any hex color or start with a preset below.
+                          </p>
+                        )}
+                      </div>
+                    </div>
 
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => onColorChange(option)}
-                          className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
-                            isActive
-                              ? "bg-slate-700/80 border-2 border-amber-400/70 shadow-lg"
-                              : "border-2 border-slate-700 hover:bg-slate-700/40 hover:border-amber-400/30"
-                          }`}
-                        >
-                          <div
-                            className="w-6 h-6 rounded-full border-2 border-white/40 shadow-md"
-                            style={{ background: swatchColor }}
-                          />
-                          <span className="text-sm text-slate-200 font-medium">
-                            {SATELLITE_COLOR_LABELS[option]}
-                          </span>
-                        </button>
-                      );
-                    })}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {SATELLITE_COLOR_PRESETS.map((preset) => {
+                        const isActive = matchingPreset === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => applyColor(preset.hex)}
+                            className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                              isActive
+                                ? "border-amber-400/70 bg-slate-700/80 shadow-lg"
+                                : "border-slate-700 hover:border-amber-400/40 hover:bg-slate-800/50"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="h-6 w-6 rounded-full border border-white/40"
+                                style={{
+                                  background: `linear-gradient(135deg, ${preset.palette[0]}, ${preset.palette[2]})`,
+                                }}
+                              />
+                              <span className="text-sm text-slate-100 font-medium">
+                                {preset.label}
+                              </span>
+                            </div>
+                            {isActive && <Check size={18} className="text-amber-300" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
-                    Your satellite will be displayed in this color in the Lobby
+                    Save changes to sync this color to your lobby satellite.
                   </p>
                 </div>
               )}

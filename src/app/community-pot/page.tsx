@@ -6,6 +6,7 @@ import { OrbitControls } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import Nebula3D from "@/components/community-pot/Nebula3D";
 import MusicPlayer from "@/components/common/MusicPlayer";
+import InfoPopup from "@/components/common/InfoPopup";
 import { useCommunityPot } from "@/hooks/useCommunityPot";
 
 export default function CommunityPotPage() {
@@ -33,6 +34,21 @@ export default function CommunityPotPage() {
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-black via-purple-950 to-black overflow-hidden">
+      {/* Info Popup */}
+      <InfoPopup
+        title="Community Pot"
+        content={`Welcome to the Community Pot - a collective treasury where Bitcoin supporters come together.
+
+This experimental feature allows users to contribute sats (Bitcoin's smallest unit) to a shared pool that grows with each contribution.
+
+• View real-time total accumulated sats
+• See how many participants are involved
+• Track the countdown to the next distribution
+• The nebula visualization represents the growing energy of collective support
+
+This space celebrates the collaborative spirit of the Bitcoin community. Contribution features are currently in development.`}
+      />
+
       {/* Canvas 3D con la nebulosa */}
       <Canvas
         camera={{ position: [0, 0, 30], fov: 75 }}

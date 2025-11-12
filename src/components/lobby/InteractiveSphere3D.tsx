@@ -4,11 +4,7 @@ import React, { useRef, useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame, useThree, extend } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
-import {
-  DEFAULT_SATELLITE_COLOR,
-  SATELLITE_COLOR_PALETTES,
-  type SatelliteColorOption,
-} from "@/lib/satelliteColors";
+import { DEFAULT_SATELLITE_COLOR, getPaletteForColor } from "@/lib/satelliteColors";
 
 /**
  * GLSL Shader for Realistic Animated Star
@@ -353,7 +349,7 @@ interface InteractiveSphere3DProps {
   satelliteUsers?: SatelliteUser[];
   onSatelliteClick?: (user: SatelliteUser, screenPos?: { x: number; y: number }) => void;
   selectedSatelliteId?: string; // ID of selected satellite for camera focus
-  satelliteColor?: SatelliteColorOption;
+  satelliteColor?: string;
   currentUserId?: string | null;
 }
 
@@ -1047,7 +1043,7 @@ export default function InteractiveSphere3D({
 
   // create satellites based on provided users or generate random ones
   const satellites = useMemo(() => {
-    const palette = SATELLITE_COLOR_PALETTES[satelliteColor] ?? SATELLITE_COLOR_PALETTES[DEFAULT_SATELLITE_COLOR];
+    const palette = getPaletteForColor(satelliteColor ?? DEFAULT_SATELLITE_COLOR);
     if (satelliteUsers && satelliteUsers.length > 0) {
       const activeIds = new Set<string>();
       const result = satelliteUsers.map((user, idx) => {

@@ -8,7 +8,7 @@ export default function EvenGoofierModePage() {
           Even Goofier Mode
         </h1>
         <p className="text-xl text-slate-400">
-          Maximum goofiness loading... 🚀✨
+          Coming soon... 🚀✨
         </p>
       </div>
     </div>

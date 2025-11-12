@@ -8,7 +8,8 @@ create or replace function public.register_user_profile(
   p_bio text default null,
   p_social_links jsonb default '[]'::jsonb,
   p_btc_address text default null,
-  p_orbit_speed_multiplier numeric default 1.0
+  p_orbit_speed_multiplier numeric default 1.0,
+  p_satellite_color text default null
 )
 returns public.users
 language plpgsql
@@ -19,6 +20,7 @@ $$
 declare
   v_user users%rowtype;
   v_speed numeric;
+  v_color text;
 begin
   if p_user_id is null then
     raise exception 'p_user_id is required';
@@ -30,6 +32,8 @@ begin
 
   v_speed := coalesce(p_orbit_speed_multiplier, 1.0);
   v_speed := least(greatest(v_speed, 0.1), 3.0);
+
+  v_color := coalesce(nullif(trim(p_satellite_color), ''), '#F97316');
 
   -- Upsert the base user record
   insert into users (id, display_name, last_seen_at)
@@ -54,6 +58,7 @@ begin
     btc_address,
     orbit_speed_multiplier,
     avatar_seed,
+    satellite_color,
     updated_at
   )
   values (
@@ -65,6 +70,7 @@ begin
     p_btc_address,
     v_speed,
     coalesce(v_user.display_name, p_display_name),
+    v_color,
     timezone('utc', now())
   )
   on conflict (user_id) do update
@@ -75,12 +81,13 @@ begin
         btc_address = excluded.btc_address,
         orbit_speed_multiplier = excluded.orbit_speed_multiplier,
         avatar_seed = excluded.avatar_seed,
+        satellite_color = excluded.satellite_color,
         updated_at = timezone('utc', now());
 
   return v_user;
 end;
 $$;
 
-grant execute on function public.register_user_profile(uuid, text, text, text, jsonb, text, numeric) to anon;
-grant execute on function public.register_user_profile(uuid, text, text, text, jsonb, text, numeric) to authenticated;
-grant execute on function public.register_user_profile(uuid, text, text, text, jsonb, text, numeric) to service_role;
+grant execute on function public.register_user_profile(uuid, text, text, text, jsonb, text, numeric, text) to anon;
+grant execute on function public.register_user_profile(uuid, text, text, text, jsonb, text, numeric, text) to authenticated;
+grant execute on function public.register_user_profile(uuid, text, text, text, jsonb, text, numeric, text) to service_role;

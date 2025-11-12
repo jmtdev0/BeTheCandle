@@ -39,3 +39,4 @@ logs/
 .vscode/settings.json
 .env
 supabase/public_schema.sql
+supabase/scripts/

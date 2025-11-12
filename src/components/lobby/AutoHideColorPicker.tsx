@@ -3,11 +3,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import SatelliteColorPicker from "./SatelliteColorPicker";
-import type { SatelliteColorOption } from "@/lib/satelliteColors";
 
 interface AutoHideColorPickerProps {
-  value: SatelliteColorOption;
-  onChange: (color: SatelliteColorOption) => void;
+  value: string;
+  onChange: (color: string) => void;
 }
 
 export default function AutoHideColorPicker({ value, onChange }: AutoHideColorPickerProps) {

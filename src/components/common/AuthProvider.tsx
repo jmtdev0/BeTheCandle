@@ -166,17 +166,11 @@ export function SupabaseAuthProvider({ children }: AuthProviderProps) {
 
   const requireAuthForSatellite = useCallback(async () => {
     if (session) return true;
-  sessionStorage.setItem("postAuthAction", "open-profile");
+    sessionStorage.setItem("postAuthAction", "open-profile");
     setPromptReason("action");
     setIsPromptOpen(true);
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      console.error("Google sign-in aborted", error);
-      return false;
-    }
     return false;
-  }, [session, signInWithGoogle]);
+  }, [session]);
 
   const value = useMemo<AuthContextValue>(() => ({
     session,

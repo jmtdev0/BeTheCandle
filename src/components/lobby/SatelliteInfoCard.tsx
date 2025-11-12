@@ -107,22 +107,27 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
     };
   }, [profileLookupName, supabaseClient]);
 
-  // initialize position on mount to center vertically and slightly right of center
+  // initialize position on mount to a fixed position on the right side
   useEffect(() => {
+    if (!user) return;
+    
     const calc = () => {
       if (typeof window === "undefined") return;
-      // Position card to the right of center (approximately 60% from left)
-      // This ensures the satellite remains visible on the left side
+      // Fixed position: 70% from left, centered vertically
+      // This keeps the card consistently on the right side
       const { width, height } = getDimensions();
-      const left = Math.round(window.innerWidth * 0.60 - width / 2);
+      const left = Math.round(window.innerWidth * 0.70 - width / 2);
       const top = Math.round(window.innerHeight / 2 - height / 2);
       setPos({ left, top });
     };
+    
+    // Reset to fixed position whenever user changes
     calc();
-    // update on resize so card stays sensible
+    
+    // Also update on resize
     window.addEventListener("resize", calc);
     return () => window.removeEventListener("resize", calc);
-  }, []);
+  }, [user]);
 
   // Pointer handlers to make the card draggable
   useEffect(() => {

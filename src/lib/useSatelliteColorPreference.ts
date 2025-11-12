@@ -3,17 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_SATELLITE_COLOR,
-  SATELLITE_COLOR_OPTIONS,
-  type SatelliteColorOption,
+  SATELLITE_COLOR_PRESETS,
+  normalizeSatelliteColor,
 } from "@/lib/satelliteColors";
 
 const COOKIE_NAME = "satelliteColor";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365; // 1 year
 const EVENT_NAME = "btc-satellite-color-change";
-
-const isValidOption = (value: string): value is SatelliteColorOption => {
-  return SATELLITE_COLOR_OPTIONS.includes(value as SatelliteColorOption);
-};
 
 const readCookieValue = (name: string): string | undefined => {
   if (typeof document === "undefined") return undefined;
@@ -21,26 +17,40 @@ const readCookieValue = (name: string): string | undefined => {
   return match ? decodeURIComponent(match[1]) : undefined;
 };
 
-export function useSatelliteColorPreference(initialValue: SatelliteColorOption = DEFAULT_SATELLITE_COLOR) {
-  const [color, setColor] = useState<SatelliteColorOption>(initialValue);
+const writeCookieValue = (value: string) => {
+  if (typeof document === "undefined") return;
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}`;
+};
+
+const broadcastColor = (value: string) => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: value }));
+};
+
+export function useSatelliteColorPreference(initialValue?: string) {
+  const normalizedInitial = normalizeSatelliteColor(initialValue, DEFAULT_SATELLITE_COLOR);
+  const [color, setColor] = useState<string>(normalizedInitial);
 
   useEffect(() => {
     const cookieValue = readCookieValue(COOKIE_NAME);
-    if (cookieValue && isValidOption(cookieValue)) {
-      setColor(cookieValue);
-    } else if (!cookieValue) {
-      document.cookie = `${COOKIE_NAME}=${initialValue}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}`;
+    if (!cookieValue) {
+      writeCookieValue(normalizedInitial);
+      return;
     }
-  }, [initialValue]);
+
+    const normalizedCookie = normalizeSatelliteColor(cookieValue, normalizedInitial);
+    setColor((prev) => (prev === normalizedCookie ? prev : normalizedCookie));
+  }, [normalizedInitial]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const handleColorChange = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
-      const next = customEvent.detail;
-      if (next && isValidOption(next) && next !== color) {
+      const next = normalizeSatelliteColor(customEvent.detail, color);
+      if (next && next !== color) {
         setColor(next);
+        writeCookieValue(next);
       }
     };
 
@@ -48,17 +58,37 @@ export function useSatelliteColorPreference(initialValue: SatelliteColorOption =
     return () => window.removeEventListener(EVENT_NAME, handleColorChange as EventListener);
   }, [color]);
 
-  const updateColor = useCallback((next: SatelliteColorOption) => {
-    setColor(next);
-    document.cookie = `${COOKIE_NAME}=${next}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}`;
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: next }));
+  useEffect(() => {
+    if (!initialValue) return;
+    const normalized = normalizeSatelliteColor(initialValue, DEFAULT_SATELLITE_COLOR);
+    if (normalized === color) {
+      writeCookieValue(normalized);
+      return;
     }
-  }, []);
+
+    setColor(normalized);
+    writeCookieValue(normalized);
+    broadcastColor(normalized);
+  }, [initialValue, color]);
+
+  const updateColor = useCallback(
+    (next: string) => {
+      const normalized = normalizeSatelliteColor(next, DEFAULT_SATELLITE_COLOR);
+      if (normalized === color) {
+        writeCookieValue(normalized);
+        return;
+      }
+
+      setColor(normalized);
+      writeCookieValue(normalized);
+      broadcastColor(normalized);
+    },
+    [color],
+  );
 
   return {
     color,
     setColor: updateColor,
-    options: SATELLITE_COLOR_OPTIONS,
+    presets: SATELLITE_COLOR_PRESETS,
   } as const;
 }

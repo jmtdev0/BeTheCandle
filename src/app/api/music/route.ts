@@ -11,6 +11,28 @@ export async function GET() {
       return NextResponse.json({ tracks: [] });
     }
 
+    // Leer enlaces desde Links.txt
+    const linksPath = path.join(musicDir, 'Links.txt');
+    const linksMap = new Map<string, string>();
+    
+    if (fs.existsSync(linksPath)) {
+      const linksContent = fs.readFileSync(linksPath, 'utf-8');
+      const lines = linksContent.split('\n');
+      
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        
+        // Formato esperado: "nombre de archivo - url"
+        const lastHyphenIndex = trimmedLine.lastIndexOf(' - ');
+        if (lastHyphenIndex !== -1) {
+          const trackName = trimmedLine.substring(0, lastHyphenIndex).trim();
+          const url = trimmedLine.substring(lastHyphenIndex + 3).trim();
+          linksMap.set(trackName, url);
+        }
+      }
+    }
+
     // Leer archivos de la carpeta
     const files = fs.readdirSync(musicDir);
     
@@ -23,17 +45,17 @@ export async function GET() {
       })
       .map(file => {
         const nameWithoutExt = path.basename(file, path.extname(file));
-        // Convertir nombre de archivo a display name (reemplazar guiones/underscores con espacios y capitalizar)
-        const displayName = nameWithoutExt
-          .replace(/[-_]/g, ' ')
-          .split(' ')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ');
+        // Mantener el nombre original con los guiones
+        const displayName = nameWithoutExt;
+        
+        // Buscar el enlace correspondiente
+        const link = linksMap.get(nameWithoutExt) || null;
         
         return {
           name: nameWithoutExt,
           path: `/background_music/${file}`,
-          displayName: displayName
+          displayName: displayName,
+          link: link
         };
       })
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
