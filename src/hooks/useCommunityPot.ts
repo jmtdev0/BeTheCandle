@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  COMMUNITY_POT_META_COOKIE,
+  type CommunityPotMetaCookiePayload,
+  parseMetaCookie,
+} from "@/lib/communityPotCookies";
 
 interface CommunityPotParticipantView {
   id: string;
@@ -29,6 +34,7 @@ interface CommunityPotState {
   participants: CommunityPotParticipantView[];
   perParticipantAmountUsdc: string | null;
   viewerAddress: string | null;
+  viewerJoinedWeekId: string | null;
 }
 
 const INITIAL_STATE: CommunityPotState = {
@@ -39,7 +45,30 @@ const INITIAL_STATE: CommunityPotState = {
   participants: [],
   perParticipantAmountUsdc: null,
   viewerAddress: null,
+  viewerJoinedWeekId: null,
 };
+
+function readMetaCookie(): CommunityPotMetaCookiePayload | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const prefix = `${COMMUNITY_POT_META_COOKIE}=`;
+  const rawPair = document.cookie
+    .split("; ")
+    .find((chunk) => chunk.startsWith(prefix));
+
+  if (!rawPair) {
+    return null;
+  }
+
+  try {
+    const value = decodeURIComponent(rawPair.slice(prefix.length));
+    return parseMetaCookie(value);
+  } catch {
+    return null;
+  }
+}
 
 function formatCountdown(seconds: number) {
   const clamped = Math.max(0, seconds);
@@ -69,6 +98,17 @@ async function fetchStatus(): Promise<CommunityPotState> {
     throw new Error("No se pudo cargar el estado del Community Pot");
   }
   const payload = await response.json();
+  const meta = readMetaCookie();
+  const viewerFromServer = payload.viewer?.polygonAddress ?? null;
+  const weekId = payload.week?.id ?? null;
+  const viewerAddress =
+    viewerFromServer ?? (meta && weekId && meta.weekId === weekId ? meta.polygonAddress : null);
+  const viewerJoinedWeekId =
+    viewerFromServer && weekId
+      ? weekId
+      : meta && weekId && meta.weekId === weekId
+        ? weekId
+        : null;
   return {
     loading: false,
     refreshing: false,
@@ -76,7 +116,8 @@ async function fetchStatus(): Promise<CommunityPotState> {
     week: payload.week,
     participants: payload.participants,
     perParticipantAmountUsdc: payload.perParticipantAmountUsdc,
-    viewerAddress: payload.viewer?.polygonAddress ?? null,
+    viewerAddress,
+    viewerJoinedWeekId,
   };
 }
 
@@ -122,7 +163,8 @@ export function useCommunityPot() {
       week: payload.week,
       participants: payload.participants,
       perParticipantAmountUsdc: payload.perParticipantAmountUsdc,
-      viewerAddress: payload.viewer?.polygonAddress ?? null,
+      viewerAddress: payload.viewer?.polygonAddress ?? polygonAddress,
+      viewerJoinedWeekId: payload.week?.id ?? null,
     });
     setCountdownSeconds(payload.week?.countdownSeconds ?? 0);
   }, []);
@@ -151,5 +193,6 @@ export function useCommunityPot() {
     countdown,
     joinCommunityPot,
     refresh: loadStatus,
+    viewerHasCurrentSlot: Boolean(state.week?.id && state.viewerJoinedWeekId === state.week.id),
   };
 }

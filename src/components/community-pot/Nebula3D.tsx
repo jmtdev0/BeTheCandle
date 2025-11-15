@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useRef, useMemo } from "react";
-import { useFrame } from "@react-three/fiber";
-import type { RootState } from "@react-three/fiber";
+import React, { useRef, useMemo, useState } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 interface Nebula3DProps {
-  participantCount: number;
+  participants: Array<{ id: string; polygonAddress: string }>;
   totalSats: number;
 }
 
@@ -17,40 +17,20 @@ interface Nebula3DProps {
  * Usa InstancedMesh para renderizar miles de partículas de forma eficiente.
  * El color de la nebulosa cambia según el monto total del pot.
  */
-export default function Nebula3D({ participantCount = 10, totalSats = 0 }: Nebula3DProps) {
+export default function Nebula3D({ participants = [], totalSats = 0 }: Nebula3DProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const particleCount = Math.max(100, participantCount * 10); // Mínimo 100 partículas
+  const particleCount = participants.length;
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const { camera, raycaster, pointer } = useThree();
 
-  // Calcular color base según el total de satoshis
-  // Azul (bajo) → Morado (medio) → Dorado (alto)
-  const getNebulaColor = (sats: number): THREE.Color => {
-    if (sats === 0) return new THREE.Color(0x3b82f6); // Azul
-    if (sats < 100000) {
-      // Azul → Morado
-      const t = sats / 100000;
-      return new THREE.Color().lerpColors(
-        new THREE.Color(0x3b82f6), // Azul
-        new THREE.Color(0x9333ea), // Morado
-        t
-      );
-    } else if (sats < 500000) {
-      // Morado → Dorado
-      const t = (sats - 100000) / 400000;
-      return new THREE.Color().lerpColors(
-        new THREE.Color(0x9333ea), // Morado
-        new THREE.Color(0xfbbf24), // Dorado
-        t
-      );
-    }
-    return new THREE.Color(0xfbbf24); // Dorado
-  };
-
-  const baseColor = useMemo(() => getNebulaColor(totalSats), [totalSats]);
+  const lightIntensity = useMemo(() => {
+    const normalized = Math.min(totalSats / 100000, 1);
+    return 1 + normalized * 1.5;
+  }, [totalSats]);
 
   // Generar posiciones y colores para las partículas
-  const { positions, colors, scales } = useMemo(() => {
+  const { positions, scales } = useMemo(() => {
     const positions: THREE.Vector3[] = [];
-    const colors: THREE.Color[] = [];
     const scales: number[] = [];
 
     for (let i = 0; i < particleCount; i++) {
@@ -65,21 +45,12 @@ export default function Nebula3D({ participantCount = 10, totalSats = 0 }: Nebul
 
       positions.push(new THREE.Vector3(x, y, z));
 
-      // Variación de color alrededor del color base
-      const colorVariation = new THREE.Color(baseColor);
-      colorVariation.offsetHSL(
-        (Math.random() - 0.5) * 0.1, // Hue variation
-        (Math.random() - 0.5) * 0.2, // Saturation variation
-        (Math.random() - 0.5) * 0.2  // Lightness variation
-      );
-      colors.push(colorVariation);
-
       // Escalas variables para las partículas
       scales.push(0.1 + Math.random() * 0.3);
     }
 
-    return { positions, colors, scales };
-  }, [particleCount, baseColor]);
+    return { positions, scales };
+  }, [particleCount]);
 
   // Animar las partículas
   useFrame((state: any) => {
@@ -113,7 +84,26 @@ export default function Nebula3D({ participantCount = 10, totalSats = 0 }: Nebul
     }
 
     meshRef.current.instanceMatrix.needsUpdate = true;
+
+    // Detectar hover usando raycaster
+    if (meshRef.current) {
+      raycaster.setFromCamera(pointer, camera);
+      const intersects = raycaster.intersectObject(meshRef.current);
+      
+      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+        setHoveredIndex(intersects[0].instanceId);
+      } else {
+        setHoveredIndex(null);
+      }
+    }
   });
+
+  if (particleCount === 0) {
+    return null;
+  }
+
+  const hoveredParticipant = hoveredIndex !== null ? participants[hoveredIndex] : null;
+  const hoveredPosition = hoveredIndex !== null ? positions[hoveredIndex] : null;
 
   return (
     <>
@@ -121,21 +111,28 @@ export default function Nebula3D({ participantCount = 10, totalSats = 0 }: Nebul
         <sphereGeometry args={[1, 16, 16]} />
         <meshBasicMaterial
           transparent
-          opacity={0.6}
+          opacity={0.85}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
-        >
-          {/* Color instances */}
-          <instancedBufferAttribute
-            attach="attributes-color"
-            args={[new Float32Array(colors.flatMap((c) => [c.r, c.g, c.b])), 3]}
-          />
-        </meshBasicMaterial>
+          color="#ffffff"
+          toneMapped={false}
+        />
       </instancedMesh>
 
+      {/* Tooltip on hover */}
+      {hoveredParticipant && hoveredPosition && (
+        <Html position={[hoveredPosition.x, hoveredPosition.y + 2, hoveredPosition.z]}>
+          <div className="bg-black/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-purple-400/50 shadow-xl pointer-events-none whitespace-nowrap">
+            <p className="text-xs text-purple-200 font-mono">
+              {hoveredParticipant.polygonAddress}
+            </p>
+          </div>
+        </Html>
+      )}
+
       {/* Luz ambiente para la nebulosa */}
-      <ambientLight intensity={0.5} />
-      <pointLight position={[0, 0, 0]} intensity={2} color={baseColor} />
+      <ambientLight intensity={0.6} color="#cbe7ff" />
+      <pointLight position={[0, 0, 0]} intensity={lightIntensity} color="#ffffff" />
     </>
   );
 }

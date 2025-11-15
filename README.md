@@ -77,6 +77,7 @@ Run the Supabase migration located at `supabase/scripts/20241113_create_communit
 - `GET /api/community-pot/status` – public status payload (active week, countdown, participants)
 - `POST /api/community-pot/join` – authenticated users can claim/update their Polygon address for the week
 - `POST /api/community-pot/payout` – secured endpoint that triggers the Polygon USDC distribution (expects `x-community-pot-secret` header)
+- `supabase/functions/community-pot-payout` – Supabase Edge Function that performs the weekly payout (same env vars + secret header)
 
 ### Scheduled/manual payouts
 
@@ -87,12 +88,18 @@ Configure these environment variables wherever payouts run (Next.js route, cron 
 - `COMMUNITY_POT_PAYOUT_PRIVATE_KEY` – hex private key for the funding wallet
 - `COMMUNITY_POT_USDC_CONTRACT` – optional override (defaults to Polygon USDC `0x2791...4174`)
 
-You can execute payouts either by calling the secure API or via the CLI helper:
+You can execute payouts either by calling the secure API, the new Supabase Edge Function, or via the CLI helper:
 
 ```bash
 npm run community-pot:payout -- --dry-run   # simulate transfers and verify config
 npm run community-pot:payout               # send transactions and log hashes
 ```
+
+Supabase deployment steps:
+
+1. Deploy the edge function from `supabase/functions/community-pot-payout` (`supabase functions deploy community-pot-payout`).
+2. Wire a Supabase Cron (or any scheduler) to `POST https://<project>.functions.supabase.co/community-pot-payout` with header `x-community-pot-secret`.
+3. `supabase/scripts/community-pot-cron.sh` contains a minimal `curl` helper you can reuse inside Cron jobs.
 
 ### Frontend integration
 

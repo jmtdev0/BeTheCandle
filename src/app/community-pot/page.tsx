@@ -1,18 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
-import Nebula3D from "@/components/community-pot/Nebula3D";
-import MusicPlayer from "@/components/common/MusicPlayer";
 import InfoPopup from "@/components/common/InfoPopup";
 import { useCommunityPot } from "@/hooks/useCommunityPot";
-import { useSupabaseAuth } from "@/components/common/AuthProvider";
-import { formatPolygonAddress } from "@/lib/communityPot";
 
 export default function CommunityPotPage() {
-  const { user, openAuthPrompt } = useSupabaseAuth();
   const communityPot = useCommunityPot();
   const {
     week,
@@ -23,12 +15,15 @@ export default function CommunityPotPage() {
     refreshing,
     error,
     viewerAddress,
+    viewerHasCurrentSlot,
     joinCommunityPot,
   } = communityPot;
 
   const [polygonAddress, setPolygonAddress] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [hoveredParticipantId, setHoveredParticipantId] = useState<string | null>(null);
 
   useEffect(() => {
     if (viewerAddress) {
@@ -36,20 +31,24 @@ export default function CommunityPotPage() {
     }
   }, [viewerAddress]);
 
-  const participantCount = week?.participantCount ?? 0;
-  const nebulaEnergy = useMemo(() => {
-    const amount = Number(week?.amountUsdc ?? "0");
-    return Number.isFinite(amount) ? Math.round(amount * 100000) : 0;
-  }, [week?.amountUsdc]);
+  const participantCount = participants.length;
+
+  useEffect(() => {
+    if (participantCount === 0) {
+      setShowJoinModal(true);
+    } else {
+      setShowJoinModal(false);
+    }
+  }, [participantCount]);
 
   const statusLabel = useMemo(() => {
     switch (week?.status) {
       case "paid":
-        return "Pagado";
+        return "Paid";
       case "closed":
-        return "Cupo completo";
+        return "Full";
       default:
-        return "Abierto";
+        return "Open";
     }
   }, [week?.status]);
 
@@ -60,39 +59,56 @@ export default function CommunityPotPage() {
       case "closed":
         return "bg-yellow-500/20 text-yellow-100 border border-yellow-500/40";
       default:
-        return "bg-purple-500/20 text-purple-100 border border-purple-500/40";
+        return "bg-[#2276cb]/20 text-[#2276cb] border border-[#2276cb]/40";
     }
   }, [week?.status]);
 
   const distributionLabel = useMemo(() => {
     if (!week) return "";
-    return new Intl.DateTimeFormat("es-ES", {
+    return new Intl.DateTimeFormat("en-US", {
       dateStyle: "full",
       timeStyle: "short",
       timeZone: "Europe/Madrid",
     }).format(new Date(week.distributionAt));
   }, [week]);
 
+  const hasOpenSpots = (week?.spotsRemaining ?? 0) > 0;
+  const isPotFull = week ? week.spotsRemaining === 0 : false;
+  const viewerCanEdit = viewerHasCurrentSlot;
+  const weekStatus = week?.status;
+  const disableJoinButton =
+    isSubmitting ||
+    loading ||
+    !week ||
+    (((weekStatus === "paid" || weekStatus === "closed") || isPotFull) && !viewerCanEdit);
+  const buttonLabel = viewerCanEdit ? "Update address" : "Join the pot";
+  const walletGuideUrl =
+    "https://support.metamask.io/start/creating-a-new-wallet";
+
   const handleJoin = async () => {
-    if (!week) return;
-    if (!user) {
-      openAuthPrompt("action");
+    if (!week) {
+      setJoinError("Loading the next payout window. Please try again in a moment.");
       return;
     }
 
     const normalized = polygonAddress.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(normalized)) {
-      setJoinError("Introduce una dirección Polygon válida");
+      setJoinError("Enter a valid Polygon address.");
       return;
     }
 
-    if (week.status === "paid") {
-      setJoinError("Esta semana ya fue distribuida");
+    if (week.status === "paid" && !viewerCanEdit) {
+      setJoinError("This payout already went out.");
       return;
     }
 
-    if (week.spotsRemaining === 0 && !viewerAddress) {
-      setJoinError("El cupo está completo");
+    if (week.status === "closed" && !viewerCanEdit) {
+      setJoinError("This week's slots are closed. Please come back after the payout.");
+      return;
+    }
+
+    if (week.spotsRemaining === 0 && !viewerCanEdit) {
+      setJoinError("The pot is already full for this week.");
       return;
     }
 
@@ -110,153 +126,168 @@ export default function CommunityPotPage() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-gradient-to-b from-black via-purple-950 to-black overflow-hidden">
+    <div className="relative w-full h-screen overflow-hidden bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]">
+
+      {/* CSS Floating Orbs */}
+      {participantCount > 0 && (
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+          {participants.map((participant) => {
+            const hash = participant.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            const left = 25 + ((hash * 7) % 50);
+            const top = 25 + ((hash * 13) % 50);
+            const delay = (hash % 10) * 0.3;
+            const duration = 8 + (hash % 5);
+            const scale = 1.0 + ((hash % 5) * 0.2);
+            const isHovered = hoveredParticipantId === participant.polygonAddress;
+
+            return (
+              <div
+                key={participant.id}
+                className="absolute rounded-full bg-white/80 shadow-lg shadow-white/40 cursor-pointer pointer-events-auto transition-all duration-200"
+                style={{
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${36 * scale}px`,
+                  height: `${36 * scale}px`,
+                  animation: `floatOrb ${duration}s ease-in-out ${delay}s infinite`,
+                  opacity: isHovered ? 1 : 0.8,
+                  boxShadow: isHovered ? `0 0 20px rgba(255, 255, 255, 0.6), 0 0 40px rgba(255, 255, 255, 0.3)` : `0 10px 25px rgba(255, 255, 255, 0.4)`,
+                  transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+                }}
+                onMouseEnter={() => setHoveredParticipantId(participant.polygonAddress)}
+                onMouseLeave={() => setHoveredParticipantId(null)}
+              >
+                {isHovered && (
+                  <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/30 shadow-xl pointer-events-none">
+                    <p className="text-xs text-white font-mono">{participant.polygonAddress}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Info Popup */}
       <InfoPopup
         title="Community Pot"
-        content={`Welcome to the Community Pot - a collective treasury where Bitcoin supporters come together.
+        content={`Welcome to the Community Pot: a non-custodial USDC pool on Polygon for our weekly supporters.
 
-Each semana activamos una "olla comunitaria" de USDC en Polygon. Hasta 10 participantes pueden reservar su plaza dejando su dirección Polygon. Todos reciben la misma porción el domingo a las 16:30 CET cuando ejecutamos el pago on-chain.
+    Each week we open up to 10 slots. Drop a valid Polygon address to reserve one and every active wallet receives the same share when we execute the payout Sunday at 4:30 PM CET.
 
-• Cupo máximo configurable de 10 personas
-• Cuenta regresiva hacia el próximo pago
-• Seguimiento en vivo de las plazas restantes
-• Registro histórico en Supabase + PolygonScan
+    • Configurable weekly amount (currently 10 USDC)
+    • Live countdown and slot tracker
+    • Participant list powered by Supabase
+    • On-chain payout history via PolygonScan
 
-Atento: El pago semanal se realiza manualmente desde nuestra wallet verificada.`}
+    Heads-up: payouts are triggered manually from our verified wallet.`}
       />
 
-      {/* Canvas 3D con la nebulosa */}
-      <Canvas
-        camera={{ position: [0, 0, 30], fov: 75 }}
-        className="absolute inset-0"
-        gl={{ preserveDrawingBuffer: true }}
-        onPointerMissed={() => {
-          // Prevent pointer capture errors
-        }}
-      >
-        <color attach="background" args={["#000000"]} />
-        
-        {/* Nebulosa con partículas instanciadas */}
-        <Nebula3D participantCount={participantCount} totalSats={nebulaEnergy} />
-
-        {/* Post-processing para efectos visuales */}
-        <EffectComposer>
-          <Bloom
-            luminanceThreshold={0.2}
-            luminanceSmoothing={0.9}
-            intensity={1.5}
-          />
-        </EffectComposer>
-
-        {/* Controles de cámara */}
-        <OrbitControls
-          enablePan={false}
-          minDistance={15}
-          maxDistance={50}
-          enableDamping
-          dampingFactor={0.05}
-          makeDefault
-        />
-      </Canvas>
-
       {/* UI Overlay - pointer-events-none en el contenedor */}
-      <div className="absolute top-8 left-8 z-10 pointer-events-auto bg-black/60 backdrop-blur-md p-6 rounded-xl border border-purple-500/30 space-y-4 w-[360px]">
+      <div className="absolute top-8 left-8 z-10 pointer-events-auto bg-black/60 backdrop-blur-md p-6 rounded-xl border border-[#2276cb]/40 space-y-4 w-[385px]">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-white">🌌 Community Pot</h1>
           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
         </div>
         {error && <p className="text-sm text-red-300">{error}</p>}
         <div className="space-y-3 text-white text-sm">
-          <InfoRow label="Monto semanal" value={week ? `${Number(week.amountUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC` : "—"} />
-          <InfoRow label="Pago" value={distributionLabel || "—"} />
-          <InfoRow label="Cuenta regresiva" value={countdown.label || "—"} highlight />
-          <InfoRow label="Participantes" value={`${participantCount}/${week?.maxParticipants ?? 10}`} />
-          <InfoRow label="Plazas disponibles" value={week ? Math.max(week.spotsRemaining, 0) : "—"} />
-          <InfoRow label="Pago estimado" value={perParticipantAmountUsdc ? `${perParticipantAmountUsdc} USDC` : "Depende del cupo"} />
+          <InfoRow label="Weekly pool" value={week ? `${Number(week.amountUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC` : "—"} />
+          <InfoRow label="Scheduled payout" value={distributionLabel || "—"} />
+          <InfoRow label="Countdown" value={countdown.label || "—"} highlight />
+          <InfoRow label="Participants" value={`${participantCount}/${week?.maxParticipants ?? 10}`} />
+          <InfoRow label="Open slots" value={week ? Math.max(week.spotsRemaining, 0) : "—"} />
+          <InfoRow label="Estimated share" value={perParticipantAmountUsdc ? `${perParticipantAmountUsdc} USDC` : "Depends on headcount"} />
         </div>
-        {refreshing && <p className="text-xs text-purple-200">Actualizando…</p>}
+        {refreshing && <p className="text-xs text-purple-200">Refreshing…</p>}
       </div>
 
-      {/* Join form */}
-      <div className="absolute bottom-8 right-8 z-10 pointer-events-auto bg-black/60 backdrop-blur-md p-6 rounded-xl border border-purple-500/30 w-[360px] space-y-4">
-        <div>
-          <h2 className="text-xl font-bold text-white">Reserva tu plaza</h2>
-          <p className="text-sm text-purple-200 mt-1">Necesitas una cuenta Supabase y una dirección Polygon válida.</p>
-        </div>
-        <div>
-          <label className="block text-sm text-purple-300 mb-2">Dirección Polygon (USDC)</label>
-          <input
-            type="text"
-            value={polygonAddress}
-            onChange={(event) => setPolygonAddress(event.target.value)}
-            placeholder="0x..."
-            className="w-full px-4 py-2 bg-black/50 border border-purple-500/40 rounded-lg text-white focus:outline-none focus:border-purple-300"
-          />
-        </div>
-        {joinError && <p className="text-sm text-red-300">{joinError}</p>}
-        {!user && <p className="text-xs text-yellow-200">Debes iniciar sesión para unirte.</p>}
+      {/* Join experience */}
+      {participantCount > 0 && (
         <button
-          onClick={handleJoin}
-          disabled={isSubmitting || loading || (week?.spotsRemaining === 0 && !viewerAddress)}
-          className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-500 transition-colors disabled:opacity-40"
+          onClick={() => setShowJoinModal(true)}
+          className="fixed top-8 right-8 z-40 px-6 py-3 bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40"
         >
-          {viewerAddress ? "Actualizar dirección" : "Unirme"}
+          Reserve your slot
         </button>
-        <p className="text-xs text-gray-400 text-center">
-          El pago manual se ejecuta cada domingo 16:30 CET.
-        </p>
-      </div>
-
-      {/* Participants list */}
-      <div className="absolute bottom-8 left-8 z-10 pointer-events-auto bg-black/55 backdrop-blur-md p-6 rounded-xl border border-purple-500/30 w-[360px] max-h-[45vh] overflow-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">Tripulación semanal</h3>
-          <span className="text-xs text-purple-200">{participantCount} participantes</span>
-        </div>
-        <ul className="space-y-3">
-          {participants.length === 0 && (
-            <li className="text-sm text-purple-200">Aún no hay participantes para esta semana.</li>
-          )}
-          {participants.map((participant) => (
-            <li
-              key={participant.id}
-              className="flex items-center justify-between text-sm text-white bg-white/5 rounded-lg px-3 py-2"
+      )}
+      {showJoinModal && isPotFull && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm pointer-events-none" />
+      )}
+      {showJoinModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 pointer-events-none">
+        <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-[#2276cb]/40 bg-black/90 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-2xl font-bold text-white">Reserve your slot</h2>
+            {participantCount > 0 && (
+              <button
+                onClick={() => setShowJoinModal(false)}
+                className="text-[#2276cb] hover:text-white transition-colors text-2xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <div>
+            <p className="text-sm text-[#2276cb]/80 text-center">
+              Enter your Polygon address below.
+            </p>
+            <p className="text-xs text-[#2276cb]/60 mt-2 text-center">
+              {week ? (hasOpenSpots ? `${Math.max(week.spotsRemaining, 0)} slots open remaining this week` : "All slots claimed this week") : "Loading weekly window..."}
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm text-[#2276cb]/70 mb-2">Polygon address (USDC)</label>
+            <input
+              type="text"
+              value={polygonAddress}
+              onChange={(event) => setPolygonAddress(event.target.value)}
+              placeholder="0x..."
+              className="w-full px-4 py-3 bg-black/60 border border-[#2276cb]/40 rounded-lg text-white focus:outline-none focus:border-[#2276cb]"
+            />
+          </div>
+          <p className="text-xs text-[#2276cb]/70">
+            Need a wallet?{" "}
+            <a
+              href={walletGuideUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4 text-[#2276cb] hover:text-white"
             >
-              <div>
-                <p className="font-semibold">
-                  {participant.displayName}
-                  {participant.isViewer && <span className="ml-2 text-xs text-emerald-300">(tú)</span>}
-                </p>
-                <p className="text-xs text-purple-200">
-                  {formatPolygonAddress(participant.polygonAddress)}
-                </p>
-              </div>
-              <span className="text-xs text-gray-300">
-                {new Date(participant.joinedAt).toLocaleDateString("es-ES", {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Reproductor de música */}
-      <div className="absolute bottom-8 left-8 z-10 pointer-events-auto">
-        <MusicPlayer />
-      </div>
-
-      {/* Link to go back to Lobby */}
-      <div className="absolute top-8 right-8 z-10 pointer-events-auto">
-        <a
-          href="/lobby"
-          className="px-6 py-3 bg-white/10 backdrop-blur-md text-white rounded-lg font-semibold hover:bg-white/20 transition-colors border border-white/20"
-        >
-          ← Back to Lobby
-        </a>
-      </div>
+              Follow this quick MetaMask guide
+            </a>
+            .
+          </p>
+          <div className="flex gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <span className="font-semibold text-sm">Polygon network</span>
+            <p>
+              Make sure the Polygon network is enabled in your wallet before pasting the address. Payouts go out on Polygon USDC every Sunday.
+            </p>
+          </div>
+          {joinError && <p className="text-sm text-red-300">{joinError}</p>}
+          {viewerCanEdit && (
+            <p className="text-xs text-emerald-200">
+              This browser already has a slot reserved for the current week. Submit a new address if you need to update it.
+            </p>
+          )}
+          {isPotFull && !viewerCanEdit && (
+            <p className="text-xs text-yellow-200">
+              All slots are taken. Cookies prevent duplicate entries this week—check back after the Sunday payout.
+            </p>
+          )}
+          <button
+            onClick={handleJoin}
+            disabled={disableJoinButton}
+            className="w-full px-6 py-3 bg-[#2276cb] text-white rounded-lg font-semibold hover:bg-[#1a5ba8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? "Saving..." : buttonLabel}
+          </button>
+          <p className="text-xs text-gray-300 text-center">
+            Payouts run every Sunday at 4:30 PM CET.
+          </p>
+        </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -274,15 +305,11 @@ function InfoRow({ label, value, highlight }: { label: string; value: string | n
 
 function mapJoinError(code: string) {
   switch (code) {
-    case "auth_required":
-      return "Inicia sesión para participar.";
     case "invalid_address":
-      return "Dirección Polygon inválida.";
+      return "Polygon address is invalid.";
     case "address_in_use":
-      return "Esa dirección ya está registrada esta semana.";
-    case "unauthorized":
-      return "No tienes permiso para esta acción.";
+      return "That address is already registered this week.";
     default:
-      return "No pudimos guardar tu plaza. Intenta de nuevo.";
+      return "We could not save your slot. Please try again.";
   }
 }

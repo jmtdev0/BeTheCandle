@@ -13,6 +13,7 @@ export default function GlobalMusicPlayer() {
 
   // Only show music player on lobby and community-pot pages
   const shouldShowPlayer = pathname === "/lobby" || pathname === "/community-pot";
+  const shouldAutoHide = pathname === "/lobby" || pathname === "/community-pot";
 
   useEffect(() => {
     if (!shouldShowPlayer) {
@@ -20,8 +21,12 @@ export default function GlobalMusicPlayer() {
       return;
     }
 
+    if (!shouldAutoHide) {
+      setIsVisible(true);
+      return;
+    }
+
     const handleMouseMove = (e: MouseEvent) => {
-      // Show when mouse is near bottom-right corner (within 150px from right, 150px from bottom)
       const distanceFromRight = window.innerWidth - e.clientX;
       const distanceFromBottom = window.innerHeight - e.clientY;
       
@@ -34,31 +39,30 @@ export default function GlobalMusicPlayer() {
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [shouldShowPlayer, isHovering]);
+  }, [shouldShowPlayer, shouldAutoHide, isHovering]);
 
   if (!shouldShowPlayer) {
     return null;
   }
 
+  const pointerActive = !shouldAutoHide || isVisible || isHovering;
+  const opacity = shouldAutoHide ? (isVisible || isHovering ? 1 : 0) : 1;
+
   return (
     <motion.div
       ref={playerRef}
-      className="pointer-events-none fixed bottom-6 right-6 z-[60]"
+      className="fixed bottom-6 right-6 z-[60]"
       initial={{ opacity: 0 }}
-      animate={{
-        opacity: isVisible || isHovering ? 1 : 0,
-      }}
+      animate={{ opacity }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      style={{
-        pointerEvents: isVisible || isHovering ? "auto" : "none",
-      }}
-      onPointerEnter={() => {
+      style={{ pointerEvents: pointerActive ? "auto" : "none" }}
+      onPointerEnter={shouldAutoHide ? () => {
         setIsHovering(true);
         setIsVisible(true);
-      }}
-      onPointerLeave={() => {
+      } : undefined}
+      onPointerLeave={shouldAutoHide ? () => {
         setIsHovering(false);
-      }}
+      } : undefined}
     >
       <MusicPlayer />
     </motion.div>

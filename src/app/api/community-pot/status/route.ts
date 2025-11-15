@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { withDb } from "@/lib/db";
 import { getCommunityPotStatus } from "@/lib/communityPot";
+import { COMMUNITY_POT_VISITOR_COOKIE } from "@/lib/communityPotCookies";
 
 export async function GET() {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    const status = await withDb((db) => getCommunityPotStatus(db, user?.id ?? null));
+    const cookieStore = await cookies();
+    const visitorId = cookieStore.get(COMMUNITY_POT_VISITOR_COOKIE)?.value ?? null;
+    const status = await withDb((db) => getCommunityPotStatus(db, visitorId));
 
     return NextResponse.json(status, { headers: { "cache-control": "no-store" } });
   } catch (error) {
