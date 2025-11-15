@@ -24,6 +24,10 @@ function pseudoRandom(hash: number, shift: number) {
   return segment / 0xffff;
 }
 
+type FrameState = {
+  clock: THREE.Clock;
+};
+
 export default function ParticipantParticles({ participants }: ParticipantParticlesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const particleCount = participants.length;
@@ -47,8 +51,9 @@ export default function ParticipantParticles({ participants }: ParticipantPartic
     });
   }, [participants]);
 
-  useFrame((state) => {
+  useFrame((state: FrameState) => {
     if (!meshRef.current) return;
+    const mesh = meshRef.current;
 
     const t = state.clock.getElapsedTime();
 
@@ -65,10 +70,10 @@ export default function ParticipantParticles({ participants }: ParticipantPartic
       tempObject.scale.setScalar(particle.scale);
       tempObject.rotation.y = t * 0.1;
       tempObject.updateMatrix();
-      meshRef.current.setMatrixAt(index, tempObject.matrix);
+      mesh.setMatrixAt(index, tempObject.matrix);
     });
 
-    meshRef.current.instanceMatrix.needsUpdate = true;
+    mesh.instanceMatrix.needsUpdate = true;
   });
 
   if (particleCount === 0) {
