@@ -1,4 +1,5 @@
-import { DateTime } from "luxon";
+import { addDays, startOfDay, set as setDate, getISODay } from "date-fns";
+import { formatInTimeZone, toZonedTime, fromZonedTime } from "date-fns-tz";
 import type { Pool } from "pg";
 
 export const COMMUNITY_POT_TIMEZONE = "Europe/Berlin"; // CET/CEST
@@ -59,37 +60,36 @@ export interface CommunityPotStatusPayload {
 
 interface UpcomingWeekSchedule {
   weekLabel: string;
-  weekStartAtUtc: DateTime;
-  distributionAtUtc: DateTime;
+  weekStartAtUtc: Date;
+  distributionAtUtc: Date;
 }
 
-function normalizeReference(now?: DateTime) {
-  return (now ?? DateTime.now()).setZone(COMMUNITY_POT_TIMEZONE);
-}
+function buildSchedule(reference?: Date): UpcomingWeekSchedule {
+  const now = reference ?? new Date();
+  const zonedNow = toZonedTime(now, COMMUNITY_POT_TIMEZONE);
 
-function buildSchedule(reference?: DateTime): UpcomingWeekSchedule {
-  const zoned = normalizeReference(reference);
+  let distribution = setDate(zonedNow, {
+    hours: DISTRIBUTION_HOUR,
+    minutes: DISTRIBUTION_MINUTE,
+    seconds: 0,
+    milliseconds: 0,
+  });
 
-  const setDistribution = (base: DateTime) =>
-    base.set({
-      weekday: DISTRIBUTION_WEEKDAY,
-      hour: DISTRIBUTION_HOUR,
-      minute: DISTRIBUTION_MINUTE,
-      second: 0,
-      millisecond: 0,
-    });
+  const currentWeekday = getISODay(zonedNow);
+  const targetWeekday = DISTRIBUTION_WEEKDAY;
+  let daysAhead = (targetWeekday - currentWeekday + 7) % 7;
+  distribution = addDays(distribution, daysAhead);
 
-  let distribution = setDistribution(zoned);
-  if (zoned > distribution) {
-    distribution = setDistribution(zoned.plus({ weeks: 1 }));
+  if (distribution <= zonedNow) {
+    distribution = addDays(distribution, 7);
   }
 
-  const weekStart = distribution.minus({ days: 6 }).startOf("day");
+  const weekStart = startOfDay(addDays(distribution, -6));
 
   return {
-    weekLabel: distribution.toFormat("yyyy-LL-dd"),
-    weekStartAtUtc: weekStart.setZone("UTC"),
-    distributionAtUtc: distribution.setZone("UTC"),
+    weekLabel: formatInTimeZone(distribution, COMMUNITY_POT_TIMEZONE, "yyyy-LL-dd"),
+    weekStartAtUtc: fromZonedTime(weekStart, COMMUNITY_POT_TIMEZONE),
+    distributionAtUtc: fromZonedTime(distribution, COMMUNITY_POT_TIMEZONE),
   };
 }
 
@@ -130,7 +130,7 @@ export async function ensureUpcomingCommunityPotWeek(db: Pool): Promise<Communit
                executed_at,
                executed_tx_hash,
                execution_error`,
-    [schedule.weekLabel, schedule.weekStartAtUtc.toJSDate(), schedule.distributionAtUtc.toJSDate()]
+    [schedule.weekLabel, schedule.weekStartAtUtc, schedule.distributionAtUtc]
   );
 
   return inserted.rows[0];
