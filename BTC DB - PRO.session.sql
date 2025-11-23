@@ -827,4 +827,29 @@ ALTER TABLE community_pot_transactions
       REFERENCES community_pot_payout_participants(payout_id)
       ON DELETE SET NULL;
 
--- Añadimos un nuevo 
+-- Crear tabla que almacenará valores de configuración estándar de los repartos
+CREATE TABLE community_pot_config (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    label text NOT NULL,
+    description text,
+    value INTEGER NOT NULL
+);
+
+-- Cambiamos un poco el enfoque. Vamos a tener un registro que sirva como un reparto de ejemplo.COMMENT
+-- La fecha por defecto es el domingo a las 4:30 pm CET
+ALTER TABLE community_pot_payout_default_config
+    ADD COLUMN is_testnet boolean NOT NULL DEFAULT false,
+    ADD COLUMN max_participants integer NOT NULL DEFAULT 10,
+    ADD COLUMN scheduled_at timestamp with time zone NOT NULL DEFAULT (
+        date_trunc('week', timezone('Europe/Berlin', now())) + interval '6 days' + interval '16 hours' + interval '30 minutes'
+    ),
+    ADD COLUMN amount_usdc numeric(10,6) NOT NULL DEFAULT 10.00;
+    
+-- La planificación la vamos a configurar así mejor:
+-- schedule_weekday: 7
+-- schedule_time: "16:30"
+-- schedule_timezone: "CET"
+ALTER TABLE community_pot_payout_default_config
+    ADD COLUMN schedule_weekday integer NOT NULL DEFAULT 7 CHECK (schedule_weekday BETWEEN 1 AND 7),
+    ADD COLUMN schedule_time text NOT NULL DEFAULT '16:30',
+    ADD COLUMN schedule_timezone text NOT NULL DEFAULT 'Europe/Berlin';

@@ -33,7 +33,7 @@ function getRandomLightColor(id: string): string {
     "#FFFACD", // Lemon Chiffon
   ];
   
-  // Use participant ID to consistently select a color
+  // Use participant ID to consistently select a color (Hola)
   const hash = id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return lightColors[hash % lightColors.length];
 }

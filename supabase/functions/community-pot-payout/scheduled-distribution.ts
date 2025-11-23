@@ -170,6 +170,15 @@ interface PayoutPlan {
   amountUnits: bigint;
 }
 
+interface CommunityPotPayoutDefaultConfig {
+  amount_usdc: string | null;
+  max_participants: number | null;
+  is_testnet: boolean | null;
+  schedule_weekday: number | null;
+  schedule_time: string | null;
+  schedule_timezone: string | null;
+}
+
 interface SentTransaction {
   plan: PayoutPlan;
   hash: Hex;
@@ -249,6 +258,106 @@ function buildPayoutPlan(totalUnits: bigint, participants: CommunityPotParticipa
 
 function normalizePrivateKey(key: string): Hex {
   return (key.startsWith("0x") ? key : `0x${key}`) as Hex;
+}
+
+async function fetchDefaultPayoutConfig(client: SupabaseClient): Promise<CommunityPotPayoutDefaultConfig | null> {
+  const { data, error } = await client
+    .from("community_pot_payout_default_config")
+    .select(
+      "amount_usdc, max_participants, is_testnet, schedule_weekday, schedule_time, schedule_timezone"
+    )
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to load community pot default config", error.message);
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data as CommunityPotPayoutDefaultConfig;
+}
+
+function parseScheduleTime(value: string | null | undefined): { hour: number; minute: number } | null {
+  if (!value) return null;
+  const parts = value.split(":").map((part) => part.trim());
+  if (parts.length < 2) return null;
+  const hour = Number.parseInt(parts[0], 10);
+  const minute = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function normalizeWeekday(value: number | null | undefined): number {
+  if (value === null || value === undefined) {
+    return DISTRIBUTION_TARGET_WEEKDAY;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DISTRIBUTION_TARGET_WEEKDAY;
+  }
+  const normalized = ((Math.trunc(numeric) % 7) + 7) % 7;
+  return normalized;
+}
+
+function normalizeTimeZone(value: string | null | undefined): string {
+  if (!value) {
+    return DISTRIBUTION_TIMEZONE;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DISTRIBUTION_TIMEZONE;
+  }
+  try {
+    // Will throw for invalid IANA identifiers
+    new Intl.DateTimeFormat("en-US", { timeZone: trimmed });
+    return trimmed;
+  } catch {
+    return DISTRIBUTION_TIMEZONE;
+  }
+}
+
+function computeNextDistributionFromConfig(
+  config: CommunityPotPayoutDefaultConfig | null,
+  reference: Date = new Date()
+): Date {
+  if (!config) {
+    return computeNextDistributionDate(reference);
+  }
+
+  const timeZone = normalizeTimeZone(config.schedule_timezone);
+  const timeParts =
+    parseScheduleTime(config.schedule_time) ??
+    { hour: DISTRIBUTION_TARGET_HOUR, minute: DISTRIBUTION_TARGET_MINUTE };
+  const targetWeekday = normalizeWeekday(config.schedule_weekday);
+
+  const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  });
+  const weekdayKey = weekdayFormatter.format(reference);
+  const currentWeekday = WEEKDAY_LOOKUP[weekdayKey] ?? 0;
+
+  const dateParts = getDatePartsForTimeZone(reference, timeZone);
+  const currentMinutes = dateParts.hour * 60 + dateParts.minute;
+  const targetMinutes = timeParts.hour * 60 + timeParts.minute;
+
+  let daysAhead = (7 - currentWeekday + targetWeekday) % 7;
+  if (daysAhead === 0 && currentMinutes >= targetMinutes) {
+    daysAhead = 7;
+  }
+
+  return zonedLocalTimeToUtc(
+    dateParts.year,
+    dateParts.month,
+    dateParts.day + daysAhead,
+    timeParts.hour,
+    timeParts.minute,
+    timeZone
+  );
 }
 
 async function sendUsdcTransfers(
@@ -437,7 +546,27 @@ async function scheduleNextPayout(
   client: SupabaseClient,
   template: Pick<PendingPayout, "amount_usdc" | "is_testnet" | "max_participants">
 ): Promise<Date> {
-  const nextScheduledAt = computeNextDistributionDate();
+  const defaultConfig = await fetchDefaultPayoutConfig(client);
+  const nextScheduledAt = computeNextDistributionFromConfig(defaultConfig);
+
+  const rawAmount =
+    defaultConfig?.amount_usdc ??
+    template.amount_usdc ??
+    DEFAULT_PAYOUT_AMOUNT_USDC;
+  const resolvedAmount = typeof rawAmount === "string" ? rawAmount : String(rawAmount ?? DEFAULT_PAYOUT_AMOUNT_USDC);
+
+  let resolvedMaxParticipants = Math.max(1, template.max_participants ?? DEFAULT_MAX_PARTICIPANTS);
+  if (defaultConfig?.max_participants !== null && defaultConfig?.max_participants !== undefined) {
+    const numericMax = Number(defaultConfig.max_participants);
+    if (Number.isFinite(numericMax) && numericMax > 0) {
+      resolvedMaxParticipants = Math.max(1, Math.trunc(numericMax));
+    }
+  }
+
+  const resolvedIsTestnet =
+    defaultConfig?.is_testnet !== null && defaultConfig?.is_testnet !== undefined
+      ? Boolean(defaultConfig.is_testnet)
+      : template.is_testnet;
 
   const { data, error } = await client
     .from("community_pot_payouts")
@@ -456,10 +585,10 @@ async function scheduleNextPayout(
 
   const { error: conditionError } = await client.from("community_pot_payout_conditions").insert({
     payout_id: newPayoutId,
-    amount_usdc: template.amount_usdc ?? "0",
+    amount_usdc: resolvedAmount,
     scheduled_at: nextScheduledAt.toISOString(),
-    is_testnet: template.is_testnet,
-    max_participants: template.max_participants,
+    is_testnet: resolvedIsTestnet,
+    max_participants: resolvedMaxParticipants,
     execute_immediately: false,
   });
 
