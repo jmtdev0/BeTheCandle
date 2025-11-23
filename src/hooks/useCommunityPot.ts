@@ -24,6 +24,7 @@ interface CommunityPotWeekView {
   maxParticipants: number;
   spotsRemaining: number;
   countdownSeconds: number;
+  isTestnet: boolean;
 }
 
 interface CommunityPotState {
@@ -124,6 +125,8 @@ async function fetchStatus(): Promise<CommunityPotState> {
 export function useCommunityPot() {
   const [state, setState] = useState<CommunityPotState>(INITIAL_STATE);
   const [countdownSeconds, setCountdownSeconds] = useState(0);
+  const [distributionWindowActive, setDistributionWindowActive] = useState(false);
+  const [distributionResumeAt, setDistributionResumeAt] = useState<number | null>(null);
 
   const loadStatus = useCallback(async () => {
     setState((prev) => ({ ...prev, refreshing: true }));
@@ -140,6 +143,24 @@ export function useCommunityPot() {
         error: error instanceof Error ? error.message : "Error inesperado",
       }));
     }
+  }, []);
+
+  const startDistributionWindow = useCallback((week: CommunityPotWeekView | null) => {
+    if (!week) {
+      return;
+    }
+    const distributionTime = new Date(week.distributionAt).getTime();
+    if (!Number.isFinite(distributionTime)) {
+      return;
+    }
+    const windowEnd = distributionTime + 60_000;
+    const now = Date.now();
+    if (now >= windowEnd) {
+      return;
+    }
+    setDistributionWindowActive(true);
+    setDistributionResumeAt(windowEnd);
+    setCountdownSeconds(0);
   }, []);
 
   const joinCommunityPot = useCallback(async (polygonAddress: string) => {
@@ -171,9 +192,17 @@ export function useCommunityPot() {
 
   useEffect(() => {
     loadStatus();
-    const refreshInterval = setInterval(loadStatus, 60_000);
-    return () => clearInterval(refreshInterval);
   }, [loadStatus]);
+
+  useEffect(() => {
+    if (distributionWindowActive) {
+      return;
+    }
+    const refreshInterval = setInterval(() => {
+      loadStatus();
+    }, 60_000);
+    return () => clearInterval(refreshInterval);
+  }, [loadStatus, distributionWindowActive]);
 
   useEffect(() => {
     setCountdownSeconds(state.week?.countdownSeconds ?? 0);
@@ -186,13 +215,66 @@ export function useCommunityPot() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!state.week) {
+      return;
+    }
+    if (distributionWindowActive) {
+      return;
+    }
+    const distributionTime = new Date(state.week.distributionAt).getTime();
+    if (!Number.isFinite(distributionTime)) {
+      return;
+    }
+    const now = Date.now();
+    if (now >= distributionTime && now < distributionTime + 60_000) {
+      startDistributionWindow(state.week);
+    }
+  }, [state.week, distributionWindowActive, startDistributionWindow]);
+
+  useEffect(() => {
+    if (!state.week) {
+      return;
+    }
+    if (distributionWindowActive) {
+      return;
+    }
+    if (countdownSeconds > 0) {
+      return;
+    }
+    startDistributionWindow(state.week);
+  }, [countdownSeconds, distributionWindowActive, state.week, startDistributionWindow]);
+
+  useEffect(() => {
+    if (!distributionWindowActive || distributionResumeAt == null) {
+      return;
+    }
+    const now = Date.now();
+    const delay = Math.max(0, distributionResumeAt - now);
+    const timeout = window.setTimeout(() => {
+      setDistributionWindowActive(false);
+      setDistributionResumeAt(null);
+      loadStatus().catch((error) => {
+        console.error("Failed to refresh community pot after distribution", error);
+      });
+    }, delay);
+    return () => clearTimeout(timeout);
+  }, [distributionWindowActive, distributionResumeAt, loadStatus]);
+
   const countdown = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
 
   return {
     ...state,
     countdown,
     joinCommunityPot,
-    refresh: loadStatus,
+    refresh: () => {
+      if (distributionWindowActive) {
+        return Promise.resolve();
+      }
+      return loadStatus();
+    },
     viewerHasCurrentSlot: Boolean(state.week?.id && state.viewerJoinedWeekId === state.week.id),
+    distributionWindowActive,
+    distributionResumeAt,
   };
 }

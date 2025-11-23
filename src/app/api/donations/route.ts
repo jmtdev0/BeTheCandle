@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { withDb } from "@/lib/db";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const donationInputSchema = z.object({
   displayName: z.string().min(1).max(64),
@@ -14,27 +14,39 @@ const BTC_ADDRESS_REGEX = /^(1|3|bc1)[a-zA-Z0-9]{25,62}$/;
 
 export async function GET() {
   try {
-    const result = await withDb(async (db) => {
-      const { rows } = await db.query(
-        `select id,
-                display_name as "displayName",
-                btc_address as "btcAddress",
-                amount_btc as "amountBtc",
-                coalesce(message, '') as message,
-                coalesce(orbit_style, '') as "orbitStyle",
-                created_at as "createdAt"
-           from public.donations
-          order by created_at asc`
-      );
+    const supabase = getSupabaseAdminClient();
+    
+    const { data: donations, error: donationsError } = await supabase
+      .from('donations')
+      .select('id, display_name, btc_address, amount_btc, message, orbit_style, created_at')
+      .order('created_at', { ascending: true });
 
-      const totalResult = await db.query<{ total: string }>(
-        "select coalesce(sum(amount_btc), 0)::text as total from public.donations"
-      );
+    if (donationsError) {
+      throw donationsError;
+    }
 
-      const totalBtc = parseFloat(totalResult.rows[0]?.total ?? "0");
+    const { data: totalData, error: totalError } = await supabase
+      .from('donations')
+      .select('amount_btc');
 
-      return { donations: rows, totalBtc };
-    });
+    if (totalError) {
+      throw totalError;
+    }
+
+    const totalBtc = totalData?.reduce((sum, d) => sum + (d.amount_btc || 0), 0) || 0;
+
+    const result = {
+      donations: donations?.map(d => ({
+        id: d.id,
+        displayName: d.display_name,
+        btcAddress: d.btc_address,
+        amountBtc: d.amount_btc,
+        message: d.message || '',
+        orbitStyle: d.orbit_style || '',
+        createdAt: d.created_at
+      })) || [],
+      totalBtc
+    };
 
     return NextResponse.json({
       donations: result.donations.map((donation) => ({
@@ -62,34 +74,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid Bitcoin address" }, { status: 400 });
     }
 
-    const inserted = await withDb(async (db) => {
-      const { rows } = await db.query(
-        `insert into public.donations (display_name, btc_address, amount_btc, message, orbit_style)
-         values ($1, $2, $3, nullif($4, ''), nullif($5, ''))
-         returning id,
-                   display_name as "displayName",
-                   btc_address as "btcAddress",
-                   amount_btc as "amountBtc",
-                   coalesce(message, '') as message,
-                   coalesce(orbit_style, '') as "orbitStyle",
-                   created_at as "createdAt"`,
-        [
-          parsed.data.displayName.trim(),
-          parsed.data.btcAddress.trim(),
-          parsed.data.amountBtc,
-          parsed.data.message ?? "",
-          parsed.data.orbitStyle ?? "",
-        ]
-      );
+    const supabase = getSupabaseAdminClient();
+    
+    const { data: inserted, error } = await supabase
+      .from('donations')
+      .insert({
+        display_name: parsed.data.displayName.trim(),
+        btc_address: parsed.data.btcAddress.trim(),
+        amount_btc: parsed.data.amountBtc,
+        message: parsed.data.message || null,
+        orbit_style: parsed.data.orbitStyle || null,
+      })
+      .select('id, display_name, btc_address, amount_btc, message, orbit_style, created_at')
+      .single();
 
-      return rows[0];
-    });
+    if (error) {
+      throw error;
+    }
 
     return NextResponse.json(
       {
         donation: {
-          ...inserted,
-          createdAt: inserted.createdAt.toISOString(),
+          id: inserted.id,
+          displayName: inserted.display_name,
+          btcAddress: inserted.btc_address,
+          amountBtc: inserted.amount_btc,
+          message: inserted.message || '',
+          orbitStyle: inserted.orbit_style || '',
+          createdAt: new Date(inserted.created_at).toISOString(),
         },
       },
       { status: 201 }

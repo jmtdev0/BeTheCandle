@@ -621,8 +621,8 @@ export default function InteractiveSphere3D({
   ctx.lineWidth = Math.max(2, Math.floor(size * 0.004));
   ctx.strokeStyle = 'rgba(255, 196, 120, 0.85)';
     const yOffset = Math.floor(size * 0.02);
-    ctx.strokeText('₿', size / 2, size / 2 + yOffset);
-    ctx.fillText('₿', size / 2, size / 2 + yOffset);
+    ctx.strokeText('$', size / 2, size / 2 + yOffset);
+    ctx.fillText('$', size / 2, size / 2 + yOffset);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;

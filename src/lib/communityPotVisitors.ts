@@ -1,28 +1,20 @@
-import type { Pool } from "pg";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export function formatVisitorDisplayName(visitorId: string): string {
   const compact = visitorId.replace(/-/g, "").slice(0, 6);
   return `Visitor ${compact}`;
 }
 
-export async function ensureVisitorUser(db: Pool, visitorId: string): Promise<void> {
+export async function ensureVisitorUser(visitorId: string): Promise<void> {
   const displayName = formatVisitorDisplayName(visitorId);
+  const supabase = getSupabaseAdminClient();
 
-  await db.query(
-    `insert into public.users (id, display_name, last_seen_at)
-     values ($1, $2, timezone('utc', now()))
-     on conflict (id) do update
-       set display_name = excluded.display_name,
-           last_seen_at = timezone('utc', now())`,
-    [visitorId, displayName]
-  );
+  const { error } = await supabase.rpc("community_pot_ensure_visitor_profile", {
+    p_user_id: visitorId,
+    p_display_name: displayName,
+  });
 
-  await db.query(
-    `insert into public.user_profiles (user_id, display_name, updated_at)
-     values ($1, $2, timezone('utc', now()))
-     on conflict (user_id) do update
-       set display_name = excluded.display_name,
-           updated_at = timezone('utc', now())`,
-    [visitorId, displayName]
-  );
+  if (error) {
+    throw error;
+  }
 }

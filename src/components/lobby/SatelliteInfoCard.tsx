@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { ExternalLink, Link as LinkIcon, Loader2, Bitcoin } from "lucide-react";
+import { ExternalLink, Link as LinkIcon, Loader2 } from "lucide-react";
 import { SatelliteUser } from "./InteractiveSphere3D";
 
 interface SatelliteInfoCardProps {
@@ -256,33 +256,6 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
             </div>
           )}
 
-          {/* Current BTC holdings */}
-          <div>
-            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-              Estimated Holdings
-            </div>
-            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 mt-2">
-              <p className="text-lg font-bold text-orange-400">
-                {user.currentBTC}
-              </p>
-            </div>
-          </div>
-
-          {/* Goal */}
-          <div>
-            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-              Goal
-            </div>
-            <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg p-3 border border-orange-500/30 mt-2">
-              <div className="flex items-baseline gap-2">
-                <span className="text-lg font-bold text-orange-300">
-                  {user.goalBTC}
-                </span>
-                <span className="text-xs text-slate-400">BTC</span>
-              </div>
-            </div>
-          </div>
-
           {/* Bio */}
           <div>
             <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
@@ -334,25 +307,6 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
 
         {/* Footer */}
         <div className="px-4 pb-4 flex flex-col gap-3">
-          {donateHref ? (
-            <a
-              href={donateHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/15 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/30"
-            >
-              <Bitcoin className="h-4 w-4" />
-              Donate BTC
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2 text-sm font-semibold text-slate-400 opacity-70 cursor-not-allowed"
-            >
-              Donate BTC
-            </button>
-          )}
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
             <span>Active satellite in orbit</span>

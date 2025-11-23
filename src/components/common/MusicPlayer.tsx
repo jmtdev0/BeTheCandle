@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 
 interface Track {
@@ -12,19 +12,140 @@ interface Track {
 
 interface MusicPlayerProps {
   tracks?: Track[];
+  theme?: "blue" | "orange"; // "blue" para Community Pot, "orange" para Lobby
 }
 
-export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerProps) {
+// Helper functions para cookies
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(";").shift() || null;
+  return null;
+}
+
+function setCookie(name: string, value: string, days = 365) {
+  if (typeof document === "undefined") return;
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(0.3); // 30% volumen inicial
+  const [isHydrated, setIsHydrated] = useState(false);
+  
+  // Cargar volumen y estado de mute desde cookies (valores por defecto para SSR)
+  const [volume, setVolume] = useState(0.3);
+  const [isMuted, setIsMuted] = useState(false);
+  
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previousVolumeRef = useRef(0.3);
   const hasAutoPlayedRef = useRef(false);
   const lastPlayedTrackRef = useRef<number>(-1); // Track the last played track to avoid immediate repeats
+  const currentTrackPathRef = useRef<string | null>(null);
+
+  const handleTrackEnd = useCallback(() => {
+    const audio = audioRef.current;
+
+    if (tracks.length <= 1) {
+      if (audio) {
+        audio.currentTime = 0;
+        audio
+          .play()
+          .then(() => {
+            hasAutoPlayedRef.current = true;
+            setIsPlaying(true);
+          })
+          .catch(() => {
+            setIsPlaying(false);
+          });
+      }
+      return;
+    }
+
+    let nextIndex = currentTrackIndex;
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    while ((nextIndex === currentTrackIndex || nextIndex === lastPlayedTrackRef.current) && attempts < maxAttempts) {
+      nextIndex = Math.floor(Math.random() * tracks.length);
+      attempts += 1;
+    }
+
+    if (nextIndex === currentTrackIndex) {
+      nextIndex = (currentTrackIndex + 1) % tracks.length;
+    }
+
+    lastPlayedTrackRef.current = currentTrackIndex;
+    setCurrentTrackIndex(nextIndex);
+  }, [tracks, currentTrackIndex]);
+
+  // Cargar configuración guardada solo después de la hidratación
+  useEffect(() => {
+    const savedVolume = getCookie("music_volume");
+    const savedMuted = getCookie("music_muted");
+    
+    if (savedVolume) {
+      setVolume(parseFloat(savedVolume));
+    }
+    if (savedMuted) {
+      setIsMuted(savedMuted === "true");
+    }
+    
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.preload = "auto";
+      audioRef.current.loop = false;
+    }
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.loop = false;
+
+    const onEnded = () => handleTrackEnd();
+    const onCanPlayThrough = () => {
+      if (hasAutoPlayedRef.current || !audioRef.current) return;
+
+      audioRef.current
+        .play()
+        .then(() => {
+          hasAutoPlayedRef.current = true;
+          setIsPlaying(true);
+        })
+        .catch((error) => {
+          console.log("Auto-play bloqueado. Haz click en play para iniciar.", error);
+          setIsPlaying(false);
+        });
+    };
+
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("canplaythrough", onCanPlayThrough);
+
+    return () => {
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("canplaythrough", onCanPlayThrough);
+    };
+  }, [handleTrackEnd]);
+
+  // Guardar volumen en cookie cuando cambia
+  useEffect(() => {
+    setCookie("music_volume", volume.toString());
+  }, [volume]);
+
+  // Guardar estado de mute en cookie cuando cambia
+  useEffect(() => {
+    setCookie("music_muted", isMuted.toString());
+  }, [isMuted]);
 
   // Cargar música automáticamente desde la API
   useEffect(() => {
@@ -45,64 +166,55 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
     loadMusic();
   }, []);
 
-  // Inicializar y manejar cambios de audio
+  // Manejar reproducción y cambios de pistas
   useEffect(() => {
-    if (tracks.length === 0) return;
+    const audio = audioRef.current;
 
-    // Crear audio si no existe
-    if (!audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.volume = volume;
-      audioRef.current.loop = true;
-      
-      // Event listeners
-      audioRef.current.addEventListener("ended", handleTrackEnd);
-      
-      // Listener para cuando el audio está listo para reproducirse
-      audioRef.current.addEventListener("canplaythrough", () => {
-        if (!hasAutoPlayedRef.current && audioRef.current) {
-          hasAutoPlayedRef.current = true;
-          // Intentar auto-play
-          audioRef.current.play()
-            .then(() => {
-              setIsPlaying(true);
-            })
-            .catch((error) => {
-              // Auto-play bloqueado, esperar interacción del usuario
-              console.log("Auto-play bloqueado. Haz click en play para iniciar.", error);
-              setIsPlaying(false);
-            });
-        }
-      });
+    if (!audio || tracks.length === 0) {
+      currentTrackPathRef.current = null;
+      return;
     }
 
-    // Actualizar la fuente de audio
-    if (audioRef.current.src !== tracks[currentTrackIndex].path) {
-      const wasPlaying = isPlaying;
-      audioRef.current.src = tracks[currentTrackIndex].path;
-      audioRef.current.volume = isMuted ? 0 : volume;
-      
-      if (wasPlaying) {
-        // Esperar a que se cargue antes de reproducir
-        audioRef.current.load();
-        audioRef.current.play()
+    const nextTrack = tracks[currentTrackIndex];
+    if (!nextTrack) return;
+
+    if (currentTrackPathRef.current !== nextTrack.path) {
+      currentTrackPathRef.current = nextTrack.path;
+      audio.src = nextTrack.path;
+      try {
+        audio.load();
+      } catch (error) {
+        console.warn("No se pudo cargar el audio:", error);
+      }
+      audio.currentTime = 0;
+    }
+
+    audio.loop = false;
+    audio.volume = isMuted ? 0 : volume;
+
+    const shouldAutoPlay = isPlaying || !hasAutoPlayedRef.current;
+
+    if (shouldAutoPlay) {
+      if (audio.paused) {
+        audio
+          .play()
           .then(() => {
             setIsPlaying(true);
+            hasAutoPlayedRef.current = true;
           })
           .catch((error) => {
-            console.error("Error al reproducir:", error);
+            if (!hasAutoPlayedRef.current) {
+              console.log("Auto-play bloqueado. Haz click en play para iniciar.", error);
+            } else {
+              console.error("Error al reproducir:", error);
+            }
             setIsPlaying(false);
           });
       }
+    } else if (!audio.paused) {
+      audio.pause();
     }
-
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.removeEventListener("ended", handleTrackEnd);
-      }
-    };
-  }, [tracks, currentTrackIndex]);
+  }, [tracks, currentTrackIndex, isPlaying, isMuted, volume]);
 
   // Actualizar volumen cuando cambia
   useEffect(() => {
@@ -110,27 +222,6 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
       audioRef.current.volume = isMuted ? 0 : volume;
     }
   }, [volume, isMuted]);
-
-  const handleTrackEnd = () => {
-    // Select next random track, excluding the one that just finished
-    if (tracks.length <= 1) {
-      // If only 1 track, just replay it
-      setCurrentTrackIndex(0);
-      return;
-    }
-
-    let nextIndex;
-    const maxAttempts = 10;
-    let attempts = 0;
-
-    do {
-      nextIndex = Math.floor(Math.random() * tracks.length);
-      attempts++;
-    } while (nextIndex === currentTrackIndex && attempts < maxAttempts);
-
-    lastPlayedTrackRef.current = currentTrackIndex;
-    setCurrentTrackIndex(nextIndex);
-  };
 
   const togglePlay = () => {
     if (!audioRef.current || tracks.length === 0) return;
@@ -141,6 +232,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
     } else {
       audioRef.current.play()
         .then(() => {
+          hasAutoPlayedRef.current = true;
           setIsPlaying(true);
         })
         .catch((error) => {
@@ -175,13 +267,32 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
   // Siempre mostrar el reproductor, incluso sin canciones (para que sea visible)
   const currentTrack = tracks.length > 0 ? tracks[currentTrackIndex] : null;
 
+  // Colores según el tema
+  const themeColors = theme === "blue" ? {
+    icon: "text-blue-400",
+    iconHover: "hover:text-blue-400",
+    button: "bg-blue-500 hover:bg-blue-600",
+    highlight: "text-blue-400",
+    highlightBg: "bg-blue-500/20",
+    slider: "#2276cb",
+    sliderHover: "#2b7fdb",
+  } : {
+    icon: "text-orange-400",
+    iconHover: "hover:text-orange-400",
+    button: "bg-orange-500 hover:bg-orange-600",
+    highlight: "text-orange-400",
+    highlightBg: "bg-orange-500/20",
+    slider: "#f7931a",
+    sliderHover: "#ff9f2e",
+  };
+
   return (
     <div className="fixed bottom-6 right-6 z-50">
       <div className="bg-gray-900/95 backdrop-blur-md rounded-lg shadow-2xl border border-gray-700/50 overflow-hidden transition-all duration-300">
         {/* Barra superior colapsable */}
         <div className="flex items-center justify-between p-3 border-b border-gray-700/50 bg-gray-800/50">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Music size={16} className="text-orange-400 flex-shrink-0" />
+            <Music size={16} className={`${themeColors.icon} flex-shrink-0`} />
             <span className="text-xs text-gray-400 truncate">
               {currentTrack ? currentTrack.displayName : "No music"}
             </span>
@@ -210,7 +321,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
                 key={track.path}
                 className={`w-full px-4 py-3 text-left text-sm transition-colors ${
                   index === currentTrackIndex
-                    ? "bg-orange-500/20"
+                    ? themeColors.highlightBg
                     : "hover:bg-gray-800/50"
                 }`}
               >
@@ -219,12 +330,12 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
                     onClick={() => selectTrack(index)}
                     className="flex items-center gap-2 flex-1 min-w-0"
                   >
-                    <Music size={14} className={index === currentTrackIndex ? "text-orange-400" : "text-gray-400"} />
-                    <span className={`truncate ${index === currentTrackIndex ? "text-orange-400" : "text-gray-300"}`}>
+                    <Music size={14} className={index === currentTrackIndex ? themeColors.highlight : "text-gray-400"} />
+                    <span className={`truncate ${index === currentTrackIndex ? themeColors.highlight : "text-gray-300"}`}>
                       {track.displayName}
                     </span>
                     {index === currentTrackIndex && isPlaying && (
-                      <span className="ml-auto text-orange-400">♪</span>
+                      <span className={`ml-auto ${themeColors.highlight}`}>♪</span>
                     )}
                   </button>
                   {track.link && (
@@ -232,7 +343,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
                       href={track.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-shrink-0 p-1 text-gray-400 hover:text-orange-400 transition-colors"
+                      className={`flex-shrink-0 p-1 text-gray-400 ${themeColors.iconHover} transition-colors`}
                       title="Ver en YouTube"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -256,7 +367,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
               className={`flex-shrink-0 w-10 h-10 rounded-full transition-colors flex items-center justify-center text-white ${
                 tracks.length === 0 
                   ? "bg-gray-700 cursor-not-allowed opacity-50" 
-                  : "bg-orange-500 hover:bg-orange-600"
+                  : themeColors.button
               }`}
               title={tracks.length === 0 ? "No music available" : (isPlaying ? "Pause" : "Play")}
             >
@@ -274,13 +385,17 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
             <div className="flex items-center gap-2 flex-1">
               <button
                 onClick={toggleMute}
-                className="flex-shrink-0 text-gray-400 hover:text-orange-400 transition-colors"
-                title={isMuted ? "Activar sonido" : "Silenciar"}
+                className={`flex-shrink-0 text-gray-400 ${themeColors.iconHover} transition-colors`}
+                title={isMuted ? "Activate sound" : "Mute"}
               >
-                {isMuted || volume === 0 ? (
-                  <VolumeX size={20} />
-                ) : (
-                  <Volume2 size={20} />
+                {isHydrated && (
+                  <>
+                    {isMuted || volume === 0 ? (
+                      <VolumeX size={20} />
+                    ) : (
+                      <Volume2 size={20} />
+                    )}
+                  </>
                 )}
               </button>
 
@@ -294,10 +409,11 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
                 onChange={handleVolumeChange}
                 className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
                 style={{
-                  background: `linear-gradient(to right, #f7931a ${
+                  background: `linear-gradient(to right, ${themeColors.slider} ${
                     (isMuted ? 0 : volume) * 100
                   }%, #374151 ${(isMuted ? 0 : volume) * 100}%)`,
                 }}
+                data-theme={theme}
               />
 
               {/* Porcentaje de volumen */}
@@ -312,7 +428,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
             <div className="mt-3 pt-3 border-t border-gray-700/50">
               <p className="text-xs text-gray-500 text-center leading-relaxed">
                 📁 Añade archivos MP3 a<br />
-                <code className="text-orange-400/70 text-[10px]">
+                <code className={`${themeColors.highlight}/70 text-[10px]`}>
                   /public/background_music/
                 </code>
                 <br />
@@ -330,7 +446,7 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
           width: 14px;
           height: 14px;
           border-radius: 50%;
-          background: #f7931a;
+          background: ${themeColors.slider};
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
@@ -339,18 +455,18 @@ export default function MusicPlayer({ tracks: initialTracks = [] }: MusicPlayerP
           width: 14px;
           height: 14px;
           border-radius: 50%;
-          background: #f7931a;
+          background: ${themeColors.slider};
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
 
         .slider-thumb::-webkit-slider-thumb:hover {
-          background: #ff9f2e;
+          background: ${themeColors.sliderHover};
         }
 
         .slider-thumb::-moz-range-thumb:hover {
-          background: #ff9f2e;
+          background: ${themeColors.sliderHover};
         }
       `}</style>
     </div>

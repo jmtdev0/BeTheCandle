@@ -5,6 +5,7 @@ import GlobalMusicPlayer from "@/components/common/GlobalMusicPlayer";
 import AnimatedFavicon from "@/components/common/AnimatedFavicon";
 import UserIdentityBootstrap from "@/components/common/UserIdentityBootstrap";
 import { SupabaseAuthProvider } from "@/components/common/AuthProvider";
+import { PageTransitionProvider } from "@/contexts/PageTransitionContext";
 
 export const metadata: Metadata = {
   title: "Bitcoin Daily Collection - Donation Platform",
@@ -22,9 +23,11 @@ export default function RootLayout({
         <SupabaseAuthProvider>
           <AnimatedFavicon />
           <UserIdentityBootstrap />
-          <SidebarWithLobbyStatus />
-          <GlobalMusicPlayer />
-          {children}
+          <PageTransitionProvider>
+            <SidebarWithLobbyStatus />
+            <GlobalMusicPlayer />
+            {children}
+          </PageTransitionProvider>
         </SupabaseAuthProvider>
       </body>
     </html>

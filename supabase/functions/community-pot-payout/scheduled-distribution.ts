@@ -1,14 +1,17 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.47.10";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.47.10";
 import {
   erc20Abi,
   createPublicClient,
   createWalletClient,
+  formatUnits,
   http,
   type Address,
   type Hex,
+  type TransactionReceipt,
+  type Chain,
 } from "npm:viem";
-import { polygon } from "npm:viem/chains";
+import { polygon, polygonAmoy } from "npm:viem/chains";
 import { privateKeyToAccount } from "npm:viem/accounts";
 
 const corsHeaders = {
@@ -19,24 +22,172 @@ const corsHeaders = {
 const USDC_DECIMALS = 6;
 const USDC_FACTOR = BigInt(10 ** USDC_DECIMALS);
 const DEFAULT_POLYGON_USDC = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+const DISTRIBUTION_TIMEZONE = "Europe/Berlin";
+const DISTRIBUTION_TARGET_WEEKDAY = 0; // Sunday
+const DISTRIBUTION_TARGET_HOUR = 16;
+const DISTRIBUTION_TARGET_MINUTE = 30;
 
-type CommunityPotWeek = {
-  id: string;
-  week_label: string;
-  distribution_at: string;
-  amount_usdc: string;
-  max_participants: number;
-  status: "open" | "closed" | "paid";
+const WEEKDAY_LOOKUP: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
 };
+
+function getDatePartsForTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const lookup: Record<string, number> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      lookup[part.type] = Number(part.value);
+    }
+  }
+
+  return {
+    year: lookup.year,
+    month: lookup.month,
+    day: lookup.day,
+    hour: lookup.hour,
+    minute: lookup.minute,
+    second: lookup.second,
+  };
+}
+
+function getTimeZoneOffsetInMinutes(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const lookup: Record<string, number> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      lookup[part.type] = Number(part.value);
+    }
+  }
+
+  const interpretedAsUtc = Date.UTC(
+    lookup.year,
+    lookup.month - 1,
+    lookup.day,
+    lookup.hour,
+    lookup.minute,
+    lookup.second,
+  );
+
+  return Math.round((interpretedAsUtc - date.getTime()) / 60000);
+}
+
+function zonedLocalTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): Date {
+  const provisionalUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  const offsetMinutes = getTimeZoneOffsetInMinutes(provisionalUtc, timeZone);
+  return new Date(provisionalUtc.getTime() - offsetMinutes * 60000);
+}
+
+function computeNextDistributionDate(reference: Date = new Date()): Date {
+  const timeZone = DISTRIBUTION_TIMEZONE;
+  const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  });
+  const weekdayKey = weekdayFormatter.format(reference);
+  const currentWeekday = WEEKDAY_LOOKUP[weekdayKey] ?? 0;
+
+  const dateParts = getDatePartsForTimeZone(reference, timeZone);
+  const currentMinutes = dateParts.hour * 60 + dateParts.minute;
+  const targetMinutes = DISTRIBUTION_TARGET_HOUR * 60 + DISTRIBUTION_TARGET_MINUTE;
+
+  let daysAhead = (7 - currentWeekday + DISTRIBUTION_TARGET_WEEKDAY) % 7;
+  if (daysAhead === 0 && currentMinutes >= targetMinutes) {
+    daysAhead = 7;
+  }
+
+  const scheduledUtc = zonedLocalTimeToUtc(
+    dateParts.year,
+    dateParts.month,
+    dateParts.day + daysAhead,
+    DISTRIBUTION_TARGET_HOUR,
+    DISTRIBUTION_TARGET_MINUTE,
+    timeZone,
+  );
+
+  return scheduledUtc;
+}
 
 type CommunityPotParticipant = {
-  id: string;
   polygon_address: string;
+  joined_at: string;
 };
+
+type CommunityPotPayoutConditionsRow = {
+  payout_id: string;
+  amount_usdc: string;
+  scheduled_at: string;
+  is_testnet: boolean;
+  max_participants: number;
+  execute_immediately: boolean;
+};
+
+interface PendingPayout {
+  id: string;
+  amount_usdc: string;
+  scheduled_at: string;
+  is_testnet: boolean;
+  max_participants: number;
+  execute_immediately: boolean;
+}
+
+type CommunityPotPayoutStatus = "Pending" | "In Progress" | "Completed" | "Failed";
 
 interface PayoutPlan {
   participant: CommunityPotParticipant;
   amountUnits: bigint;
+}
+
+interface SentTransaction {
+  plan: PayoutPlan;
+  hash: Hex;
+  blockNumber: bigint | null;
+  gasPaidWei: bigint | null;
+}
+
+interface RegisterTransactionPayload {
+  payoutId: string;
+  txHash: string;
+  polygonAddress: string;
+  amountUnits: string;
+  status?: string;
+  gasPaidWei?: string | number | bigint | null;
+  chainId?: number;
+  blockNumber?: string | number | bigint | null;
+  explorerUrl?: string | null;
+  confirmedAt?: string | null;
 }
 
 function extractSecret(headers: Headers) {
@@ -49,9 +200,13 @@ function extractSecret(headers: Headers) {
   return null;
 }
 
-function decimalToUnits(amount: string | null): bigint {
+function decimalToUnits(amount?: string | null): bigint {
   if (!amount) return 0n;
-  const trimmed = amount.trim();
+  
+  // Convertir a string si es necesario
+  const amountStr = typeof amount === "string" ? amount : String(amount);
+  const trimmed = amountStr.trim();
+  
   if (!trimmed) return 0n;
   const [wholeRaw, fractionalRaw = ""] = trimmed.split(".");
   const whole = wholeRaw.replace(/[^0-9]/g, "") || "0";
@@ -65,6 +220,14 @@ function unitsToDecimal(units: bigint): string {
   const fractional = units % USDC_FACTOR;
   const fractionalStr = fractional.toString().padStart(USDC_DECIMALS, "0");
   return `${whole}.${fractionalStr}`.replace(/\.0+$/, "");
+}
+
+function normalizeNumericInput(value: string | number | bigint | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "number") return Number.isFinite(value) ? value.toString() : null;
+  if (typeof value === "string") return value;
+  return null;
 }
 
 function buildPayoutPlan(totalUnits: bigint, participants: CommunityPotParticipant[]): PayoutPlan[] {
@@ -84,15 +247,19 @@ function buildPayoutPlan(totalUnits: bigint, participants: CommunityPotParticipa
   }));
 }
 
+function normalizePrivateKey(key: string): Hex {
+  return (key.startsWith("0x") ? key : `0x${key}`) as Hex;
+}
+
 async function sendUsdcTransfers(
   plans: PayoutPlan[],
-  options: { rpcUrl: string; privateKey: Hex; contractAddress: Address }
-) {
+  options: { rpcUrl: string; privateKey: Hex; contractAddress: Address; chain: Chain }
+): Promise<SentTransaction[]> {
   const account = privateKeyToAccount(options.privateKey);
-  const walletClient = createWalletClient({ account, chain: polygon, transport: http(options.rpcUrl) });
-  const publicClient = createPublicClient({ chain: polygon, transport: http(options.rpcUrl) });
+  const walletClient = createWalletClient({ account, chain: options.chain, transport: http(options.rpcUrl) });
+  const publicClient = createPublicClient({ chain: options.chain, transport: http(options.rpcUrl) });
 
-  const hashes: string[] = [];
+  const sent: SentTransaction[] = [];
   for (const plan of plans) {
     const txHash = await walletClient.writeContract({
       abi: erc20Abi,
@@ -100,10 +267,18 @@ async function sendUsdcTransfers(
       functionName: "transfer",
       args: [plan.participant.polygon_address as Address, plan.amountUnits],
     });
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
-    hashes.push(txHash);
+    const receipt = (await publicClient.waitForTransactionReceipt({ hash: txHash })) as TransactionReceipt;
+    const gasUsed = receipt.gasUsed ?? null;
+    const effectiveGasPrice = (receipt as { effectiveGasPrice?: bigint }).effectiveGasPrice ?? null;
+    const gasPaidWei = gasUsed !== null && effectiveGasPrice !== null ? gasUsed * effectiveGasPrice : null;
+    sent.push({
+      plan,
+      hash: txHash,
+      blockNumber: receipt.blockNumber ?? null,
+      gasPaidWei,
+    });
   }
-  return hashes;
+  return sent;
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -111,6 +286,202 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+async function logEdgeFetch(client: SupabaseClient, dryRun: boolean) {
+  const { error } = await client.rpc("community_pot_log_edge_fetch", {
+    p_dry_run: dryRun,
+  });
+  if (error) {
+    console.error("community_pot_log_edge_fetch failed", error.message);
+  }
+}
+
+async function logEvent(client: SupabaseClient, message: string, payoutId?: string | null) {
+  const { error } = await client.rpc("community_pot_log_event", {
+    p_message: message,
+    p_log_from: "edge_function",
+    p_payout_id: payoutId ?? null,
+  });
+  if (error) {
+    console.error("community_pot_log_event failed", error.message);
+  }
+}
+
+async function logParticipantSnapshot(client: SupabaseClient, payoutId: string, amountUsdc: string) {
+  const { data, error } = await client.rpc("community_pot_log_participant_snapshot", {
+    p_payout_id: payoutId,
+    p_amount_usdc: amountUsdc,
+  });
+  if (error) {
+    console.error("community_pot_log_participant_snapshot failed", error.message);
+    return null;
+  }
+  return typeof data === "number" ? data : null;
+}
+
+async function logPayoutCompletion(
+  client: SupabaseClient,
+  payload: {
+    payoutId: string;
+    status: string;
+    transactionCount: number;
+    nextScheduledAt?: string | null;
+  }
+) {
+  const { error } = await client.rpc("community_pot_log_payout_completion", {
+    p_payout_id: payload.payoutId,
+    p_status: payload.status,
+    p_transaction_count: payload.transactionCount,
+    p_next_scheduled_at: payload.nextScheduledAt ?? null,
+  });
+  if (error) {
+    console.error("community_pot_log_payout_completion failed", error.message);
+  }
+}
+
+async function logFailure(
+  client: SupabaseClient,
+  payload: { payoutId?: string | null; stage: string; error: string }
+) {
+  const { error } = await client.rpc("community_pot_log_failure", {
+    p_payout_id: payload.payoutId ?? null,
+    p_stage: payload.stage,
+    p_error: payload.error,
+    p_context: null,
+  });
+  if (error) {
+    console.error("community_pot_log_failure failed", error.message);
+  }
+}
+
+async function registerTransaction(client: SupabaseClient, payload: RegisterTransactionPayload) {
+  const gasPaidWei = normalizeNumericInput(payload.gasPaidWei ?? null);
+  const blockNumber = normalizeNumericInput(payload.blockNumber ?? null);
+  const { error } = await client.rpc("community_pot_register_transaction", {
+    p_payout_id: payload.payoutId,
+    p_tx_hash: payload.txHash,
+    p_polygon_address: payload.polygonAddress,
+    p_amount_units: payload.amountUnits,
+    p_status: payload.status ?? "sent",
+    p_gas_paid_wei: gasPaidWei,
+    p_chain_id: payload.chainId ?? polygon.id,
+    p_block_number: blockNumber,
+    p_explorer_url: payload.explorerUrl ?? null,
+    p_confirmed_at: payload.confirmedAt ?? null,
+  });
+  if (error) {
+    throw new Error(`Failed to register transaction ${payload.txHash}: ${error.message}`);
+  }
+}
+
+async function findPendingPayout(client: SupabaseClient, now: Date): Promise<PendingPayout | null> {
+  const { data, error } = await client
+    .from("community_pot_payout_conditions")
+    .select(
+      `payout_id,
+       amount_usdc,
+       scheduled_at,
+       is_testnet,
+       max_participants,
+       execute_immediately,
+       community_pot_payouts!inner (
+         created_at,
+         status
+       )`
+    )
+    .eq("community_pot_payouts.status", "Pending")
+    .order("created_at", { foreignTable: "community_pot_payouts", ascending: false })
+    .limit(10);
+
+  if (error) {
+    throw error;
+  }
+
+  for (const row of data ?? []) {
+    const candidate = row as CommunityPotPayoutConditionsRow & {
+      community_pot_payouts: { created_at: string; status: CommunityPotPayoutStatus } | null;
+    };
+
+    const executeImmediately = Boolean(candidate.execute_immediately);
+    const scheduledAt = new Date(candidate.scheduled_at);
+    if (!executeImmediately && scheduledAt.getTime() > now.getTime()) {
+      continue;
+    }
+
+    return {
+      id: candidate.payout_id,
+      amount_usdc: candidate.amount_usdc,
+      scheduled_at: candidate.scheduled_at,
+      is_testnet: candidate.is_testnet,
+      max_participants: candidate.max_participants,
+      execute_immediately: executeImmediately,
+    };
+  }
+
+  return null;
+}
+
+async function updatePayoutStatus(client: SupabaseClient, payoutId: string, status: CommunityPotPayoutStatus) {
+  const { error } = await client
+    .from("community_pot_payouts")
+    .update({ status })
+    .eq("id", payoutId);
+
+  if (error) {
+    throw new Error(`Failed to update payout ${payoutId} status to ${status}: ${error.message}`);
+  }
+}
+
+async function scheduleNextPayout(
+  client: SupabaseClient,
+  template: Pick<PendingPayout, "amount_usdc" | "is_testnet" | "max_participants">
+): Promise<Date> {
+  const nextScheduledAt = computeNextDistributionDate();
+
+  const { data, error } = await client
+    .from("community_pot_payouts")
+    .insert({ status: "Pending" })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create next payout shell: ${error.message}`);
+  }
+
+  const newPayoutId = data?.id;
+  if (!newPayoutId) {
+    throw new Error("Failed to retrieve id for newly created payout");
+  }
+
+  const { error: conditionError } = await client.from("community_pot_payout_conditions").insert({
+    payout_id: newPayoutId,
+    amount_usdc: template.amount_usdc ?? "0",
+    scheduled_at: nextScheduledAt.toISOString(),
+    is_testnet: template.is_testnet,
+    max_participants: template.max_participants,
+    execute_immediately: false,
+  });
+
+  if (conditionError) {
+    throw new Error(`Failed to create next payout conditions: ${conditionError.message}`);
+  }
+
+  return nextScheduledAt;
+}
+
+async function fetchParticipants(client: SupabaseClient, payoutId: string): Promise<CommunityPotParticipant[]> {
+  const { data, error } = await client
+    .from("community_pot_payout_participants")
+    .select("polygon_address, joined_at")
+    .eq("payout_id", payoutId)
+    .order("joined_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as CommunityPotParticipant[];
 }
 
 serve(async (req) => {
@@ -130,169 +501,252 @@ serve(async (req) => {
   const dryRun = new URL(req.url).searchParams.get("dryRun") === "true";
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
   if (!supabaseUrl || !serviceKey) {
     return jsonResponse({ error: "missing_supabase_env" }, 500);
   }
 
   const supabase = createClient(supabaseUrl, serviceKey);
+  const now = new Date();
+
+  await logEdgeFetch(supabase, dryRun);
+
+  let currentStage = "discover_payout";
+  let currentPayoutId: string | null = null;
+  let currentPayoutStatus: CommunityPotPayoutStatus | null = null;
 
   try {
-    const weekResult = await supabase
-      .from("community_pot_weeks")
-      .select("id, week_label, distribution_at, amount_usdc, max_participants, status")
-      .lte("distribution_at", new Date().toISOString())
-      .neq("status", "paid")
-      .order("distribution_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    await logEvent(supabase, "Iniciando búsqueda de payout pendiente...");
 
-    if (weekResult.error) throw weekResult.error;
-    const week = weekResult.data as CommunityPotWeek | null;
+    const payout = await findPendingPayout(supabase, now);
 
-    if (!week) {
-      return jsonResponse({ status: "skipped", dryRun, message: "No pending week ready for payout" });
+    if (!payout) {
+      await logEvent(supabase, "No se encontró ningún payout pendiente listo para ejecutar.");
+      return jsonResponse({ status: "skipped", dryRun, message: "No payout ready for distribution" });
     }
 
-    const participantsResult = await supabase
-      .from("community_pot_participants")
-      .select("id, polygon_address")
-      .eq("week_id", week.id)
-      .order("joined_at", { ascending: true });
+    await logEvent(
+      supabase,
+      `Payout encontrado: ${payout.id.substring(0, 8)}. Importe configurado: ${payout.amount_usdc} USDC. Fecha programada: ${payout.scheduled_at}.`,
+      payout.id
+    );
 
-    if (participantsResult.error) throw participantsResult.error;
+    currentPayoutId = payout.id;
 
-    const participants = participantsResult.data as CommunityPotParticipant[];
-    const totalUnits = decimalToUnits(week.amount_usdc ?? "0");
+    if (!dryRun) {
+      await logEvent(supabase, `Cambiando estado del payout a "In Progress"...`, payout.id);
+      await updatePayoutStatus(supabase, payout.id, "In Progress");
+      currentPayoutStatus = "In Progress";
+    }
 
-    if (participants.length === 0 || totalUnits === 0n) {
+    currentStage = "fetch_participants";
+    await logEvent(supabase, "Consultando lista de participantes...", payout.id);
+    const participants = await fetchParticipants(supabase, payout.id);
+
+    await logEvent(supabase, `Se encontraron ${participants.length} participante(s) registrado(s).`, payout.id);
+
+    const totalAmountUsdc = payout.amount_usdc ?? "0";
+    let participantCount: number;
+
+    if (!dryRun) {
+      const snapshotCount = await logParticipantSnapshot(supabase, payout.id, totalAmountUsdc);
+      participantCount = snapshotCount ?? participants.length;
+    } else {
+      participantCount = participants.length;
+    }
+    const totalUnits = decimalToUnits(totalAmountUsdc);
+
+    if (participantCount === 0 || totalUnits === 0n) {
+      let nextScheduledAtIso: string | null = null;
+
       if (!dryRun) {
-        await supabase
-          .from("community_pot_weeks")
-          .update({
-            status: "paid",
-            executed_at: new Date().toISOString(),
-            executed_tx_hash: null,
-            execution_error: null,
-          })
-          .eq("id", week.id);
+        await logEvent(
+          supabase,
+          "No hay participantes o el importe es 0. Cerrando payout sin transferencias y programando el siguiente...",
+          payout.id
+        );
+        const nextScheduledAt = await scheduleNextPayout(supabase, payout);
+        await updatePayoutStatus(supabase, payout.id, "Completed");
+        currentPayoutStatus = "Completed";
 
-        await supabase.from("community_pot_payout_logs").insert({
-          week_id: week.id,
-          total_amount_usdc: week.amount_usdc ?? "0",
-          participant_count: participants.length,
-          per_participant_amount_usdc: "0",
-          transaction_hash: null,
-          transaction_url: null,
-          payload: { reason: "no participants or funds" },
+        nextScheduledAtIso = nextScheduledAt.toISOString();
+
+        await logPayoutCompletion(supabase, {
+          payoutId: payout.id,
+          status: "success",
+          transactionCount: 0,
+          nextScheduledAt: nextScheduledAtIso,
         });
       }
 
       return jsonResponse({
         status: dryRun ? "skipped" : "success",
         dryRun,
-        message: "Week closed without transfers",
-        processedWeekId: week.id,
-        processedWeekLabel: week.week_label,
-        participantCount: participants.length,
-        totalAmountUsdc: week.amount_usdc ?? "0",
+        message: "Payout closed without transfers",
+        processedPayoutId: payout.id,
+        scheduledAt: payout.scheduled_at,
+        participantCount,
+        totalAmountUsdc,
         perParticipantAmountUsdc: null,
+        nextScheduledAt: nextScheduledAtIso,
       });
     }
 
+    currentStage = "plan_ready";
     const payoutPlans = buildPayoutPlan(totalUnits, participants);
     const perParticipantAmountUsdc = unitsToDecimal(payoutPlans[0]?.amountUnits ?? 0n);
 
+    await logEvent(supabase, `Plan de reparto calculado: ${perParticipantAmountUsdc} USDC por participante.`, payout.id);
+
     if (dryRun) {
+      await logEvent(supabase, `Modo dry run: simulación completada. No se ejecutarán transferencias reales.`, payout.id);
       return jsonResponse({
         status: "skipped",
         dryRun,
-        message: `Dry run: would distribute ${perParticipantAmountUsdc} USDC to ${participants.length} wallets`,
-        processedWeekId: week.id,
-        processedWeekLabel: week.week_label,
-        participantCount: participants.length,
-        totalAmountUsdc: week.amount_usdc ?? "0",
+        message: `Dry run: would distribute ${perParticipantAmountUsdc} USDC to ${participantCount} wallets`,
+        processedPayoutId: payout.id,
+        scheduledAt: payout.scheduled_at,
+        participantCount,
+        totalAmountUsdc,
         perParticipantAmountUsdc,
+        nextScheduledAt: null,
       });
     }
 
+    currentStage = "sending_transfers";
     const rpcUrl = Deno.env.get("COMMUNITY_POT_RPC_URL");
     const privateKey = Deno.env.get("COMMUNITY_POT_PAYOUT_PRIVATE_KEY");
     const contractAddress = (Deno.env.get("COMMUNITY_POT_USDC_CONTRACT") ?? DEFAULT_POLYGON_USDC) as Address;
+    const chain = payout.is_testnet ? polygonAmoy : polygon;
 
     if (!rpcUrl) throw new Error("COMMUNITY_POT_RPC_URL is not configured");
     if (!privateKey) throw new Error("COMMUNITY_POT_PAYOUT_PRIVATE_KEY is not configured");
 
-    const privateKeyHex = (privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`) as Hex;
+    await logEvent(
+      supabase,
+      `Preparando envío de ${payoutPlans.length} transferencia(s) on-chain. Contrato USDC: ${contractAddress}.`,
+      payout.id
+    );
 
-    const transactionHashes = await sendUsdcTransfers(payoutPlans, {
+    const sentTransactions = await sendUsdcTransfers(payoutPlans, {
       rpcUrl,
-      privateKey: privateKeyHex,
+      privateKey: normalizePrivateKey(privateKey),
       contractAddress,
+      chain,
     });
 
-    await supabase
-      .from("community_pot_weeks")
-      .update({
-        status: "paid",
-        executed_at: new Date().toISOString(),
-        executed_tx_hash: transactionHashes.at(-1) ?? null,
-        execution_error: null,
-      })
-      .eq("id", week.id);
+    await logEvent(supabase, `Todas las transferencias on-chain completadas exitosamente.`, payout.id);
 
-    await supabase.from("community_pot_payout_logs").insert({
-      week_id: week.id,
-      total_amount_usdc: week.amount_usdc ?? "0",
-      participant_count: participants.length,
-      per_participant_amount_usdc: perParticipantAmountUsdc,
-      transaction_hash: transactionHashes.at(-1) ?? null,
-      transaction_url: transactionHashes.at(-1)
-        ? `https://polygonscan.com/tx/${transactionHashes.at(-1)}`
-        : null,
-      payload: {
-        payouts: payoutPlans.map((plan, index) => ({
-          participantId: plan.participant.id,
-          polygonAddress: plan.participant.polygon_address,
-          amountUnits: plan.amountUnits.toString(),
-          transactionHash: transactionHashes[index] ?? null,
-        })),
-      },
-    });
+    currentStage = "register_transactions";
+    await logEvent(supabase, `Registrando ${sentTransactions.length} transacción(es) en la base de datos...`, payout.id);
+    for (const sent of sentTransactions) {
+      const gasPaidMatic =
+        sent.gasPaidWei !== null && sent.gasPaidWei !== undefined
+          ? formatUnits(sent.gasPaidWei, chain.nativeCurrency.decimals ?? 18)
+          : null;
+
+      const amountUnits = unitsToDecimal(sent.plan.amountUnits);
+      const transactionPayload: RegisterTransactionPayload = {
+        payoutId: payout.id,
+        txHash: sent.hash,
+        polygonAddress: sent.plan.participant.polygon_address,
+        amountUnits,
+        status: "confirmed",
+        chainId: chain.id,
+        blockNumber: sent.blockNumber ?? null,
+        gasPaidWei: gasPaidMatic,
+        explorerUrl: payout.is_testnet
+          ? `https://amoy.polygonscan.com/tx/${sent.hash}`
+          : `https://polygonscan.com/tx/${sent.hash}`,
+        confirmedAt: new Date().toISOString(),
+      };
+
+      try {
+        await registerTransaction(supabase, transactionPayload);
+      } catch (registrationError) {
+        const errorMessage = registrationError instanceof Error ? registrationError.message : String(registrationError);
+        await logEvent(
+          supabase,
+          `Fallo al registrar transacción ${sent.hash}: ${errorMessage}. Reintentando con cantidades normalizadas...`,
+          payout.id
+        );
+
+        const fallbackPayload: RegisterTransactionPayload = {
+          ...transactionPayload,
+          amountUnits: "0",
+          gasPaidWei: gasPaidMatic ? "0" : null,
+        };
+
+        try {
+          await registerTransaction(supabase, fallbackPayload);
+        } catch (fallbackError) {
+          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          await logEvent(
+            supabase,
+            `Fallo al registrar transacción ${sent.hash} incluso con fallback: ${fallbackMessage}.`,
+            payout.id
+          );
+          throw fallbackError;
+        }
+      }
+    }
+
+    let nextScheduledAtIso: string | null = null;
+
+    if (!dryRun) {
+      await logEvent(supabase, "Programando el siguiente payout...", payout.id);
+      const nextScheduledAt = await scheduleNextPayout(supabase, payout);
+      nextScheduledAtIso = nextScheduledAt.toISOString();
+
+      await updatePayoutStatus(supabase, payout.id, "Completed");
+      currentPayoutStatus = "Completed";
+
+      await logPayoutCompletion(supabase, {
+        payoutId: payout.id,
+        status: "success",
+        transactionCount: sentTransactions.length,
+        nextScheduledAt: nextScheduledAtIso,
+      });
+    }
 
     return jsonResponse({
       status: "success",
-      dryRun: false,
-      message: `Distributed ${perParticipantAmountUsdc} USDC to ${participants.length} participants`,
-      processedWeekId: week.id,
-      processedWeekLabel: week.week_label,
-      participantCount: participants.length,
-      totalAmountUsdc: week.amount_usdc ?? "0",
+      dryRun,
+      message: `Distributed ${perParticipantAmountUsdc} USDC to ${participantCount} participants`,
+      processedPayoutId: payout.id,
+      scheduledAt: payout.scheduled_at,
+      participantCount,
+      totalAmountUsdc,
       perParticipantAmountUsdc,
-      transactionHashes,
+      transactionHashes: sentTransactions.map((tx) => String(tx.hash)),
+      nextScheduledAt: nextScheduledAtIso,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("community-pot-payout", message);
+    let message = "Unknown error";
+    let errorStack = "";
+    
+    if (error instanceof Error) {
+      message = error.message;
+      errorStack = error.stack || "";
+    } else if (typeof error === "string") {
+      message = error;
+    } else if (error && typeof error === "object") {
+      message = JSON.stringify(error);
+    }
+    
+    console.error("community-pot-payout", message, errorStack);
 
     try {
-      const lastWeekResult = await supabase
-        .from("community_pot_weeks")
-        .select("id")
-        .neq("status", "paid")
-        .lte("distribution_at", new Date().toISOString())
-        .order("distribution_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (lastWeekResult?.data?.id) {
-        await supabase
-          .from("community_pot_weeks")
-          .update({ execution_error: message.slice(0, 500) })
-          .eq("id", lastWeekResult.data.id);
-      }
-    } catch (updateError) {
-      console.error("community-pot-payout error logging failed", updateError);
+      await logEvent(supabase, `ERROR en etapa "${currentStage}": ${message}`, currentPayoutId);
+    } catch (logErr) {
+      console.error("Failed to log error:", logErr);
     }
+
+    await logFailure(supabase, {
+      payoutId: currentPayoutId,
+      stage: currentStage,
+      error: message,
+    });
 
     return jsonResponse({ error: message }, 500);
   }

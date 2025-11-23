@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { withDb } from "@/lib/db";
 import { getCommunityPotStatus } from "@/lib/communityPot";
-import { COMMUNITY_POT_VISITOR_COOKIE } from "@/lib/communityPotCookies";
+import { COMMUNITY_POT_META_COOKIE, parseMetaCookie } from "@/lib/communityPotCookies";
 
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    const visitorId = cookieStore.get(COMMUNITY_POT_VISITOR_COOKIE)?.value ?? null;
-    const status = await withDb((db) => getCommunityPotStatus(db, visitorId));
+    const metaCookie = cookieStore.get(COMMUNITY_POT_META_COOKIE)?.value ?? null;
+    const meta = parseMetaCookie(metaCookie);
+    const viewerAddress = meta?.polygonAddress ?? null;
+    
+    const status = await getCommunityPotStatus(viewerAddress);
 
     return NextResponse.json(status, { headers: { "cache-control": "no-store" } });
   } catch (error) {

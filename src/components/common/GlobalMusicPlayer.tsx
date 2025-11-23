@@ -14,6 +14,7 @@ export default function GlobalMusicPlayer() {
   // Only show music player on lobby and community-pot pages
   const shouldShowPlayer = pathname === "/lobby" || pathname === "/community-pot";
   const shouldAutoHide = pathname === "/lobby" || pathname === "/community-pot";
+  const musicTheme = pathname === "/community-pot" ? "blue" : "orange";
 
   useEffect(() => {
     if (!shouldShowPlayer) {
@@ -64,7 +65,7 @@ export default function GlobalMusicPlayer() {
         setIsHovering(false);
       } : undefined}
     >
-      <MusicPlayer />
+      <MusicPlayer theme={musicTheme} />
     </motion.div>
   );
 }

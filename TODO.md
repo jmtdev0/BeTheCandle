@@ -8,7 +8,15 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras
 
-* El color del satélite no lo estamos guardando en base de datos.
+* Un poco de zoom out en Community al cargar la página
+* Pestaña con info de último reparto
+* Qué pasa si metes la misma dirección dos veces (en incógnito)
+* Tener en cuenta que no hay privacidad
+* El primero se lleva un dólar extra
+* Explicar el lore
+* Socketear en Community Pot para que cuando se añade un participante, lo vean los demás en tiempo real
+* El Create Your Satellite sacarlo del menú lateral
+* Botón Donate ethereum:CONTRACT_ADDRESS/transfer?address=YOUR_WALLET_ADDRESS&uint256=AMOUNT
 * Google will allow iqokybiidqksdrbqeitp.supabase.co to access this info about you
 * Al cerrar la tarjeta de información de un satélite, la cámara debe volver a poner el foco en la estrella Bitcoin.
 * Cuando termina una canción, debe sonar otra aleatoriamente, pero no la que acaba de terminar.

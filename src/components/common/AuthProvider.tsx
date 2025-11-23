@@ -95,10 +95,7 @@ export function SupabaseAuthProvider({ children }: AuthProviderProps) {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
       setStatus(currentSession ? "authenticated" : "unauthenticated");
-      if (!currentSession) {
-        setPromptReason("initial");
-        setIsPromptOpen(true);
-      } else if (currentSession.user?.id) {
+      if (currentSession?.user?.id) {
         persistUserId(currentSession.user.id);
       }
     });

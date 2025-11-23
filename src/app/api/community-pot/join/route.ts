@@ -2,16 +2,12 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import type { DatabaseError } from "pg";
-import { withDb } from "@/lib/db";
-import {
-  ensureUpcomingCommunityPotWeek,
-  getCommunityPotStatus,
-  markWeekClosedIfFull,
-} from "@/lib/communityPot";
+import type { PostgrestError } from "@supabase/supabase-js";
+import { joinCommunityPot } from "@/lib/communityPot";
 import {
   COMMUNITY_POT_META_COOKIE,
   COMMUNITY_POT_VISITOR_COOKIE,
+  parseMetaCookie,
   serializeMetaCookie,
 } from "@/lib/communityPotCookies";
 import { ensureVisitorUser } from "@/lib/communityPotVisitors";
@@ -27,6 +23,8 @@ export async function POST(request: Request) {
   try {
     const cookieStore = await cookies();
     let visitorId = cookieStore.get(COMMUNITY_POT_VISITOR_COOKIE)?.value ?? null;
+    const metaCookieRaw = cookieStore.get(COMMUNITY_POT_META_COOKIE)?.value ?? null;
+    const meta = parseMetaCookie(metaCookieRaw);
 
     const parsed = joinSchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -35,24 +33,16 @@ export async function POST(request: Request) {
 
     const normalizedAddress = parsed.data.polygonAddress.toLowerCase();
 
-    const status = await withDb(async (db) => {
-      if (!visitorId) {
-        visitorId = randomUUID();
-      }
+    if (!visitorId) {
+      visitorId = randomUUID();
+    }
 
-      await ensureVisitorUser(db, visitorId);
-      const week = await ensureUpcomingCommunityPotWeek(db);
+    await ensureVisitorUser(visitorId);
 
-      await db.query(
-        `insert into public.community_pot_participants (week_id, user_id, polygon_address)
-         values ($1, $2, $3)
-         on conflict (week_id, user_id)
-         do update set polygon_address = excluded.polygon_address`,
-        [week.id, visitorId, normalizedAddress]
-      );
-
-      await markWeekClosedIfFull(db, week.id);
-      return getCommunityPotStatus(db, visitorId);
+    const status = await joinCommunityPot({
+      polygonAddress: normalizedAddress,
+      previousAddress: meta?.polygonAddress?.toLowerCase() ?? null,
+      previousPayoutId: meta?.weekId ?? null,
     });
 
     const response = NextResponse.json(status, { status: 201 });
@@ -84,8 +74,8 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    const pgError = error as DatabaseError & { code?: string };
-    if (pgError?.code === "23505") {
+    const supabaseError = error as PostgrestError & { code?: string };
+    if (supabaseError?.code === "23505") {
       return NextResponse.json({ error: "address_in_use" }, { status: 409 });
     }
 
