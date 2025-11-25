@@ -76,9 +76,9 @@ export default function CommunityPotPage() {
       const distanceFromLeft = e.clientX;
       const distanceFromTop = e.clientY;
       
-      if (distanceFromLeft <= 200 && distanceFromTop <= 280) {
+      if (distanceFromLeft <= 450 && distanceFromTop <= 320) {
         setInfoVisible(true);
-      } else if (!infoHovering && (distanceFromLeft > 450 || distanceFromTop > 420)) {
+      } else if (!infoHovering && (distanceFromLeft > 540 || distanceFromTop > 420)) {
         setInfoVisible(false);
       }
     };
@@ -228,7 +228,7 @@ export default function CommunityPotPage() {
       return;
     }
 
-    const normalized = polygonAddress.trim();
+    const normalized = polygonAddress.trim().toLowerCase();
     if (!/^0x[0-9a-fA-F]{40}$/.test(normalized)) {
       setJoinError("Enter a valid Polygon address.");
       return;
@@ -249,10 +249,20 @@ export default function CommunityPotPage() {
       return;
     }
 
+    // Check if address is already registered (unless updating own address)
+    const existingParticipant = participants.find(
+      p => p.polygonAddress.toLowerCase() === normalized
+    );
+    if (existingParticipant && !existingParticipant.isViewer) {
+      setJoinError("This wallet address is already registered for this week's payout.");
+      return;
+    }
+
     setJoinError(null);
     setIsSubmitting(true);
     try {
       await joinCommunityPot(normalized);
+      setShowJoinModal(false);
     } catch (err) {
       const reason = err instanceof Error ? err.message : "unknown";
       const friendly = mapJoinError(reason);
@@ -301,11 +311,14 @@ export default function CommunityPotPage() {
         }}
         onPointerLeave={() => setInfoHovering(false)}
       >
-        {/* Tab bookmark on the right side */}
-        <div className="absolute -right-8 top-4 flex flex-col gap-1">
+        {/* Tab bookmark on the right side - always interactive */}
+        <div className="absolute -right-8 top-4 flex flex-col gap-1" style={{ pointerEvents: "auto" }}>
           <button
-            onClick={() => setActiveInfoTab("current")}
-            className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center ${
+            onClick={() => {
+              setActiveInfoTab("current");
+              refreshIfStale(0); // Force refresh current data
+            }}
+            className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer ${
               activeInfoTab === "current"
                 ? "bg-[#2276cb] text-white"
                 : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white"
@@ -315,8 +328,12 @@ export default function CommunityPotPage() {
             Current
           </button>
           <button
-            onClick={() => setActiveInfoTab("last")}
-            className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center ${
+            onClick={() => {
+              setActiveInfoTab("last");
+              // Force reload last payout data
+              loadLastPayout();
+            }}
+            className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer ${
               activeInfoTab === "last"
                 ? "bg-[#2276cb] text-white"
                 : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white"
@@ -396,23 +413,25 @@ export default function CommunityPotPage() {
         </div>
       </motion.div>
 
-      {/* Join experience - hover reveal button */}
+      {/* Join experience - centered when no participants, hover reveal otherwise */}
       <motion.div 
-        className="fixed z-30 group" 
-        style={{ top: '1.5rem', right: '92px' }}
+        className={`fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
+        style={participantCount > 0 ? { top: '1.5rem', right: '92px' } : undefined}
         initial={{ opacity: 0 }}
-        animate={{ opacity: joinButtonVisible || joinButtonHovering ? 1 : 0 }}
+        animate={{ opacity: participantCount === 0 || joinButtonVisible || joinButtonHovering ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         onPointerEnter={() => {
-          setJoinButtonHovering(true);
-          setJoinButtonVisible(true);
+          if (participantCount > 0) {
+            setJoinButtonHovering(true);
+            setJoinButtonVisible(true);
+          }
         }}
         onPointerLeave={() => setJoinButtonHovering(false)}
       >
         <button
           onClick={() => setShowJoinModal(true)}
-          className="px-6 py-3 bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40"
-          style={{ pointerEvents: joinButtonVisible || joinButtonHovering ? "auto" : "none" }}
+          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto ${participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-6 py-3'}`}
+          style={{ pointerEvents: participantCount === 0 || joinButtonVisible || joinButtonHovering ? "auto" : "none" }}
         >
           {viewerHasCurrentSlot ? "Change address" : "Reserve your slot"}
         </button>
@@ -474,6 +493,12 @@ export default function CommunityPotPage() {
             <span className="font-semibold text-sm">Polygon network</span>
             <p>
               Make sure the Polygon network is enabled in your wallet before pasting the address. Also, you will need to import USDC contract address to see your balance.
+            </p>
+          </div>
+          <div className="flex gap-3 rounded-xl border border-purple-400/30 bg-purple-500/10 p-3 text-xs text-purple-100">
+            <span className="font-semibold text-sm">⚠️ Privacy notice</span>
+            <p>
+              Your wallet address will be visible to other participants. Do not use an address you wish to keep private.
             </p>
           </div>
           {joinError && <p className="text-sm text-red-300">{joinError}</p>}
@@ -547,8 +572,17 @@ function mapJoinError(code: string) {
     case "invalid_address":
       return "Polygon address is invalid.";
     case "address_in_use":
-      return "That address is already registered this week.";
+      return "That wallet address is already registered for this week's payout.";
+    case "payout_full":
+      return "The pot is already full. All slots have been taken.";
     default:
+      // Check if error message contains useful info
+      if (code.toLowerCase().includes("full") || code.toLowerCase().includes("limit")) {
+        return "The pot is already full for this week.";
+      }
+      if (code.toLowerCase().includes("duplicate") || code.toLowerCase().includes("already")) {
+        return "That wallet address is already registered.";
+      }
       return "We could not save your slot. Please try again.";
   }
 }

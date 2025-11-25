@@ -79,7 +79,7 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
     const num = parseFloat(amount);
     return num.toLocaleString("en-US", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 4,
     });
   }
 

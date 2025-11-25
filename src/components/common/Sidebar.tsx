@@ -29,6 +29,7 @@ interface SidebarProps {
   isActivatingSatellite?: boolean;
   canActivateSatellite?: boolean;
   activationError?: string | null;
+  showSatelliteButton?: boolean;
 }
 
 export default function Sidebar({
@@ -41,6 +42,7 @@ export default function Sidebar({
   isActivatingSatellite,
   canActivateSatellite,
   activationError,
+  showSatelliteButton = false,
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
@@ -65,7 +67,7 @@ export default function Sidebar({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed left-0 top-0 h-screen w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl z-50 border-r border-orange-500/30"
+          className="fixed left-0 top-0 h-[50vh] w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl z-50 border-r border-b border-orange-500/30 rounded-br-2xl"
           initial={{ x: -256 }}
           animate={{ x: 0 }}
           exit={{ x: -256 }}
@@ -111,9 +113,9 @@ export default function Sidebar({
               })}
             </nav>
 
-            {/* Satellite CTA / Profile Button */}
-            <div className="mt-auto pt-4 border-t border-slate-700">
-              {hasSatellite ? (
+            {/* Profile button only - satellite creation moved to Lobby page */}
+            {hasSatellite && (
+              <div className="mt-auto pt-4 border-t border-slate-700">
                 <div className="space-y-2">
                   <button
                     onClick={onProfileClick}
@@ -136,23 +138,8 @@ export default function Sidebar({
                     Log out
                   </button>
                 </div>
-              ) : (
-                <>
-                  <button
-                    onClick={onActivateClick}
-                    disabled={isActivatingSatellite || !canActivateSatellite}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all bg-gradient-to-r from-orange-500 to-amber-400 text-slate-900 font-semibold shadow-lg hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 disabled:shadow-none"
-                  >
-                    {isActivatingSatellite ? "Preparing your orbit..." : "Create your satellite"}
-                  </button>
-                  {activationError && (
-                    <p className="text-xs text-red-300 text-center mt-2">
-                      {activationError}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

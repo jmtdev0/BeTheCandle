@@ -149,8 +149,8 @@ export default function SidebarWithLobbyStatus() {
   return (
     <>
       <Sidebar 
-        lobbyUserCount={isLobbyPage ? planets.length : undefined}
-        isLobbyConnected={isLobbyPage ? isConnected : undefined}
+        lobbyUserCount={planets.length}
+        isLobbyConnected={isConnected}
         onProfileClick={() => {
           if (!session) {
             openAuthPrompt("action");
@@ -167,6 +167,7 @@ export default function SidebarWithLobbyStatus() {
         hasSatellite={Boolean(session)}
         isActivatingSatellite={isActivating}
         canActivateSatellite={Boolean(userId)}
+        showSatelliteButton={isLobbyPage}
       />
       
       <UserProfileModal

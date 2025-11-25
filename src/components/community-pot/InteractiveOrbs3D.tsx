@@ -128,6 +128,7 @@ function FadingCircles() {
       fadeOutDuration: number;
       phase: "fadeIn" | "visible" | "fadeOut" | "waiting";
       waitUntil: number;
+      isPurple: boolean;
     }>
   >([]);
 
@@ -140,8 +141,11 @@ function FadingCircles() {
     for (let i = 0; i < circleCount; i++) {
       const radius = 1.5 + Math.random() * 2;
       const geometry = new THREE.RingGeometry(radius, radius + 0.08, 64);
+      // 1% chance of purple
+      const isPurple = Math.random() < 0.01;
+      const color = isPurple ? 0x9b59b6 : 0xffd700;
       const material = new THREE.MeshBasicMaterial({
-        color: 0xffd700,
+        color,
         transparent: true,
         opacity: 0,
         side: THREE.DoubleSide,
@@ -164,6 +168,7 @@ function FadingCircles() {
         fadeOutDuration: 1.5 + Math.random() * 1,
         phase: "waiting",
         waitUntil: Math.random() * 20,
+        isPurple,
       });
     }
 
@@ -199,6 +204,10 @@ function FadingCircles() {
               -12 + Math.random() * 8,
               -25 - Math.random() * 15
             );
+            // 1% chance of purple on each new appearance
+            circle.isPurple = Math.random() < 0.01;
+            const newColor = circle.isPurple ? 0x9b59b6 : 0xffd700;
+            (circle.mesh.material as THREE.MeshBasicMaterial).color.setHex(newColor);
           }
           break;
 
