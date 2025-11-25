@@ -117,6 +117,130 @@ function DistantPlanes() {
   return <group ref={groupRef} />;
 }
 
+function FadingCircles() {
+  const groupRef = useRef<THREE.Group>(null);
+  const circlesRef = useRef<
+    Array<{
+      mesh: THREE.Mesh;
+      fadeInStart: number;
+      fadeInDuration: number;
+      visibleDuration: number;
+      fadeOutDuration: number;
+      phase: "fadeIn" | "visible" | "fadeOut" | "waiting";
+      waitUntil: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    const circleCount = 5;
+    const circles: typeof circlesRef.current = [];
+
+    for (let i = 0; i < circleCount; i++) {
+      const radius = 1.5 + Math.random() * 2;
+      const geometry = new THREE.RingGeometry(radius, radius + 0.08, 64);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffd700,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+
+      // Posición aleatoria en el fondo
+      const x = -25 + Math.random() * 50;
+      const y = -12 + Math.random() * 8;
+      const z = -25 - Math.random() * 15;
+
+      mesh.position.set(x, y, z);
+      groupRef.current.add(mesh);
+
+      circles.push({
+        mesh,
+        fadeInStart: Math.random() * 20,
+        fadeInDuration: 1.5 + Math.random() * 1,
+        visibleDuration: 2 + Math.random() * 3,
+        fadeOutDuration: 1.5 + Math.random() * 1,
+        phase: "waiting",
+        waitUntil: Math.random() * 20,
+      });
+    }
+
+    circlesRef.current = circles;
+
+    return () => {
+      circles.forEach((circle) => {
+        circle.mesh.geometry.dispose();
+        (circle.mesh.material as THREE.Material).dispose();
+        groupRef.current?.remove(circle.mesh);
+      });
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number }; camera: THREE.Camera }) => {
+    const time = state.clock.getElapsedTime();
+    const camera = state.camera;
+
+    circlesRef.current.forEach((circle) => {
+      const material = circle.mesh.material as THREE.MeshBasicMaterial;
+
+      // Make circle always face the camera (billboard effect)
+      circle.mesh.quaternion.copy(camera.quaternion);
+
+      switch (circle.phase) {
+        case "waiting":
+          if (time >= circle.waitUntil) {
+            circle.phase = "fadeIn";
+            circle.fadeInStart = time;
+            // Reposition randomly when starting new cycle
+            circle.mesh.position.set(
+              -25 + Math.random() * 50,
+              -12 + Math.random() * 8,
+              -25 - Math.random() * 15
+            );
+          }
+          break;
+
+        case "fadeIn": {
+          const fadeInProgress = (time - circle.fadeInStart) / circle.fadeInDuration;
+          if (fadeInProgress >= 1) {
+            material.opacity = 0.35;
+            circle.phase = "visible";
+            circle.fadeInStart = time; // Reuse for visible phase timing
+          } else {
+            material.opacity = fadeInProgress * 0.35;
+          }
+          break;
+        }
+
+        case "visible": {
+          const visibleProgress = time - circle.fadeInStart;
+          if (visibleProgress >= circle.visibleDuration) {
+            circle.phase = "fadeOut";
+            circle.fadeInStart = time; // Reuse for fadeOut timing
+          }
+          break;
+        }
+
+        case "fadeOut": {
+          const fadeOutProgress = (time - circle.fadeInStart) / circle.fadeOutDuration;
+          if (fadeOutProgress >= 1) {
+            material.opacity = 0;
+            circle.phase = "waiting";
+            circle.waitUntil = time + 8 + Math.random() * 12;
+          } else {
+            material.opacity = (1 - fadeOutProgress) * 0.35;
+          }
+          break;
+        }
+      }
+    });
+  });
+
+  return <group ref={groupRef} />;
+}
+
 function Orb({
   participant,
   position,
@@ -239,6 +363,9 @@ function OrbsScene({
 
       {/* Aviones lejanos */}
       <DistantPlanes />
+
+      {/* Circunferencias amarillas de fondo */}
+      <FadingCircles />
 
       {/* Controles de órbita - rotación con zoom limitado */}
       <OrbitControls

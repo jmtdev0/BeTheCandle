@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   COMMUNITY_POT_META_COOKIE,
   type CommunityPotMetaCookiePayload,
@@ -127,6 +127,7 @@ export function useCommunityPot() {
   const [countdownSeconds, setCountdownSeconds] = useState(0);
   const [distributionWindowActive, setDistributionWindowActive] = useState(false);
   const [distributionResumeAt, setDistributionResumeAt] = useState<number | null>(null);
+  const lastRefreshedAtRef = useRef<number>(0);
 
   const loadStatus = useCallback(async () => {
     setState((prev) => ({ ...prev, refreshing: true }));
@@ -134,6 +135,7 @@ export function useCommunityPot() {
       const nextState = await fetchStatus();
       setState(nextState);
       setCountdownSeconds(nextState.week?.countdownSeconds ?? 0);
+      lastRefreshedAtRef.current = Date.now();
     } catch (error) {
       console.error(error);
       setState((prev) => ({
@@ -194,15 +196,7 @@ export function useCommunityPot() {
     loadStatus();
   }, [loadStatus]);
 
-  useEffect(() => {
-    if (distributionWindowActive) {
-      return;
-    }
-    const refreshInterval = setInterval(() => {
-      loadStatus();
-    }, 60_000);
-    return () => clearInterval(refreshInterval);
-  }, [loadStatus, distributionWindowActive]);
+  // Removed automatic 60s refresh - now triggered on hover when stale
 
   useEffect(() => {
     setCountdownSeconds(state.week?.countdownSeconds ?? 0);
@@ -272,6 +266,16 @@ export function useCommunityPot() {
         return Promise.resolve();
       }
       return loadStatus();
+    },
+    refreshIfStale: (staleThresholdMs = 60_000) => {
+      if (distributionWindowActive) {
+        return Promise.resolve();
+      }
+      const now = Date.now();
+      if (now - lastRefreshedAtRef.current >= staleThresholdMs) {
+        return loadStatus();
+      }
+      return Promise.resolve();
     },
     viewerHasCurrentSlot: Boolean(state.week?.id && state.viewerJoinedWeekId === state.week.id),
     distributionWindowActive,

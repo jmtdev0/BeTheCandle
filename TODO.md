@@ -1,13 +1,16 @@
 En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la aplicación esté completa. 
 
-# Puntos principales
-
-* Nueva sección Community Pot. En esta sección, diariamente se recaudará un bote comunitario de BTC que se guardará en una dirección de memoria que yo custodiaré; aunque esto de custodiarlo quiero evitarlo a toda costa (¿sería posible alguna alternativa mediante Lightning Network?). A cierta hora del día, el bote se repartirá equitativamente entre todos los participantes, que habrán indicado la dirección de memoria en la que lo quieren recibir. Esto supondrá muchas transacciones, o una transacción masiva, lo que sea para evitar un exceso de comisiones. La representación visual de esta sección será también una escena espacial, como Goofy Mode, pero, en este caso, se podrá observar una nebulosa a la que se irán introduciendo los usuarios, representados con bolitas luminosas, quizá, y que irá creciendo conforme el bote aumente.
-* Añadir más información a las tarjetas de información de los usuarios: un nombre preferido, enlaces a redes sociales
-* En el Lobby, añadir un ránking de donantes: aquellos que más BTC han donado.
-
 # Ajustes y mejoras
 
+* Al pulsar el Last o Current, actualizar
+* El Reserve your slot al medio cuando no hay ningún partipcante
+* Guardar la fecha real a la que se ha hecho el reparto
+* Mostrar más decimales en ránkings
+* Community Pot página por defecto
+* Avisar a los participantes de que se ha hecho el reparto.
+* Comprobar en base de datos que realmente hay hueco para el nuevo participante
+* LORE
+* Que desde Community Pot se pueda ver cuántos están online en Lobby.
 * Un poco de zoom out en Community al cargar la página
 * Pestaña con info de último reparto
 * Qué pasa si metes la misma dirección dos veces (en incógnito)
@@ -29,9 +32,14 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 * Responsive total. Adaptación a móvil
 * Ampliar el área de hover ralentizador del ratón. Estaría bien incluso que el usuario arrojara algo de luz sobre la escena cuando me mueve su ratón a un punto concreto de ella
 
+# Test
+
+* ¿Qué pasa cuando se llega al máximo de participantes?
+
 # Pijotadas
 
-
+* 1/100 de que el aro salga de color morado
+* Mostrar todas las opciones de la interfaz si el usuario está empanado
 
 # Comentarios
 

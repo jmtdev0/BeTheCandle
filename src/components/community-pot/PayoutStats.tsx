@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
 
 type TopRecipient = {
@@ -13,7 +14,12 @@ type TopRecipient = {
 
 type NetworkType = "testnet" | "mainnet";
 
-export default function PayoutStats() {
+interface PayoutStatsProps {
+  isVisible?: boolean;
+  onHoverChange?: (hovering: boolean) => void;
+}
+
+export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutStatsProps) {
   const [activeTab, setActiveTab] = useState<NetworkType>("mainnet");
   const [payoutCount, setPayoutCount] = useState<number>(0);
   const [topRecipients, setTopRecipients] = useState<TopRecipient[]>([]);
@@ -78,8 +84,14 @@ export default function PayoutStats() {
   }
 
   return (
-    <div
+    <motion.div
       className="fixed top-6 right-6 z-40 transition-all duration-300 ease-out"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: isVisible || isExpanded ? 1 : 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      style={{ pointerEvents: isVisible || isExpanded ? "auto" : "none" }}
+      onPointerEnter={() => onHoverChange?.(true)}
+      onPointerLeave={() => onHoverChange?.(false)}
     >
       {/* Collapsed Button */}
       {!isExpanded && (
@@ -233,6 +245,6 @@ export default function PayoutStats() {
           `}</style>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

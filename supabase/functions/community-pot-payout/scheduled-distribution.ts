@@ -743,17 +743,28 @@ serve(async (req) => {
     }
 
     currentStage = "sending_transfers";
-    const rpcUrl = Deno.env.get("COMMUNITY_POT_RPC_URL");
-    const privateKey = Deno.env.get("COMMUNITY_POT_PAYOUT_PRIVATE_KEY");
-    const contractAddress = (Deno.env.get("COMMUNITY_POT_USDC_CONTRACT") ?? DEFAULT_POLYGON_USDC) as Address;
-    const chain = payout.is_testnet ? polygonAmoy : polygon;
+    
+    // Select secrets based on network (testnet vs mainnet)
+    const isTestnet = payout.is_testnet;
+    const rpcUrl = isTestnet
+      ? Deno.env.get("COMMUNITY_POT_RPC_URL_TEST")
+      : Deno.env.get("COMMUNITY_POT_RPC_URL");
+    const privateKey = isTestnet
+      ? (Deno.env.get("COMMUNITY_POT_PAYOUT_PRIVATE_KEY_TEST") ?? Deno.env.get("COMMUNITY_POT_PAYOUT_PRIVATE_KEY"))
+      : Deno.env.get("COMMUNITY_POT_PAYOUT_PRIVATE_KEY");
+    const contractAddress = (isTestnet
+      ? Deno.env.get("COMMUNITY_POT_USDC_CONTRACT_TEST")
+      : (Deno.env.get("COMMUNITY_POT_USDC_CONTRACT") ?? DEFAULT_POLYGON_USDC)) as Address;
+    const chain = isTestnet ? polygonAmoy : polygon;
 
-    if (!rpcUrl) throw new Error("COMMUNITY_POT_RPC_URL is not configured");
+    const networkLabel = isTestnet ? "Testnet (Amoy)" : "Mainnet";
+    if (!rpcUrl) throw new Error(`COMMUNITY_POT_RPC_URL${isTestnet ? "_TEST" : ""} is not configured`);
     if (!privateKey) throw new Error("COMMUNITY_POT_PAYOUT_PRIVATE_KEY is not configured");
+    if (!contractAddress) throw new Error(`COMMUNITY_POT_USDC_CONTRACT${isTestnet ? "_TEST" : ""} is not configured`);
 
     await logEvent(
       supabase,
-      `Preparando envío de ${payoutPlans.length} transferencia(s) on-chain. Contrato USDC: ${contractAddress}.`,
+      `Preparando envío de ${payoutPlans.length} transferencia(s) on-chain [${networkLabel}]. Contrato USDC: ${contractAddress}.`,
       payout.id
     );
 

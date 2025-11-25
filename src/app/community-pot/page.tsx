@@ -1,10 +1,25 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { motion } from "framer-motion";
 import InfoPopup from "@/components/common/InfoPopup";
 import { useCommunityPot } from "@/hooks/useCommunityPot";
 import PayoutStats from "@/components/community-pot/PayoutStats";
 import InteractiveOrbs3D from "@/components/community-pot/InteractiveOrbs3D";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
+
+interface LastPayoutData {
+  id: string;
+  status: string;
+  amountUsdc: string;
+  scheduledAt: string;
+  completedAt: string;
+  isTestnet: boolean;
+  participantCount: number;
+  maxParticipants: number;
+  totalDistributed: string;
+  perParticipantUsdc: string;
+}
 
 export default function CommunityPotPage() {
   const communityPot = useCommunityPot();
@@ -21,6 +36,7 @@ export default function CommunityPotPage() {
     joinCommunityPot,
     distributionWindowActive,
     distributionResumeAt,
+    refreshIfStale,
   } = communityPot;
 
   const [polygonAddress, setPolygonAddress] = useState("");
@@ -29,6 +45,16 @@ export default function CommunityPotPage() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [hoveredParticipantId, setHoveredParticipantId] = useState<string | null>(null);
   const [distributionPauseSeconds, setDistributionPauseSeconds] = useState(0);
+  const [infoVisible, setInfoVisible] = useState(false);
+  const [infoHovering, setInfoHovering] = useState(false);
+  const [rankingsVisible, setRankingsVisible] = useState(false);
+  const [rankingsHovering, setRankingsHovering] = useState(false);
+  const [joinButtonVisible, setJoinButtonVisible] = useState(false);
+  const [joinButtonHovering, setJoinButtonHovering] = useState(false);
+  const [activeInfoTab, setActiveInfoTab] = useState<"current" | "last">("current");
+  const [lastPayout, setLastPayout] = useState<LastPayoutData | null>(null);
+  const [lastPayoutLoading, setLastPayoutLoading] = useState(false);
+  const [lastPayoutAttempted, setLastPayoutAttempted] = useState(false);
 
   useEffect(() => {
     if (viewerAddress) {
@@ -41,14 +67,102 @@ export default function CommunityPotPage() {
   useEffect(() => {
     if (distributionWindowActive) {
       setShowJoinModal(false);
-      return;
     }
-    if (participantCount === 0) {
-      setShowJoinModal(true);
-    } else {
-      setShowJoinModal(false);
+  }, [distributionWindowActive]);
+
+  // Hover reveal for info panel (top-left corner) - expanded area
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const distanceFromLeft = e.clientX;
+      const distanceFromTop = e.clientY;
+      
+      if (distanceFromLeft <= 200 && distanceFromTop <= 280) {
+        setInfoVisible(true);
+      } else if (!infoHovering && (distanceFromLeft > 450 || distanceFromTop > 420)) {
+        setInfoVisible(false);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [infoHovering]);
+
+  // Hover reveal for rankings (top-right corner)
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const distanceFromRight = window.innerWidth - e.clientX;
+      const distanceFromTop = e.clientY;
+      
+      if (distanceFromRight <= 100 && distanceFromTop <= 100) {
+        setRankingsVisible(true);
+      } else if (!rankingsHovering && (distanceFromRight > 200 || distanceFromTop > 200)) {
+        setRankingsVisible(false);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [rankingsHovering]);
+
+  // Hover reveal for join button (top area, near right)
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const distanceFromRight = window.innerWidth - e.clientX;
+      const distanceFromTop = e.clientY;
+      
+      // Area around the button position (top: 1.5rem, right: 92px)
+      if (distanceFromRight >= 60 && distanceFromRight <= 320 && distanceFromTop <= 100) {
+        setJoinButtonVisible(true);
+      } else if (!joinButtonHovering && (distanceFromRight < 40 || distanceFromRight > 350 || distanceFromTop > 150)) {
+        setJoinButtonVisible(false);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [joinButtonHovering]);
+
+  // Refresh data when info panel becomes visible (if stale)
+  useEffect(() => {
+    if (infoVisible || infoHovering) {
+      refreshIfStale(60_000);
     }
-  }, [participantCount, distributionWindowActive]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infoVisible, infoHovering]);
+
+  // Load last payout data when switching to that tab
+  const loadLastPayout = useCallback(async () => {
+    setLastPayoutLoading(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      // Don't filter by network - show the most recent completed payout regardless
+      const { data, error } = await supabase.rpc("community_pot_get_last_completed_payout", {
+        p_is_testnet: null,
+      });
+      if (error) {
+        console.error("Error loading last payout:", error);
+        setLastPayoutLoading(false);
+        return;
+      }
+      if (data?.found && data?.payout) {
+        setLastPayout(data.payout as LastPayoutData);
+      } else {
+        // No payout found, set to a sentinel to prevent re-fetching
+        setLastPayout(null);
+      }
+    } catch (err) {
+      console.error("Error loading last payout:", err);
+    } finally {
+      setLastPayoutLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeInfoTab === "last" && !lastPayoutAttempted && !lastPayoutLoading) {
+      setLastPayoutAttempted(true);
+      loadLastPayout();
+    }
+  }, [activeInfoTab, lastPayoutAttempted, lastPayoutLoading, loadLastPayout]);
 
   useEffect(() => {
     if (!distributionWindowActive || !distributionResumeAt) {
@@ -169,78 +283,165 @@ export default function CommunityPotPage() {
       />
 
       {/* Payout Stats */}
-      <PayoutStats />
+      <PayoutStats 
+        isVisible={rankingsVisible || rankingsHovering}
+        onHoverChange={setRankingsHovering}
+      />
 
-      {/* UI Overlay - pointer-events-none en el contenedor */}
-      <div className="absolute top-8 left-8 z-10 pointer-events-auto bg-black/60 backdrop-blur-md p-6 rounded-xl border border-[#2276cb]/40 space-y-4 w-[385px]">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-white">🌌 Community Pot</h1>
+      {/* UI Overlay with hover reveal */}
+      <motion.div 
+        className="absolute top-8 left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[385px] overflow-visible"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: infoVisible || infoHovering ? 1 : 0 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        style={{ pointerEvents: infoVisible || infoHovering ? "auto" : "none" }}
+        onPointerEnter={() => {
+          setInfoHovering(true);
+          setInfoVisible(true);
+        }}
+        onPointerLeave={() => setInfoHovering(false)}
+      >
+        {/* Tab bookmark on the right side */}
+        <div className="absolute -right-8 top-4 flex flex-col gap-1">
+          <button
+            onClick={() => setActiveInfoTab("current")}
+            className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center ${
+              activeInfoTab === "current"
+                ? "bg-[#2276cb] text-white"
+                : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white"
+            }`}
+            style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+          >
+            Current
+          </button>
+          <button
+            onClick={() => setActiveInfoTab("last")}
+            className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center ${
+              activeInfoTab === "last"
+                ? "bg-[#2276cb] text-white"
+                : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white"
+            }`}
+            style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+          >
+            Last
+          </button>
         </div>
-        {error && <p className="text-sm text-red-300">{error}</p>}
-        <div className="space-y-3 text-white text-sm">
-          <InfoRow label="Pool" value={week ? `${Number(week.amountUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC` : "—"} />
-          <InfoRow label="Next payout" value={distributionLabel || "—"} />
-          <InfoRow label="Countdown" value={countdown.label || "—"} highlight />
-          <InfoRow label="Participants" value={`${participantCount}/${week?.maxParticipants ?? 10}`} />
-          <InfoRow label="Open slots" value={week ? Math.max(week.spotsRemaining, 0) : "—"} />
-          <InfoRow label="Estimated share" value={perParticipantAmountUsdc ? `${perParticipantAmountUsdc} USDC` : "Depends on headcount"} />
-          <InfoRow 
-            label="Payout wallet" 
-            value="0x3d8b...2b81" 
-            mono 
-            href={week?.isTestnet 
-              ? "https://amoy.polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
-              : "https://polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
-            }
-          />
-          <InfoRow label="Network" value={week?.isTestnet ? "Polygon Testnet" : "Polygon Mainnet"} />
+
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold text-white">🌌 Community Pot</h1>
+          </div>
+          
+          {activeInfoTab === "current" ? (
+            <>
+              {error && <p className="text-sm text-red-300">{error}</p>}
+              <div className="space-y-3 text-white text-sm">
+                <InfoRow label="Pool" value={week ? `${Number(week.amountUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC` : "—"} />
+                <InfoRow label="Next payout" value={distributionLabel || "—"} />
+                <InfoRow label="Countdown" value={countdown.label || "—"} highlight />
+                <InfoRow label="Participants" value={`${participantCount}/${week?.maxParticipants ?? 10}`} />
+                <InfoRow label="Open slots" value={week ? Math.max(week.spotsRemaining, 0) : "—"} />
+                <InfoRow label="Estimated share" value={perParticipantAmountUsdc ? `${perParticipantAmountUsdc} USDC` : "Depends on headcount"} />
+                <InfoRow 
+                  label="Payout wallet" 
+                  value="0x3d8b...2b81" 
+                  mono 
+                  href={week?.isTestnet 
+                    ? "https://amoy.polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
+                    : "https://polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
+                  }
+                />
+                <InfoRow label="Network" value={week?.isTestnet ? "Polygon Testnet" : "Polygon Mainnet"} />
+              </div>
+              {refreshing && (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin inline-block w-4 h-4 border-2 border-purple-200 border-t-transparent rounded-full" />
+                  <p className="text-xs text-purple-200">Refreshing…</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {lastPayoutLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin inline-block w-6 h-6 border-2 border-[#2276cb] border-t-transparent rounded-full" />
+                  <p className="ml-2 text-sm text-white/70">Loading...</p>
+                </div>
+              ) : lastPayout ? (
+                <div className="space-y-3 text-white text-sm">
+                  <div className="text-xs text-green-400 font-semibold uppercase tracking-wider mb-2">
+                    ✓ Completed
+                  </div>
+                  <InfoRow label="Pool" value={`${Number(lastPayout.amountUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} />
+                  <InfoRow 
+                    label="Date" 
+                    value={new Intl.DateTimeFormat("en-US", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                      timeZone: "Europe/Madrid",
+                    }).format(new Date(lastPayout.scheduledAt))} 
+                  />
+                  <InfoRow label="Participants" value={`${lastPayout.participantCount}/${lastPayout.maxParticipants}`} />
+                  <InfoRow label="Total distributed" value={`${Number(lastPayout.totalDistributed).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} />
+                  <InfoRow label="Per participant" value={`${Number(lastPayout.perParticipantUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} highlight />
+                  <InfoRow label="Network" value={lastPayout.isTestnet ? "Polygon Testnet" : "Polygon Mainnet"} />
+                </div>
+              ) : (
+                <div className="text-center py-8 text-white/60 text-sm">
+                  No completed payouts yet
+                </div>
+              )}
+            </>
+          )}
         </div>
-        {refreshing && (
-          <div className="flex items-center gap-2">
-            <div className="animate-spin inline-block w-4 h-4 border-2 border-purple-200 border-t-transparent rounded-full" />
-            <p className="text-xs text-purple-200">Refreshing…</p>
+      </motion.div>
+
+      {/* Join experience - hover reveal button */}
+      <motion.div 
+        className="fixed z-30 group" 
+        style={{ top: '1.5rem', right: '92px' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: joinButtonVisible || joinButtonHovering ? 1 : 0 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        onPointerEnter={() => {
+          setJoinButtonHovering(true);
+          setJoinButtonVisible(true);
+        }}
+        onPointerLeave={() => setJoinButtonHovering(false)}
+      >
+        <button
+          onClick={() => setShowJoinModal(true)}
+          className="px-6 py-3 bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40"
+          style={{ pointerEvents: joinButtonVisible || joinButtonHovering ? "auto" : "none" }}
+        >
+          {viewerHasCurrentSlot ? "Change address" : "Reserve your slot"}
+        </button>
+        {viewerHasCurrentSlot && (
+          <div className="absolute top-full left-0 mt-2 w-48 px-3 py-2 text-xs text-white bg-black/90 border border-[#2276cb]/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-normal">
+            <p>You have an address reserved for this week. Update it here if needed.</p>
           </div>
         )}
-      </div>
-
-      {/* Join experience */}
-      {participantCount > 0 && (
-        <div className="fixed z-30 group" style={{ top: '1.5rem', right: '92px' }}>
-          <button
-            onClick={() => setShowJoinModal(true)}
-            className="px-6 py-3 bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40"
-          >
-            {viewerHasCurrentSlot ? "Change address" : "Reserve your slot"}
-          </button>
-          {viewerHasCurrentSlot && (
-            <div className="absolute top-full left-0 mt-2 w-48 px-3 py-2 text-xs text-white bg-black/90 border border-[#2276cb]/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-normal">
-              <p>You have an address reserved for this week. Update it here if needed.</p>
-            </div>
-          )}
-          {!viewerHasCurrentSlot && (
-            <div className="absolute top-full left-0 mt-2 w-48 px-3 py-2 text-xs text-white bg-black/90 border border-[#2276cb]/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-normal">
-              <p>Click to reserve your slot and enter your Polygon address.</p>
-            </div>
-          )}
-        </div>
-      )}
+        {!viewerHasCurrentSlot && (
+          <div className="absolute top-full left-0 mt-2 w-48 px-3 py-2 text-xs text-white bg-black/90 border border-[#2276cb]/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-normal">
+            <p>Click to reserve your slot and enter your Polygon address.</p>
+          </div>
+        )}
+      </motion.div>
       {showJoinModal && isPotFull && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm pointer-events-none" />
       )}
       {showJoinModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-[#2276cb]/40 bg-black/90 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5">
+        <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-[#2276cb]/40 bg-black/60 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-2xl font-bold text-white">{viewerHasCurrentSlot ? "Change your address" : "Reserve your slot"}</h2>
-            {participantCount > 0 && (
-              <button
-                onClick={() => setShowJoinModal(false)}
-                className="text-[#2276cb] hover:text-white transition-colors text-2xl leading-none"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            )}
+            <button
+              onClick={() => setShowJoinModal(false)}
+              className="text-[#2276cb] hover:text-white transition-colors text-2xl leading-none"
+              aria-label="Close"
+            >
+              ×
+            </button>
           </div>
           <div>
             <p className="text-sm text-[#2276cb]/80 text-center">
