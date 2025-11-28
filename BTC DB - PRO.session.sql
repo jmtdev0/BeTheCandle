@@ -853,3 +853,9 @@ ALTER TABLE community_pot_payout_default_config
     ADD COLUMN schedule_weekday integer NOT NULL DEFAULT 7 CHECK (schedule_weekday BETWEEN 1 AND 7),
     ADD COLUMN schedule_time text NOT NULL DEFAULT '16:30',
     ADD COLUMN schedule_timezone text NOT NULL DEFAULT 'Europe/Berlin';
+
+  
+-- Vamos a añadir una columna a community_pot_payouts para guardar la hora verdadera en la que se ha ejecutado el payout
+ALTER TABLE community_pot_payouts
+    ADD COLUMN executed_at timestamp with time zone;
+      

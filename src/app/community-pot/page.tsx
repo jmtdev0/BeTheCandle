@@ -599,10 +599,10 @@ export default function CommunityPotPage() {
               <div id="please-content" className="space-y-3">
                 <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-4">
                   <p className="text-xs text-emerald-100 leading-relaxed mb-3">
-                    If you enjoy this, consider donating. It helps me run larger and more frequent distributions. I'd love to do daily payouts or 100 USDC rounds, and increase the number of participants!
+                    If you enjoy this, consider donating. It helps me run larger and more frequent distributions. I&apos;d love to do daily payouts or 100 USDC rounds, and increase the number of participants!
                   </p>
                   <p className="text-xs text-emerald-100/90 leading-relaxed mb-3">
-                    I'm a solo developer working on this project. I'll participate honestly in the distributions with my own funds—same risk, same rules as everyone else. If the pot grows, we all win together.
+                    I&apos;m a solo developer working on this project. I&apos;ll try to join and participate honestly in the distributions. If the pot grows, we all win together.
                   </p>
                   
                   {/* Donation address with copy button */}
@@ -637,7 +637,7 @@ export default function CommunityPotPage() {
                   </p>
                   
                   <p className="text-xs text-emerald-200/60 italic">
-                    ⚖️ Donations don't guarantee anything. They're voluntary support to keep the project running. I participate as a regular member, investing my own money like you do.
+                    ⚖️ Donations don&apos;t guarantee anything. They&apos;re voluntary support to keep the project running. I participate as a regular member, investing my own money like you do.
                   </p>
                 </div>
               </div>
