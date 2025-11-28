@@ -165,11 +165,11 @@ export function useCommunityPot() {
     setCountdownSeconds(0);
   }, []);
 
-  const joinCommunityPot = useCallback(async (polygonAddress: string) => {
+  const joinCommunityPot = useCallback(async (polygonAddress: string, recaptchaToken: string) => {
     const response = await fetch("/api/community-pot/join", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ polygonAddress }),
+      body: JSON.stringify({ polygonAddress, recaptchaToken }),
     });
 
     if (!response.ok) {

@@ -532,9 +532,16 @@ async function findPendingPayout(client: SupabaseClient, now: Date): Promise<Pen
 }
 
 async function updatePayoutStatus(client: SupabaseClient, payoutId: string, status: CommunityPotPayoutStatus) {
+  const updateData: Record<string, unknown> = { status };
+  
+  // If marking as Completed, also set executed_at to current timestamp
+  if (status === "Completed") {
+    updateData.executed_at = new Date().toISOString();
+  }
+  
   const { error } = await client
     .from("community_pot_payouts")
-    .update({ status })
+    .update(updateData)
     .eq("id", payoutId);
 
   if (error) {

@@ -140,6 +140,20 @@ export default function Sidebar({
                 </div>
               </div>
             )}
+
+            {/* Footer - GitHub link */}
+            <div className="mt-auto pt-4 border-t border-slate-700">
+              <a
+                href="https://github.com/jmtdev0/BeTheCandle"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all text-slate-400 hover:text-white hover:bg-slate-700/50 text-xs font-medium group"
+              >
+                <span className="text-sm">📱</span>
+                <span>GitHub Repository</span>
+                <span className="text-slate-500 group-hover:text-slate-400 ml-auto">→</span>
+              </a>
+            </div>
           </div>
         </motion.div>
       )}

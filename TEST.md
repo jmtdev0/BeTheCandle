@@ -1,0 +1,1 @@
+* No se debe permitir añadir un participante más al reparto si ya se ha alcanzado el máximo de participantes permitido (el número de registros que tenga asociados el reparto en la tabla community_pot_payout_participants)

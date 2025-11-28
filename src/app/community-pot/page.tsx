@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import InfoPopup from "@/components/common/InfoPopup";
+import ReCAPTCHA from "react-google-recaptcha";
 import { useCommunityPot } from "@/hooks/useCommunityPot";
 import PayoutStats from "@/components/community-pot/PayoutStats";
 import InteractiveOrbs3D from "@/components/community-pot/InteractiveOrbs3D";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
+
+const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
 interface LastPayoutData {
   id: string;
@@ -43,6 +45,7 @@ export default function CommunityPotPage() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [hoveredParticipantId, setHoveredParticipantId] = useState<string | null>(null);
   const [distributionPauseSeconds, setDistributionPauseSeconds] = useState(0);
   const [infoVisible, setInfoVisible] = useState(false);
@@ -55,6 +58,10 @@ export default function CommunityPotPage() {
   const [lastPayout, setLastPayout] = useState<LastPayoutData | null>(null);
   const [lastPayoutLoading, setLastPayoutLoading] = useState(false);
   const [lastPayoutAttempted, setLastPayoutAttempted] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const [showRequirements, setShowRequirements] = useState(true);
+  const [showPlease, setShowPlease] = useState(false);
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
 
   useEffect(() => {
     if (viewerAddress) {
@@ -63,6 +70,7 @@ export default function CommunityPotPage() {
   }, [viewerAddress]);
 
   const participantCount = participants.length;
+
 
   useEffect(() => {
     if (distributionWindowActive) {
@@ -219,8 +227,10 @@ export default function CommunityPotPage() {
     !week ||
     (((weekStatus === "paid" || weekStatus === "closed") || isPotFull) && !viewerCanEdit);
   const buttonLabel = viewerCanEdit ? "Update address" : "Join the pot";
-  const walletGuideUrl =
-    "https://support.metamask.io/start/creating-a-new-wallet";
+
+  const handleRecaptchaChange = (token: string | null) => {
+    setRecaptchaToken(token);
+  };
 
   const handleJoin = async () => {
     if (!week) {
@@ -258,15 +268,55 @@ export default function CommunityPotPage() {
       return;
     }
 
+    // Verify reCAPTCHA token is present
+    if (!recaptchaToken) {
+      setJoinError("Please complete the reCAPTCHA verification.");
+      return;
+    }
+
     setJoinError(null);
     setIsSubmitting(true);
     try {
-      await joinCommunityPot(normalized);
+      // Verify address with server (POL balance check)
+      const verifyResponse = await fetch("/api/community-pot/verify-address", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: normalized,
+          recaptchaToken,
+          isTestnet: week.isTestnet,
+        }),
+      });
+
+      const verifyResult = await verifyResponse.json();
+
+      if (!verifyResponse.ok || verifyResult.error) {
+        setJoinError(verifyResult.error || "Verification failed. Please try again.");
+        // Reset reCAPTCHA for retry
+        recaptchaRef.current?.reset();
+        setRecaptchaToken(null);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // All verifications passed, proceed with joining (pass reCAPTCHA token for server-side validation)
+      await joinCommunityPot(normalized, recaptchaToken);
+      
+      // Reset reCAPTCHA after successful join
+      recaptchaRef.current?.reset();
+      setRecaptchaToken(null);
+      
+      // Close modal and show success toast
       setShowJoinModal(false);
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 4000);
     } catch (err) {
       const reason = err instanceof Error ? err.message : "unknown";
       const friendly = mapJoinError(reason);
       setJoinError(friendly);
+      // Reset reCAPTCHA on error
+      recaptchaRef.current?.reset();
+      setRecaptchaToken(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -283,14 +333,6 @@ export default function CommunityPotPage() {
           onHoverParticipant={setHoveredParticipantId}
         />
       )}
-
-      {/* Info Popup */}
-      <InfoPopup
-        title="Community Pot"
-        content={`Welcome to the Community Pot: a USDC pool on Polygon for our weekly supporters.
-
-    Each week, we open up to 10 slots. Drop a valid Polygon address to reserve one and every active wallet receives the same share when we execute the payout Sunday at 4:30 PM CET.`}
-      />
 
       {/* Payout Stats */}
       <PayoutStats 
@@ -396,7 +438,7 @@ export default function CommunityPotPage() {
                       dateStyle: "medium",
                       timeStyle: "short",
                       timeZone: "Europe/Madrid",
-                    }).format(new Date(lastPayout.scheduledAt))} 
+                    }).format(new Date(lastPayout.completedAt))} 
                   />
                   <InfoRow label="Participants" value={`${lastPayout.participantCount}/${lastPayout.maxParticipants}`} />
                   <InfoRow label="Total distributed" value={`${Number(lastPayout.totalDistributed).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} />
@@ -430,7 +472,8 @@ export default function CommunityPotPage() {
       >
         <button
           onClick={() => setShowJoinModal(true)}
-          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto ${participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-6 py-3'}`}
+          aria-label={viewerHasCurrentSlot ? "Change your reserved wallet address" : "Reserve your slot in the community pot"}
+          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-white/50 ${participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-6 py-3'}`}
           style={{ pointerEvents: participantCount === 0 || joinButtonVisible || joinButtonHovering ? "auto" : "none" }}
         >
           {viewerHasCurrentSlot ? "Change address" : "Reserve your slot"}
@@ -450,78 +493,219 @@ export default function CommunityPotPage() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm pointer-events-none" />
       )}
       {showJoinModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-[#2276cb]/40 bg-black/60 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5">
+        <div 
+          className="fixed inset-0 z-[60] flex items-center justify-center px-4 pointer-events-none"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="join-modal-title"
+        >
+        <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-[#2276cb]/40 bg-black/80 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-2xl font-bold text-white">{viewerHasCurrentSlot ? "Change your address" : "Reserve your slot"}</h2>
+            <h2 id="join-modal-title" className="text-2xl font-bold text-white">{viewerHasCurrentSlot ? "Change your address" : "Reserve your slot"}</h2>
             <button
               onClick={() => setShowJoinModal(false)}
               className="text-[#2276cb] hover:text-white transition-colors text-2xl leading-none"
-              aria-label="Close"
+              aria-label="Close modal"
             >
               ×
             </button>
           </div>
+          
+          {/* Address input */}
           <div>
-            <p className="text-sm text-[#2276cb]/80 text-center">
-              Enter your Polygon address below.
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm text-[#2276cb]/70 mb-2">Polygon address (USDC)</label>
+            <label htmlFor="polygon-address-input" className="block text-sm text-[#2276cb]/70 mb-2">Polygon address (USDC)</label>
             <input
+              id="polygon-address-input"
               type="text"
               value={polygonAddress}
               onChange={(event) => setPolygonAddress(event.target.value)}
               placeholder="0x..."
-              className="w-full px-4 py-3 bg-black/60 border border-[#2276cb]/40 rounded-lg text-white focus:outline-none focus:border-[#2276cb]"
+              aria-describedby="polygon-address-help"
+              autoComplete="off"
+              spellCheck="false"
+              className="w-full px-4 py-3 bg-black/60 border border-[#2276cb]/40 rounded-lg text-white focus:outline-none focus:border-[#2276cb] focus:ring-2 focus:ring-[#2276cb]/30 font-mono text-sm"
             />
+            <p id="polygon-address-help" className="sr-only">Enter your Polygon wallet address starting with 0x</p>
           </div>
-          <p className="text-xs text-[#2276cb]/70">
-            Need a wallet?{" "}
-            <a
-              href={walletGuideUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="underline underline-offset-4 text-[#2276cb] hover:text-white"
+
+          {/* Guide link */}
+          <a
+            href="/community-pot/guide"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 text-xs text-[#2276cb] hover:text-white transition-colors underline underline-offset-2"
+          >
+            Need help? Read the full guide →
+          </a>
+
+          {/* Requirements section - Collapsible */}
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowRequirements(!showRequirements)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-blue-500/10 border border-[#2276cb]/40 rounded-lg hover:bg-blue-500/15 transition-colors"
+              aria-expanded={showRequirements}
+              aria-controls="requirements-content"
             >
-              Follow this quick MetaMask guide
-            </a>
-            .
-          </p>
-          <div className="flex gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-            <span className="font-semibold text-sm">Polygon network</span>
-            <p>
-              Make sure the Polygon network is enabled in your wallet before pasting the address. Also, you will need to import USDC contract address to see your balance.
-            </p>
+              <h3 className="text-sm font-semibold text-white/80">Requirements</h3>
+              <span className="text-white/60 text-lg">
+                {showRequirements ? "−" : "+"}
+              </span>
+            </button>
+            
+            {showRequirements && (
+              <div id="requirements-content" className="grid gap-2">
+                <div className="flex items-start gap-3 rounded-lg border border-amber-400/20 bg-amber-500/5 p-3">
+                  <span className="text-amber-400 mt-0.5" aria-hidden="true">🔗</span>
+                  <div>
+                    <p className="text-xs font-semibold text-amber-200">Polygon Network</p>
+                    <p className="text-xs text-amber-100/70">Your address must be on the Polygon network. Import the USDC token contract to see your balance.</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3 rounded-lg border border-cyan-400/20 bg-cyan-500/5 p-3">
+                  <span className="text-cyan-400 mt-0.5" aria-hidden="true">⛽</span>
+                  <div>
+                    <p className="text-xs font-semibold text-cyan-200">POL for Gas</p>
+                    <p className="text-xs text-cyan-100/70">Your wallet must have some POL (native token) for gas fees to transfer or swap USDC later.</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3 rounded-lg border border-purple-400/20 bg-purple-500/5 p-3">
+                  <span className="text-purple-400 mt-0.5" aria-hidden="true">👁️</span>
+                  <div>
+                    <p className="text-xs font-semibold text-purple-200">Privacy Notice</p>
+                    <p className="text-xs text-purple-100/70">Your wallet address will be visible to other participants. Don&apos;t use an address you wish to keep private.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="flex gap-3 rounded-xl border border-purple-400/30 bg-purple-500/10 p-3 text-xs text-purple-100">
-            <span className="font-semibold text-sm">⚠️ Privacy notice</span>
-            <p>
-              Your wallet address will be visible to other participants. Do not use an address you wish to keep private.
-            </p>
+
+          {/* Please section - Collapsible */}
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowPlease(!showPlease)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-400/40 rounded-lg hover:bg-emerald-500/15 transition-colors"
+              aria-expanded={showPlease}
+              aria-controls="please-content"
+            >
+              <h3 className="text-sm font-semibold text-white/80">Please 🙏</h3>
+              <span className="text-white/60 text-lg">
+                {showPlease ? "−" : "+"}
+              </span>
+            </button>
+            
+            {showPlease && (
+              <div id="please-content" className="space-y-3">
+                <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-4">
+                  <p className="text-xs text-emerald-100 leading-relaxed mb-3">
+                    If you enjoy this, consider donating. It helps me run larger and more frequent distributions. I'd love to do daily payouts or 100 USDC rounds, and increase the number of participants!
+                  </p>
+                  <p className="text-xs text-emerald-100/90 leading-relaxed mb-3">
+                    I'm a solo developer working on this project. I'll participate honestly in the distributions with my own funds—same risk, same rules as everyone else. If the pot grows, we all win together.
+                  </p>
+                  
+                  {/* Donation address with copy button */}
+                  <div className="bg-black/40 rounded-lg p-3 mb-3">
+                    <p className="text-xs text-emerald-200/70 mb-2">Donation address (ETH/Polygon):</p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs text-emerald-100 font-mono break-all flex-1">
+                        0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText("0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81");
+                        }}
+                        className="shrink-0 px-2 py-1 bg-emerald-500/20 border border-emerald-400/40 rounded text-xs text-emerald-100 hover:bg-emerald-500/30 transition-colors"
+                        aria-label="Copy address to clipboard"
+                      >
+                        📋 Copy
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <p className="text-xs text-emerald-100/80 mb-3">
+                    🔍 All activity is fully transparent:{" "}
+                    <a
+                      href="https://polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81#tokentxns"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-300 hover:text-white underline underline-offset-2 transition-colors"
+                    >
+                      View on Polygonscan →
+                    </a>
+                  </p>
+                  
+                  <p className="text-xs text-emerald-200/60 italic">
+                    ⚖️ Donations don't guarantee anything. They're voluntary support to keep the project running. I participate as a regular member, investing my own money like you do.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
-          {joinError && <p className="text-sm text-red-300">{joinError}</p>}
+
+          {/* reCAPTCHA - only show when address is entered */}
+          {polygonAddress.trim() && (
+            <div className="flex justify-center py-2">
+              <ReCAPTCHA
+                ref={recaptchaRef}
+                sitekey={RECAPTCHA_SITE_KEY}
+                onChange={handleRecaptchaChange}
+                theme="dark"
+              />
+            </div>
+          )}
+          
+          {/* Error and status messages */}
+          <div aria-live="polite" aria-atomic="true">
+            {joinError && <p className="text-sm text-red-300 text-center" role="alert">{joinError}</p>}
+          </div>
           {viewerCanEdit && (
-            <p className="text-xs text-emerald-200">
+            <p className="text-xs text-emerald-200 text-center">
               This browser already has a slot reserved for the current week. Submit a new address if you need to update it.
             </p>
           )}
           {isPotFull && !viewerCanEdit && (
-            <p className="text-xs text-yellow-200">
+            <p className="text-xs text-yellow-200 text-center">
               All slots are taken. Cookies prevent duplicate entries this week—check back after the Sunday payout.
             </p>
           )}
+          
+          {/* Submit button */}
           <button
             onClick={handleJoin}
-            disabled={disableJoinButton}
-            className="w-full px-6 py-3 bg-[#2276cb] text-white rounded-lg font-semibold hover:bg-[#1a5ba8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={disableJoinButton || !recaptchaToken}
+            aria-busy={isSubmitting}
+            aria-disabled={disableJoinButton || !recaptchaToken}
+            className="w-full px-6 py-3 bg-[#2276cb] text-white rounded-lg font-semibold hover:bg-[#1a5ba8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2276cb]/50 focus:ring-offset-2 focus:ring-offset-black"
           >
-            {isSubmitting ? "Saving..." : buttonLabel}
+            {isSubmitting ? "Verifying..." : buttonLabel}
           </button>
         </div>
         </div>
       )}
+      
+      {/* Success Toast */}
+      {showSuccessToast && (
+        <motion.div
+          className="fixed bottom-8 left-1/2 z-[100] -translate-x-1/2"
+          initial={{ opacity: 0, y: 50, scale: 0.9 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.9 }}
+          transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-400/40 bg-emerald-500/20 backdrop-blur-xl px-6 py-4 shadow-2xl shadow-emerald-500/20">
+            <span className="text-2xl" role="img" aria-hidden="true">✅</span>
+            <div>
+              <p className="font-semibold text-emerald-100">Successfully joined!</p>
+              <p className="text-sm text-emerald-200/80">Your address is now registered for this week&apos;s payout.</p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+      
       {distributionWindowActive && (
         <div className="absolute inset-0 z-[80] flex flex-col items-center justify-center bg-black/70 backdrop-blur-md text-white">
           <div className="max-w-lg rounded-2xl border border-white/20 bg-white/10 px-10 py-12 text-center shadow-2xl">
@@ -575,6 +759,14 @@ function mapJoinError(code: string) {
       return "That wallet address is already registered for this week's payout.";
     case "payout_full":
       return "The pot is already full. All slots have been taken.";
+    case "rate_limited":
+      return "Too many requests. Please wait a minute before trying again.";
+    case "recaptcha_failed":
+      return "reCAPTCHA verification failed. Please try again.";
+    case "recaptcha_required":
+      return "Please complete the reCAPTCHA verification.";
+    case "missing_recaptcha":
+      return "reCAPTCHA token is required.";
     default:
       // Check if error message contains useful info
       if (code.toLowerCase().includes("full") || code.toLowerCase().includes("limit")) {

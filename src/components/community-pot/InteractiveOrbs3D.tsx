@@ -395,7 +395,7 @@ export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 0 }}>
       <Canvas
-        camera={{ position: [0, 0, 20], fov: 50 }}
+        camera={{ position: [0, 0, 35], fov: 50 }}
         gl={{ alpha: true, antialias: true }}
       >
         <OrbsScene {...props} />
