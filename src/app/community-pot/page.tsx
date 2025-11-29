@@ -63,6 +63,7 @@ export default function CommunityPotPage() {
   const [showPlease, setShowPlease] = useState(false);
   const [mobileUIVisible, setMobileUIVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isMobileLandscape, setIsMobileLandscape] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const recaptchaRef = useRef<ReCAPTCHA>(null);
 
@@ -76,6 +77,33 @@ export default function CommunityPotPage() {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Detect mobile landscape specifically (small width + landscape orientation)
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: landscape)');
+    const check = () => {
+      const small = window.innerWidth < 768;
+      setIsMobileLandscape(small && mq.matches);
+    };
+    check();
+    window.addEventListener('resize', check);
+    try {
+      mq.addEventListener?.('change', check);
+    } catch (e) {
+      // Safari fallback
+      // @ts-ignore
+      mq.addListener?.(check);
+    }
+    return () => {
+      window.removeEventListener('resize', check);
+      try {
+        mq.removeEventListener?.('change', check);
+      } catch (e) {
+        // @ts-ignore
+        mq.removeListener?.(check);
+      }
+    };
   }, []);
 
   // Detect quick taps (not long-press) on background to toggle mobile UI.
@@ -428,14 +456,23 @@ export default function CommunityPotPage() {
       )}
 
       {/* Payout Stats */}
-      <PayoutStats 
-        isVisible={shouldShowRankings}
-        onHoverChange={setRankingsHovering}
-      />
+      {isMobileLandscape ? (
+        <div className="absolute top-4 right-4 z-20">
+          <PayoutStats 
+            isVisible={shouldShowRankings}
+            onHoverChange={setRankingsHovering}
+          />
+        </div>
+      ) : (
+        <PayoutStats 
+          isVisible={shouldShowRankings}
+          onHoverChange={setRankingsHovering}
+        />
+      )}
 
       {/* UI Overlay with hover reveal */}
       <motion.div 
-        className="ui-panel absolute top-16 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible"
+        className={`ui-panel absolute top-16 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible ${isMobileLandscape ? 'max-h-[70vh] overflow-y-auto' : ''}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: shouldShowInfo ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
@@ -449,7 +486,7 @@ export default function CommunityPotPage() {
         onPointerLeave={() => !isMobile && setInfoHovering(false)}
       >
         {/* Tab bookmark on the right side - always interactive */}
-        <div className="absolute -right-8 top-4 flex flex-col gap-1 hidden md:flex" style={{ pointerEvents: "auto" }}>
+        <div className={`absolute -right-8 top-4 flex-col gap-1 ${isMobileLandscape ? 'flex' : 'hidden'} md:flex`} style={{ pointerEvents: "auto" }}>
           <button
             onClick={() => {
               setActiveInfoTab("current");
@@ -548,40 +585,41 @@ export default function CommunityPotPage() {
             </>
           )}
           {/* Mobile: bottom tab row for Current / Last */}
-          <div className="md:hidden mt-3 px-2">
-            <div className="flex gap-2 justify-center">
-              <button
-                onClick={() => {
-                  setActiveInfoTab("current");
-                  refreshIfStale(0);
-                }}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeInfoTab === "current" ? "bg-[#2276cb] text-white" : "bg-black/40 text-white/70 hover:bg-black/60"}`}
-              >
-                Current
-              </button>
-              <button
-                onClick={() => {
-                  setActiveInfoTab("last");
-                  loadLastPayout();
-                }}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeInfoTab === "last" ? "bg-[#2276cb] text-white" : "bg-black/40 text-white/70 hover:bg-black/60"}`}
-              >
-                Last
-              </button>
+          {!isMobileLandscape && (
+            <div className="md:hidden mt-3 px-2">
+              <div className="flex gap-2 justify-center">
+                <button
+                  onClick={() => {
+                    setActiveInfoTab("current");
+                    refreshIfStale(0);
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeInfoTab === "current" ? "bg-[#2276cb] text-white" : "bg-black/40 text-white/70 hover:bg-black/60"}`}
+                >
+                  Current
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveInfoTab("last");
+                    loadLastPayout();
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeInfoTab === "last" ? "bg-[#2276cb] text-white" : "bg-black/40 text-white/70 hover:bg-black/60"}`}
+                >
+                  Last
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </motion.div>
 
       {/* Join experience - centered when no participants, hover reveal otherwise */}
       <motion.div 
         className={`ui-panel fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
-        style={participantCount > 0 ? { 
-          top: isMobile ? '0.75rem' : '1.5rem', 
-          right: isMobile ? '0.75rem' : '92px',
-          left: isMobile ? '50%' : 'auto',
-          transform: isMobile ? 'translateX(-50%)' : 'none'
-        } : undefined}
+        style={participantCount > 0 ? (
+          isMobileLandscape ? { top: '0.75rem', right: '0.75rem', left: 'auto', transform: 'none' } : (
+            isMobile ? { top: '0.75rem', right: '0.75rem', left: '50%', transform: 'translateX(-50%)' } : { top: '1.5rem', right: '92px' }
+          )
+        ) : undefined}
         initial={{ opacity: 0 }}
         animate={{ opacity: shouldShowJoinButton ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}

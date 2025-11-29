@@ -107,9 +107,10 @@ export default function Sidebar({
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.1 }}
                   >
-                    <button
-                      onClick={() => navigate(item.href)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                      <button
+                        onClick={() => navigate(item.href)}
+                        aria-describedby={isLobby ? "lobby-tooltip" : undefined}
+                        className={`relative group w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                         isActive
                           ? "bg-gradient-to-r from-orange-500/20 to-yellow-500/20 border border-orange-500/50 text-orange-300"
                           : "hover:bg-slate-700/50 text-slate-300 hover:text-orange-200"
@@ -117,7 +118,7 @@ export default function Sidebar({
                     >
                       <span className="text-xl">{item.icon}</span>
                       <div className="flex-1 text-left">
-                        <span className="text-sm font-medium">{item.label}</span>
+                          <span className="text-sm font-medium">{item.label}{isLobby && <span className="ml-2 text-xs">🚧</span>}</span>
                         {isLobby && lobbyUserCount !== undefined && (
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <div className={`w-1.5 h-1.5 rounded-full ${isLobbyConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
@@ -127,6 +128,12 @@ export default function Sidebar({
                           </div>
                         )}
                       </div>
+                        {/* Tooltip for Lobby (mobile & desktop) */}
+                        {isLobby && (
+                          <div id="lobby-tooltip" role="status" aria-hidden="true" className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 bg-black/80 text-xs text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                            Under construction
+                          </div>
+                        )}
                     </button>
                   </motion.div>
                 );
