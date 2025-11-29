@@ -77,15 +77,41 @@ export default function CommunityPotPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle tap on background: if UI visible, hide; if not, show
-  const handleBackgroundTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  // Detect quick taps (not long-press) on background to toggle mobile UI.
+  const pointerStartRef = useRef<{ time: number; x: number; y: number; id?: number | null } | null>(null);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!isMobile) return;
-    const target = (e as any).target as HTMLElement;
-    // If tapping on interactive UI, ignore
+    const target = e.target as HTMLElement;
+    // Ignore if interacting with UI elements
     if (target.closest('button, a, input, [role="dialog"], .ui-panel')) return;
-    // If controls are visible, hide them. If not visible, show them.
-    setMobileUIVisible(prev => !prev);
+    // Record start time and position
+    pointerStartRef.current = { time: Date.now(), x: e.clientX ?? 0, y: e.clientY ?? 0, id: (e as any).pointerId };
   }, [isMobile]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (!isMobile) return;
+    const start = pointerStartRef.current;
+    if (!start) return;
+    // compute duration and movement
+    const duration = Date.now() - start.time;
+    const dx = (e.clientX ?? 0) - start.x;
+    const dy = (e.clientY ?? 0) - start.y;
+    const distance = Math.hypot(dx, dy);
+    // clear start
+    pointerStartRef.current = null;
+
+    // Consider a tap if short duration and little movement
+    const TAP_MAX_DURATION = 250; // ms
+    const TAP_MAX_MOVE = 12; // px
+    if (duration <= TAP_MAX_DURATION && distance <= TAP_MAX_MOVE) {
+      setMobileUIVisible(prev => !prev);
+    }
+  }, [isMobile]);
+
+  const handlePointerCancel = useCallback(() => {
+    pointerStartRef.current = null;
+  }, []);
 
   // Notify global listeners (e.g., GlobalMusicPlayer) when mobile UI visibility changes
   useEffect(() => {
@@ -363,8 +389,9 @@ export default function CommunityPotPage() {
   return (
     <div 
       className="relative w-full h-screen overflow-hidden bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]"
-      onClick={handleBackgroundTap}
-      onTouchEnd={handleBackgroundTap}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     >
       {/* Mobile: hint removed per UX request */}
 
