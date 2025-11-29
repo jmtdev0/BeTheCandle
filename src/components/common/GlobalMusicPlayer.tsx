@@ -42,6 +42,28 @@ export default function GlobalMusicPlayer() {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [shouldShowPlayer, shouldAutoHide, isHovering]);
 
+  // Listen for mobile UI visibility events so the player can appear when
+  // mobile controls are toggled visible by the community-pot page.
+  useEffect(() => {
+    const handleMobileUI = (ev: Event) => {
+      try {
+        const detail = (ev as CustomEvent).detail as boolean | undefined;
+        const isSmall = typeof window !== "undefined" && window.innerWidth <= 768;
+        if (!isSmall) return;
+        if (detail) {
+          setIsVisible(true);
+        } else {
+          setIsVisible(false);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    window.addEventListener("mobile-ui-visible", handleMobileUI as EventListener);
+    return () => window.removeEventListener("mobile-ui-visible", handleMobileUI as EventListener);
+  }, []);
+
   if (!shouldShowPlayer) {
     return null;
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, ReactNode } from "react";
+import { useState, useEffect, useRef, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { User } from "lucide-react";
 import { usePageTransition } from "@/contexts/PageTransitionContext";
@@ -45,6 +45,7 @@ export default function Sidebar({
   showSatelliteButton = false,
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const pathname = usePathname();
   const { navigate } = usePageTransition();
 
@@ -63,10 +64,29 @@ export default function Sidebar({
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
+  // Close the sidebar when clicking/tapping outside of it (use pointerdown to catch touch)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      try {
+        const target = e.target as Node | null;
+        if (containerRef.current && target && !containerRef.current.contains(target)) {
+          setIsOpen(false);
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          ref={containerRef}
           className="fixed left-0 top-0 h-[50vh] w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl z-50 border-r border-b border-orange-500/30 rounded-br-2xl"
           initial={{ x: -256 }}
           animate={{ x: 0 }}

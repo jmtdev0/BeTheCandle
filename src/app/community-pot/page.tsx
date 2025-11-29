@@ -77,14 +77,24 @@ export default function CommunityPotPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle tap on background to toggle UI visibility on mobile
+  // Handle tap on background: if UI visible, hide; if not, show
   const handleBackgroundTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isMobile) return;
-    // Only toggle if tapping on the background, not on UI elements
-    const target = e.target as HTMLElement;
+    const target = (e as any).target as HTMLElement;
+    // If tapping on interactive UI, ignore
     if (target.closest('button, a, input, [role="dialog"], .ui-panel')) return;
+    // If controls are visible, hide them. If not visible, show them.
     setMobileUIVisible(prev => !prev);
   }, [isMobile]);
+
+  // Notify global listeners (e.g., GlobalMusicPlayer) when mobile UI visibility changes
+  useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('mobile-ui-visible', { detail: mobileUIVisible }));
+    } catch (e) {
+      // ignore in SSR or unsupported environments
+    }
+  }, [mobileUIVisible]);
 
   useEffect(() => {
     if (viewerAddress) {
@@ -356,12 +366,7 @@ export default function CommunityPotPage() {
       onClick={handleBackgroundTap}
       onTouchEnd={handleBackgroundTap}
     >
-      {/* Mobile tap hint */}
-      {isMobile && !mobileUIVisible && participantCount > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 bg-black/60 backdrop-blur-sm text-white text-xs px-4 py-2 rounded-full animate-pulse">
-          Tap to show controls
-        </div>
-      )}
+      {/* Mobile: hint removed per UX request */}
 
       {/* 3D Interactive Orbs */}
       {participantCount > 0 && (
@@ -380,7 +385,7 @@ export default function CommunityPotPage() {
 
       {/* UI Overlay with hover reveal */}
       <motion.div 
-        className="ui-panel absolute top-4 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible"
+        className="ui-panel absolute top-6 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible"
         initial={{ opacity: 0 }}
         animate={{ opacity: shouldShowInfo ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
