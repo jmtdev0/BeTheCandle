@@ -14,6 +14,8 @@ interface InteractiveOrbs3DProps {
   participants: Participant[];
   hoveredParticipantId: string | null;
   onHoverParticipant: (address: string | null) => void;
+  selectedParticipantId?: string | null;
+  onSelectParticipant?: (address: string | null) => void;
 }
 
 // Generate a random light color based on participant ID
@@ -259,6 +261,7 @@ function Orb({
   isHovered,
   onHover,
   onLeave,
+  onSelect,
 }: {
   participant: Participant;
   position: [number, number, number];
@@ -268,6 +271,7 @@ function Orb({
   isHovered: boolean;
   onHover: () => void;
   onLeave: () => void;
+  onSelect?: () => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const startTime = useRef(Date.now() / 1000 + delay);
@@ -295,6 +299,13 @@ function Orb({
       ref={meshRef}
       position={position}
       scale={isHovered ? scale * 1.15 : scale}
+      onPointerDown={(e) => {
+        // Stop propagation so container handlers don't also treat this as a background tap
+        e.stopPropagation();
+        // Treat pointer down on an orb as a hover/select
+        onHover();
+        onSelect?.();
+      }}
       onPointerEnter={onHover}
       onPointerLeave={onLeave}
     >
@@ -332,6 +343,8 @@ function OrbsScene({
   participants,
   hoveredParticipantId,
   onHoverParticipant,
+  selectedParticipantId,
+  onSelectParticipant,
 }: InteractiveOrbs3DProps) {
   return (
     <>
@@ -348,7 +361,7 @@ function OrbsScene({
         const scale = 0.4 + ((hash % 5) * 0.08);
         const duration = 8 + (hash % 5);
         const delay = (hash % 10) * 0.3;
-        const isHovered = hoveredParticipantId === participant.polygonAddress;
+        const isHovered = hoveredParticipantId === participant.polygonAddress || (selectedParticipantId === participant.polygonAddress);
 
         return (
           <Orb
@@ -361,6 +374,7 @@ function OrbsScene({
             isHovered={isHovered}
             onHover={() => onHoverParticipant(participant.polygonAddress)}
             onLeave={() => onHoverParticipant(null)}
+            onSelect={() => onSelectParticipant?.(participant.polygonAddress)}
           />
         );
       })}

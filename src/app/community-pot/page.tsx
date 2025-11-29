@@ -63,6 +63,7 @@ export default function CommunityPotPage() {
   const [showPlease, setShowPlease] = useState(false);
   const [mobileUIVisible, setMobileUIVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const recaptchaRef = useRef<ReCAPTCHA>(null);
 
   // Detect mobile/touch device
@@ -85,9 +86,25 @@ export default function CommunityPotPage() {
     const target = e.target as HTMLElement;
     // Ignore if interacting with UI elements
     if (target.closest('button, a, input, [role="dialog"], .ui-panel')) return;
+    // If tapping near the left edge, don't toggle mobile UI (this is reserved for the sidebar)
+    if (e.clientX !== undefined && e.clientX <= 48) {
+      // Also clear any selected satellite to allow sidebar interaction
+      if (selectedParticipantId) setSelectedParticipantId(null);
+      // do not start a tap that would toggle the info panel
+      pointerStartRef.current = null;
+      return;
+    }
+
+    // If a satellite is currently selected, a tap outside should clear it and not toggle the UI
+    if (selectedParticipantId) {
+      setSelectedParticipantId(null);
+      pointerStartRef.current = null;
+      return;
+    }
+
     // Record start time and position
     pointerStartRef.current = { time: Date.now(), x: e.clientX ?? 0, y: e.clientY ?? 0, id: (e as any).pointerId };
-  }, [isMobile]);
+  }, [isMobile, selectedParticipantId]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!isMobile) return;
@@ -401,6 +418,12 @@ export default function CommunityPotPage() {
           participants={participants}
           hoveredParticipantId={hoveredParticipantId}
           onHoverParticipant={setHoveredParticipantId}
+          selectedParticipantId={selectedParticipantId}
+          onSelectParticipant={(id) => {
+            // Selecting a satellite should show only its tooltip and not open mobile controls
+            setSelectedParticipantId(id);
+            setMobileUIVisible(false);
+          }}
         />
       )}
 
