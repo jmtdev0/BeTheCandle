@@ -472,7 +472,7 @@ export default function CommunityPotPage() {
 
       {/* UI Overlay with hover reveal */}
       <motion.div 
-        className={`ui-panel absolute top-16 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible ${isMobileLandscape ? 'max-h-[70vh] overflow-y-auto' : ''}`}
+        className={`ui-panel absolute top-16 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible ${isMobile ? 'max-h-[70vh] overflow-y-auto pb-6' : ''}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: shouldShowInfo ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
@@ -616,7 +616,7 @@ export default function CommunityPotPage() {
       <motion.div 
         className={`ui-panel fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
         style={participantCount > 0 ? (
-          isMobileLandscape ? { top: '0.75rem', right: '0.75rem', left: 'auto', transform: 'none' } : (
+          isMobileLandscape ? { top: '0.75rem', right: '4.5rem', left: 'auto', transform: 'none' } : (
             isMobile ? { top: '0.75rem', right: '0.75rem', left: '50%', transform: 'translateX(-50%)' } : { top: '1.5rem', right: '92px' }
           )
         ) : undefined}

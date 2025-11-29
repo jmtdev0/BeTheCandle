@@ -87,7 +87,7 @@ export default function Sidebar({
       {isOpen && (
         <motion.div
           ref={containerRef}
-          className="fixed left-0 top-0 h-[50vh] w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl z-50 border-r border-b border-orange-500/30 rounded-br-2xl"
+          className="fixed left-0 top-0 h-[72vh] md:h-[50vh] w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl z-50 border-r border-b border-orange-500/30 rounded-br-2xl"
           initial={{ x: -256 }}
           animate={{ x: 0 }}
           exit={{ x: -256 }}
