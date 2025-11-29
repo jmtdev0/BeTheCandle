@@ -412,7 +412,7 @@ export default function CommunityPotPage() {
 
       {/* UI Overlay with hover reveal */}
       <motion.div 
-        className="ui-panel absolute top-6 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible"
+        className="ui-panel absolute top-16 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible"
         initial={{ opacity: 0 }}
         animate={{ opacity: shouldShowInfo ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
@@ -426,7 +426,7 @@ export default function CommunityPotPage() {
         onPointerLeave={() => !isMobile && setInfoHovering(false)}
       >
         {/* Tab bookmark on the right side - always interactive */}
-        <div className="absolute -right-8 top-4 flex flex-col gap-1" style={{ pointerEvents: "auto" }}>
+        <div className="absolute -right-8 top-4 flex flex-col gap-1 hidden md:flex" style={{ pointerEvents: "auto" }}>
           <button
             onClick={() => {
               setActiveInfoTab("current");
@@ -524,6 +524,29 @@ export default function CommunityPotPage() {
               )}
             </>
           )}
+          {/* Mobile: bottom tab row for Current / Last */}
+          <div className="md:hidden mt-3 px-2">
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => {
+                  setActiveInfoTab("current");
+                  refreshIfStale(0);
+                }}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeInfoTab === "current" ? "bg-[#2276cb] text-white" : "bg-black/40 text-white/70 hover:bg-black/60"}`}
+              >
+                Current
+              </button>
+              <button
+                onClick={() => {
+                  setActiveInfoTab("last");
+                  loadLastPayout();
+                }}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeInfoTab === "last" ? "bg-[#2276cb] text-white" : "bg-black/40 text-white/70 hover:bg-black/60"}`}
+              >
+                Last
+              </button>
+            </div>
+          </div>
         </div>
       </motion.div>
 
