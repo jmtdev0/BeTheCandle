@@ -61,7 +61,30 @@ export default function CommunityPotPage() {
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [showRequirements, setShowRequirements] = useState(true);
   const [showPlease, setShowPlease] = useState(false);
+  const [mobileUIVisible, setMobileUIVisible] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const recaptchaRef = useRef<ReCAPTCHA>(null);
+
+  // Detect mobile/touch device
+  useEffect(() => {
+    const checkMobile = () => {
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth < 768;
+      setIsMobile(isTouchDevice || isSmallScreen);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Handle tap on background to toggle UI visibility on mobile
+  const handleBackgroundTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isMobile) return;
+    // Only toggle if tapping on the background, not on UI elements
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="dialog"], .ui-panel')) return;
+    setMobileUIVisible(prev => !prev);
+  }, [isMobile]);
 
   useEffect(() => {
     if (viewerAddress) {
@@ -322,8 +345,23 @@ export default function CommunityPotPage() {
     }
   };
 
+  // Determine if UI should be visible (desktop hover OR mobile toggle)
+  const shouldShowInfo = isMobile ? mobileUIVisible : (infoVisible || infoHovering);
+  const shouldShowRankings = isMobile ? mobileUIVisible : (rankingsVisible || rankingsHovering);
+  const shouldShowJoinButton = isMobile ? mobileUIVisible : (participantCount === 0 || joinButtonVisible || joinButtonHovering);
+
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]">
+    <div 
+      className="relative w-full h-screen overflow-hidden bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]"
+      onClick={handleBackgroundTap}
+      onTouchEnd={handleBackgroundTap}
+    >
+      {/* Mobile tap hint */}
+      {isMobile && !mobileUIVisible && participantCount > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 bg-black/60 backdrop-blur-sm text-white text-xs px-4 py-2 rounded-full animate-pulse">
+          Tap to show controls
+        </div>
+      )}
 
       {/* 3D Interactive Orbs */}
       {participantCount > 0 && (
@@ -336,22 +374,24 @@ export default function CommunityPotPage() {
 
       {/* Payout Stats */}
       <PayoutStats 
-        isVisible={rankingsVisible || rankingsHovering}
+        isVisible={shouldShowRankings}
         onHoverChange={setRankingsHovering}
       />
 
       {/* UI Overlay with hover reveal */}
       <motion.div 
-        className="absolute top-8 left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[385px] overflow-visible"
+        className="ui-panel absolute top-4 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible"
         initial={{ opacity: 0 }}
-        animate={{ opacity: infoVisible || infoHovering ? 1 : 0 }}
+        animate={{ opacity: shouldShowInfo ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        style={{ pointerEvents: infoVisible || infoHovering ? "auto" : "none" }}
+        style={{ pointerEvents: shouldShowInfo ? "auto" : "none" }}
         onPointerEnter={() => {
-          setInfoHovering(true);
-          setInfoVisible(true);
+          if (!isMobile) {
+            setInfoHovering(true);
+            setInfoVisible(true);
+          }
         }}
-        onPointerLeave={() => setInfoHovering(false)}
+        onPointerLeave={() => !isMobile && setInfoHovering(false)}
       >
         {/* Tab bookmark on the right side - always interactive */}
         <div className="absolute -right-8 top-4 flex flex-col gap-1" style={{ pointerEvents: "auto" }}>
@@ -457,24 +497,29 @@ export default function CommunityPotPage() {
 
       {/* Join experience - centered when no participants, hover reveal otherwise */}
       <motion.div 
-        className={`fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
-        style={participantCount > 0 ? { top: '1.5rem', right: '92px' } : undefined}
+        className={`ui-panel fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
+        style={participantCount > 0 ? { 
+          top: isMobile ? '0.75rem' : '1.5rem', 
+          right: isMobile ? '0.75rem' : '92px',
+          left: isMobile ? '50%' : 'auto',
+          transform: isMobile ? 'translateX(-50%)' : 'none'
+        } : undefined}
         initial={{ opacity: 0 }}
-        animate={{ opacity: participantCount === 0 || joinButtonVisible || joinButtonHovering ? 1 : 0 }}
+        animate={{ opacity: shouldShowJoinButton ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         onPointerEnter={() => {
-          if (participantCount > 0) {
+          if (participantCount > 0 && !isMobile) {
             setJoinButtonHovering(true);
             setJoinButtonVisible(true);
           }
         }}
-        onPointerLeave={() => setJoinButtonHovering(false)}
+        onPointerLeave={() => !isMobile && setJoinButtonHovering(false)}
       >
         <button
           onClick={() => setShowJoinModal(true)}
           aria-label={viewerHasCurrentSlot ? "Change your reserved wallet address" : "Reserve your slot in the community pot"}
-          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-white/50 ${participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-6 py-3'}`}
-          style={{ pointerEvents: participantCount === 0 || joinButtonVisible || joinButtonHovering ? "auto" : "none" }}
+          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-white/50 ${participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-4 py-2 md:px-6 md:py-3 text-sm md:text-base'}`}
+          style={{ pointerEvents: shouldShowJoinButton ? "auto" : "none" }}
         >
           {viewerHasCurrentSlot ? "Change address" : "Reserve your slot"}
         </button>

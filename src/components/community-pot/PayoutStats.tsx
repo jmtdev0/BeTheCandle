@@ -85,7 +85,7 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
 
   return (
     <motion.div
-      className="fixed top-6 right-6 z-40 transition-all duration-300 ease-out"
+      className="ui-panel fixed top-4 right-4 md:top-6 md:right-6 z-40 transition-all duration-300 ease-out"
       initial={{ opacity: 0 }}
       animate={{ opacity: isVisible || isExpanded ? 1 : 0 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
@@ -97,7 +97,7 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
       {!isExpanded && (
         <button 
           onClick={() => setIsExpanded(true)}
-          className="w-12 h-12 rounded-full bg-[#2276cb] backdrop-blur-md border border-[#2276cb]/70 shadow-lg flex items-center justify-center text-white hover:bg-[#1a5ba8] transition-colors group relative"
+          className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-[#2276cb] backdrop-blur-md border border-[#2276cb]/70 shadow-lg flex items-center justify-center text-white hover:bg-[#1a5ba8] transition-colors group relative"
         >
           <svg
             className="w-6 h-6"
@@ -121,7 +121,7 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="w-96 bg-slate-900/95 backdrop-blur-md rounded-lg border border-slate-700/50 shadow-2xl animate-in fade-in slide-in-from-right-2 duration-200">
+        <div className="w-[calc(100vw-2rem)] max-w-96 bg-slate-900/95 backdrop-blur-md rounded-lg border border-slate-700/50 shadow-2xl animate-in fade-in slide-in-from-right-2 duration-200">
           {/* Close button */}
           <div className="absolute top-4 right-4 z-50">
             <button
