@@ -91,23 +91,25 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
         return;
       }
 
+      // Use maybeSingle() so PostgREST doesn't return 406 when no row is found.
+      // maybeSingle() returns { data: null } instead of an error in that case.
       const { data, error: fetchError } = await supabase
         .from("user_profiles")
         .select("*")
         .eq("display_name", name)
-        .single();
+        .maybeSingle();
 
       if (fetchError) {
+        throw fetchError;
+      }
+
+      if (!data) {
         // Profile doesn't exist yet - create a default one
-        if (fetchError.code === "PGRST116") {
-          const newProfile: UserProfile = {
-            display_name: name,
-            social_links: [],
-          };
-          setProfile(newProfile);
-        } else {
-          throw fetchError;
-        }
+        const newProfile: UserProfile = {
+          display_name: name,
+          social_links: [],
+        };
+        setProfile(newProfile);
       } else {
         setProfile(data);
       }
