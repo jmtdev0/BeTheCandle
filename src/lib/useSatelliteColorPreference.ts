@@ -6,6 +6,7 @@ import {
   SATELLITE_COLOR_PRESETS,
   normalizeSatelliteColor,
 } from "@/lib/satelliteColors";
+import { useCookieConsent } from "@/contexts/CookieConsentContext";
 
 const COOKIE_NAME = "satelliteColor";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365; // 1 year
@@ -17,8 +18,9 @@ const readCookieValue = (name: string): string | undefined => {
   return match ? decodeURIComponent(match[1]) : undefined;
 };
 
-const writeCookieValue = (value: string) => {
+const writeCookieValue = (value: string, allowPreferences: boolean) => {
   if (typeof document === "undefined") return;
+  if (!allowPreferences) return; // Don't write cookie if preferences not allowed
   document.cookie = `${COOKIE_NAME}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}`;
 };
 
@@ -28,19 +30,23 @@ const broadcastColor = (value: string) => {
 };
 
 export function useSatelliteColorPreference(initialValue?: string) {
+  const { allowPreferences } = useCookieConsent();
   const normalizedInitial = normalizeSatelliteColor(initialValue, DEFAULT_SATELLITE_COLOR);
   const [color, setColor] = useState<string>(normalizedInitial);
 
   useEffect(() => {
+    // Only read from cookie if preferences are allowed
+    if (!allowPreferences) return;
+    
     const cookieValue = readCookieValue(COOKIE_NAME);
     if (!cookieValue) {
-      writeCookieValue(normalizedInitial);
+      writeCookieValue(normalizedInitial, allowPreferences);
       return;
     }
 
     const normalizedCookie = normalizeSatelliteColor(cookieValue, normalizedInitial);
     setColor((prev) => (prev === normalizedCookie ? prev : normalizedCookie));
-  }, [normalizedInitial]);
+  }, [normalizedInitial, allowPreferences]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -50,40 +56,40 @@ export function useSatelliteColorPreference(initialValue?: string) {
       const next = normalizeSatelliteColor(customEvent.detail, color);
       if (next && next !== color) {
         setColor(next);
-        writeCookieValue(next);
+        writeCookieValue(next, allowPreferences);
       }
     };
 
     window.addEventListener(EVENT_NAME, handleColorChange as EventListener);
     return () => window.removeEventListener(EVENT_NAME, handleColorChange as EventListener);
-  }, [color]);
+  }, [color, allowPreferences]);
 
   useEffect(() => {
     if (!initialValue) return;
     const normalized = normalizeSatelliteColor(initialValue, DEFAULT_SATELLITE_COLOR);
     if (normalized === color) {
-      writeCookieValue(normalized);
+      writeCookieValue(normalized, allowPreferences);
       return;
     }
 
     setColor(normalized);
-    writeCookieValue(normalized);
+    writeCookieValue(normalized, allowPreferences);
     broadcastColor(normalized);
-  }, [initialValue, color]);
+  }, [initialValue, color, allowPreferences]);
 
   const updateColor = useCallback(
     (next: string) => {
       const normalized = normalizeSatelliteColor(next, DEFAULT_SATELLITE_COLOR);
       if (normalized === color) {
-        writeCookieValue(normalized);
+        writeCookieValue(normalized, allowPreferences);
         return;
       }
 
       setColor(normalized);
-      writeCookieValue(normalized);
+      writeCookieValue(normalized, allowPreferences);
       broadcastColor(normalized);
     },
-    [color],
+    [color, allowPreferences],
   );
 
   return {

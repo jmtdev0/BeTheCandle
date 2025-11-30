@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { useCookieConsent } from "@/contexts/CookieConsentContext";
 
 interface Track {
   name: string;
@@ -31,6 +32,7 @@ function setCookie(name: string, value: string, days = 365) {
 }
 
 export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
+  const { allowPreferences } = useCookieConsent();
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -83,20 +85,22 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     setCurrentTrackIndex(nextIndex);
   }, [tracks, currentTrackIndex]);
 
-  // Cargar configuración guardada solo después de la hidratación
+  // Cargar configuración guardada solo después de la hidratación (y si se permite)
   useEffect(() => {
-    const savedVolume = getCookie("music_volume");
-    const savedMuted = getCookie("music_muted");
-    
-    if (savedVolume) {
-      setVolume(parseFloat(savedVolume));
-    }
-    if (savedMuted) {
-      setIsMuted(savedMuted === "true");
+    if (allowPreferences) {
+      const savedVolume = getCookie("music_volume");
+      const savedMuted = getCookie("music_muted");
+      
+      if (savedVolume) {
+        setVolume(parseFloat(savedVolume));
+      }
+      if (savedMuted) {
+        setIsMuted(savedMuted === "true");
+      }
     }
     
     setIsHydrated(true);
-  }, []);
+  }, [allowPreferences]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -137,15 +141,19 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     };
   }, [handleTrackEnd]);
 
-  // Guardar volumen en cookie cuando cambia
+  // Guardar volumen en cookie cuando cambia (solo si se permite)
   useEffect(() => {
-    setCookie("music_volume", volume.toString());
-  }, [volume]);
+    if (allowPreferences) {
+      setCookie("music_volume", volume.toString());
+    }
+  }, [volume, allowPreferences]);
 
-  // Guardar estado de mute en cookie cuando cambia
+  // Guardar estado de mute en cookie cuando cambia (solo si se permite)
   useEffect(() => {
-    setCookie("music_muted", isMuted.toString());
-  }, [isMuted]);
+    if (allowPreferences) {
+      setCookie("music_muted", isMuted.toString());
+    }
+  }, [isMuted, allowPreferences]);
 
   // Cargar música automáticamente desde la API
   useEffect(() => {

@@ -4,8 +4,10 @@ import SidebarWithLobbyStatus from "@/components/common/SidebarWithLobbyStatus";
 import GlobalMusicPlayer from "@/components/common/GlobalMusicPlayer";
 import AnimatedFavicon from "@/components/common/AnimatedFavicon";
 import UserIdentityBootstrap from "@/components/common/UserIdentityBootstrap";
+import CookieBanner from "@/components/common/CookieBanner";
 import { SupabaseAuthProvider } from "@/components/common/AuthProvider";
 import { PageTransitionProvider } from "@/contexts/PageTransitionContext";
+import { CookieConsentProvider } from "@/contexts/CookieConsentContext";
 
 export const metadata: Metadata = {
   title: "Bitcoin Daily Collection - Donation Platform",
@@ -20,15 +22,18 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <SupabaseAuthProvider>
-          <AnimatedFavicon />
-          <UserIdentityBootstrap />
-          <PageTransitionProvider>
-            <SidebarWithLobbyStatus />
-            <GlobalMusicPlayer />
-            {children}
-          </PageTransitionProvider>
-        </SupabaseAuthProvider>
+        <CookieConsentProvider>
+          <SupabaseAuthProvider>
+            <AnimatedFavicon />
+            <UserIdentityBootstrap />
+            <PageTransitionProvider>
+              <SidebarWithLobbyStatus />
+              <GlobalMusicPlayer />
+              {children}
+            </PageTransitionProvider>
+          </SupabaseAuthProvider>
+          <CookieBanner />
+        </CookieConsentProvider>
       </body>
     </html>
   );
