@@ -28,9 +28,9 @@ export default function CookieBanner() {
             <div className="flex items-start gap-3 mb-4">
               <span className="text-2xl" aria-hidden="true">🍪</span>
               <div className="flex-1">
-                <h2 className="text-lg font-semibold text-white mb-1">Cookies y Privacidad</h2>
+                <h2 className="text-lg font-semibold text-white mb-1">Cookies & Privacy</h2>
                 <p className="text-sm text-white/70">
-                  Utilizamos cookies para mejorar tu experiencia. Algunas son esenciales para el funcionamiento del sistema, otras guardan tus preferencias.
+                  We use cookies to improve your experience. Some are essential for the service to work, others store your preferences.
                 </p>
               </div>
             </div>
@@ -41,7 +41,7 @@ export default function CookieBanner() {
               className="text-sm text-[#2276cb] hover:text-white transition-colors underline underline-offset-2 mb-4"
               aria-expanded={showDetails}
             >
-              {showDetails ? "Ocultar detalles" : "Ver detalles de las cookies"}
+              {showDetails ? "Hide details" : "View cookie details"}
             </button>
 
             {/* Cookie details */}
@@ -58,39 +58,39 @@ export default function CookieBanner() {
                     {/* Essential cookies */}
                     <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-semibold text-emerald-200">🔒 Estrictamente Necesarias</h3>
-                        <span className="text-xs text-emerald-300/70 bg-emerald-500/20 px-2 py-0.5 rounded">Siempre activas</span>
+                        <h3 className="text-sm font-semibold text-emerald-200">🔒 Strictly necessary</h3>
+                        <span className="text-xs text-emerald-300/70 bg-emerald-500/20 px-2 py-0.5 rounded">Always active</span>
                       </div>
                       <p className="text-xs text-emerald-100/70 mb-2">
-                        Estas cookies son imprescindibles para que el sistema funcione. Sin ellas no puedes participar en el reparto del Community Pot.
+                        These cookies are required for the system to function. Without them you cannot participate in the Community Pot distribution.
                       </p>
                       <ul className="text-xs text-emerald-100/60 space-y-1 ml-4 list-disc">
-                        <li><code className="bg-black/30 px-1 rounded">community_pot_visitor_id</code> — Identificador único de visitante (UUID)</li>
-                        <li><code className="bg-black/30 px-1 rounded">community_pot_join_meta</code> — Información de tu participación (wallet, semana)</li>
-                        <li><code className="bg-black/30 px-1 rounded">cookie_consent</code> — Tu elección de consentimiento</li>
+                        <li><code className="bg-black/30 px-1 rounded">community_pot_visitor_id</code> — Unique visitor identifier (UUID)</li>
+                        <li><code className="bg-black/30 px-1 rounded">community_pot_join_meta</code> — Your participation metadata (wallet, week)</li>
+                        <li><code className="bg-black/30 px-1 rounded">cookie_consent</code> — Your consent choice</li>
                       </ul>
                     </div>
 
                     {/* Preference cookies */}
                     <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-semibold text-amber-200">⚙️ Preferencias</h3>
-                        <span className="text-xs text-amber-300/70 bg-amber-500/20 px-2 py-0.5 rounded">Opcionales</span>
+                        <h3 className="text-sm font-semibold text-amber-200">⚙️ Preferences</h3>
+                        <span className="text-xs text-amber-300/70 bg-amber-500/20 px-2 py-0.5 rounded">Optional</span>
                       </div>
                       <p className="text-xs text-amber-100/70 mb-2">
-                        Estas cookies guardan tus preferencias visuales y de audio para mejorar tu experiencia. Puedes rechazarlas sin afectar la funcionalidad principal.
+                        These cookies store your display and audio preferences to improve your experience. You can reject them without affecting core functionality.
                       </p>
                       <ul className="text-xs text-amber-100/60 space-y-1 ml-4 list-disc">
-                        <li><code className="bg-black/30 px-1 rounded">music_volume</code> — Nivel de volumen de la música</li>
-                        <li><code className="bg-black/30 px-1 rounded">music_muted</code> — Estado de silencio del reproductor</li>
-                        <li><code className="bg-black/30 px-1 rounded">satelliteColor</code> — Color de tu satélite en el Lobby</li>
+                        <li><code className="bg-black/30 px-1 rounded">music_volume</code> — Music volume level</li>
+                        <li><code className="bg-black/30 px-1 rounded">music_muted</code> — Player mute state</li>
+                        <li><code className="bg-black/30 px-1 rounded">satelliteColor</code> — Your satellite color in the Lobby</li>
                       </ul>
                     </div>
 
                     {/* No tracking notice */}
                     <div className="rounded-lg border border-purple-400/30 bg-purple-500/10 p-3">
                       <p className="text-xs text-purple-100/80">
-                        <span className="font-semibold">🚫 Sin rastreo:</span> No utilizamos cookies de analítica, publicidad ni rastreo de terceros. Tu privacidad es importante para nosotros.
+                        <span className="font-semibold">🚫 No tracking:</span> We do not use analytics, advertising, or third‑party tracking cookies. Your privacy matters to us.
                       </p>
                     </div>
                   </div>
@@ -104,21 +104,21 @@ export default function CookieBanner() {
                 onClick={acceptAll}
                 className="flex-1 px-6 py-3 bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2276cb]/50"
               >
-                Aceptar todo
+                Accept all
               </button>
               <button
                 onClick={rejectNonEssential}
                 className="flex-1 px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl font-semibold hover:bg-white/20 transition-colors focus:outline-none focus:ring-2 focus:ring-white/30"
               >
-                Solo esenciales
+                Reject non‑essential
               </button>
             </div>
 
             {/* Legal link */}
             <p className="mt-4 text-xs text-white/50 text-center">
-              Al usar este sitio, aceptas nuestra{" "}
+              By using this site you agree to our {" "}
               <a href="/privacy" className="text-[#2276cb] hover:text-white underline underline-offset-2 transition-colors">
-                Política de Privacidad
+                Privacy Policy
               </a>
             </p>
           </div>
