@@ -211,6 +211,9 @@ export function useCommunityPot() {
     return () => clearInterval(timer);
   }, []);
 
+  // Schedule the distribution window to start at windowStart (distributionAt - 60s).
+  // This ensures the UI overlay appears even when the user is already on the page
+  // when the window begins (no reload required).
   useEffect(() => {
     if (!state.week) {
       return;
@@ -222,10 +225,23 @@ export function useCommunityPot() {
     if (!Number.isFinite(distributionTime)) {
       return;
     }
+    const windowStart = distributionTime - 60_000; // -60s
+    const windowEnd = distributionTime + 90_000; // +90s
     const now = Date.now();
-    // If current time is within the extended distribution window (-60s .. +90s), start it
-    if (now >= distributionTime - 60_000 && now < distributionTime + 90_000) {
+
+    // If we're already inside the window, start immediately
+    if (now >= windowStart && now < windowEnd) {
       startDistributionWindow(state.week);
+      return;
+    }
+
+    // If windowStart is in the future, schedule a timeout to start it exactly then
+    if (now < windowStart) {
+      const delay = Math.max(0, windowStart - now);
+      const timer = window.setTimeout(() => {
+        startDistributionWindow(state.week);
+      }, delay);
+      return () => clearTimeout(timer);
     }
   }, [state.week, distributionWindowActive, startDistributionWindow]);
 

@@ -943,13 +943,13 @@ export default function CommunityPotPage() {
       {distributionWindowActive && (
         <div className="absolute inset-0 z-[80] flex flex-col items-center justify-center bg-black/70 backdrop-blur-md text-white">
           <div className="max-w-lg rounded-2xl border border-white/20 bg-white/10 px-10 py-12 text-center shadow-2xl">
-            <h2 className="text-3xl font-semibold mb-4">Reparto en curso</h2>
+            <h2 className="text-3xl font-semibold mb-4">Distribution in progress</h2>
             <p className="text-sm text-white/80">
-              Estamos ejecutando el reparto semanal del Community Pot. Esta pantalla volverá a estar activa en cuanto terminemos.
+              We are executing the weekly Community Pot distribution. This screen will return to normal once we have finished.
             </p>
             {distributionPauseSeconds > 0 && (
               <p className="mt-6 text-lg font-mono text-yellow-200">
-                {distributionPauseSeconds}s restantes
+                {distributionPauseSeconds}s remaining
               </p>
             )}
           </div>

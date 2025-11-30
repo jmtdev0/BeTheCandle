@@ -624,6 +624,29 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+  // Debugging: log incoming headers (mask sensitive values)
+  try {
+    const headerObj: Record<string, string | null> = {};
+    for (const [k, v] of req.headers.entries()) {
+      const key = String(k).toLowerCase();
+      if (key === "x-community-pot-secret") {
+        headerObj[k] = v ? `${String(v).slice(0, 4)}...[masked]` : null;
+      } else if (key === "authorization") {
+        if (v && v.startsWith("Bearer ")) {
+          const token = v.slice("Bearer ".length);
+          headerObj[k] = `Bearer ${String(token).slice(0, 4)}...[masked]`;
+        } else {
+          headerObj[k] = v ?? null;
+        }
+      } else {
+        headerObj[k] = v ?? null;
+      }
+    }
+    console.log("incoming-headers-debug", headerObj);
+  } catch (e) {
+    // Don't block execution for logging failures
+    console.error("Failed to stringify incoming headers for debug:", e);
+  }
 
   const secret = Deno.env.get("COMMUNITY_POT_PAYOUT_SECRET");
   if (!secret) {

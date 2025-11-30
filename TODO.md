@@ -2,6 +2,9 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras (Community Pot)
 
+* Errores de consola
+* Nombre personalizado de dirección de wallet
+* Indexar dirección de wallet en Google
 * Mover el botón de Reserve a la derecha en móvil horizontal
 * LA HORA REAL
 * Nieve en Navidad y música de Fortnite

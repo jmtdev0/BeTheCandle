@@ -30,7 +30,7 @@ export default function CookieBanner() {
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-white mb-1">Cookies & Privacy</h2>
                 <p className="text-sm text-white/70">
-                  We use cookies to improve your experience. Some are essential for the service to work, others store your preferences.
+                  BeTheCandle uses cookies to improve your experience. Some are essential for the service to work, others store your preferences.
                 </p>
               </div>
             </div>
@@ -115,12 +115,12 @@ export default function CookieBanner() {
             </div>
 
             {/* Legal link */}
-            <p className="mt-4 text-xs text-white/50 text-center">
+            {/* <p className="mt-4 text-xs text-white/50 text-center">
               By using this site you agree to our {" "}
               <a href="/privacy" className="text-[#2276cb] hover:text-white underline underline-offset-2 transition-colors">
                 Privacy Policy
               </a>
-            </p>
+            </p> */}
           </div>
         </div>
       </motion.div>
