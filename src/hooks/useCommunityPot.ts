@@ -155,7 +155,9 @@ export function useCommunityPot() {
     if (!Number.isFinite(distributionTime)) {
       return;
     }
-    const windowEnd = distributionTime + 60_000;
+    // Block UI from 1 minute before distribution until 1.5 minutes after
+    const windowStart = distributionTime - 60_000; // -60s
+    const windowEnd = distributionTime + 90_000; // +90s (1.5 minutes)
     const now = Date.now();
     if (now >= windowEnd) {
       return;
@@ -221,7 +223,8 @@ export function useCommunityPot() {
       return;
     }
     const now = Date.now();
-    if (now >= distributionTime && now < distributionTime + 60_000) {
+    // If current time is within the extended distribution window (-60s .. +90s), start it
+    if (now >= distributionTime - 60_000 && now < distributionTime + 90_000) {
       startDistributionWindow(state.week);
     }
   }, [state.week, distributionWindowActive, startDistributionWindow]);

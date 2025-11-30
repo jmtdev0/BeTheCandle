@@ -46,6 +46,8 @@ async function verifyRecaptcha(token: string): Promise<boolean> {
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -53,12 +55,18 @@ async function verifyRecaptcha(token: string): Promise<boolean> {
         secret: secretKey,
         response: token,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     const data = await response.json();
     return data.success === true;
   } catch (err) {
-    console.error("[join] reCAPTCHA verification failed:", err);
+    if ((err as any)?.name === 'AbortError') {
+      console.error('[join] reCAPTCHA verification timed out');
+    } else {
+      console.error("[join] reCAPTCHA verification failed:", err);
+    }
     return false;
   }
 }

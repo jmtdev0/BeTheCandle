@@ -2,6 +2,7 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras (Community Pot)
 
+* Mover el botón de Reserve a la derecha en móvil horizontal
 * LA HORA REAL
 * Nieve en Navidad y música de Fortnite
 * Guardar hora real en la que se ha hecho el reparto
