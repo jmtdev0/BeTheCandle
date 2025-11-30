@@ -349,6 +349,9 @@ function OrbsScene({
   isMobile,
 }: InteractiveOrbs3DProps) {
   const controlsRef = useRef<any>(null);
+  const idleRef = useRef({ lastInteraction: Date.now(), isIdle: false });
+  const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
+  const IDLE_ROTATION_SPEED = 0.02; // radians per second (very slow)
   // Center camera on a participant when on small screens
   useEffect(() => {
     if (!isMobile) return;
@@ -377,6 +380,31 @@ function OrbsScene({
       // ignore if controls not ready
     }
   }, [isMobile, participants]);
+
+  // Idle detection: rotate camera slowly when user hasn't interacted for IDLE_TIMEOUT_MS
+  useEffect(() => {
+    const resetIdle = () => {
+      idleRef.current.lastInteraction = Date.now();
+      if (idleRef.current.isIdle) {
+        idleRef.current.isIdle = false;
+      }
+    };
+
+    const events = ["pointerdown", "pointermove", "wheel", "touchstart", "keydown"];
+    for (const ev of events) window.addEventListener(ev, resetIdle, { passive: true });
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      if (!idleRef.current.isIdle && now - idleRef.current.lastInteraction >= IDLE_TIMEOUT_MS) {
+        idleRef.current.isIdle = true;
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      for (const ev of events) window.removeEventListener(ev, resetIdle);
+    };
+  }, []);
   return (
     <>
       {participants.map((participant, index) => {
@@ -405,7 +433,7 @@ function OrbsScene({
             isHovered={isHovered}
             onHover={() => onHoverParticipant(participant.polygonAddress)}
             onLeave={() => onHoverParticipant(null)}
-            onSelect={() => onSelectParticipant?.(participant.polygonAddress)}
+            onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}
           />
         );
       })}
@@ -433,6 +461,39 @@ function OrbsScene({
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={Math.PI / 1.5}
       />
+
+      {/* Smooth idle rotation: apply tiny yaw around controls target when idle */}
+      {/** We use useFrame to rotate the camera position around the controls target when idle. */}
+      {useFrame((state: { camera: THREE.Camera }, delta: number) => {
+        try {
+          if (!controlsRef.current) return;
+          if (!idleRef.current.isIdle) return;
+
+          const cam = state.camera;
+          const target = controlsRef.current.target ? controlsRef.current.target.clone() : new THREE.Vector3(0, 0, 0);
+
+          // translate camera position relative to target
+          const pos = cam.position.clone().sub(target);
+          const angle = IDLE_ROTATION_SPEED * delta;
+          const sin = Math.sin(angle);
+          const cos = Math.cos(angle);
+          const x = pos.x;
+          const z = pos.z;
+          const newX = x * cos - z * sin;
+          const newZ = x * sin + z * cos;
+          pos.x = newX;
+          pos.z = newZ;
+
+          // apply new position and look at target
+          cam.position.copy(pos.add(target));
+          cam.lookAt(target);
+
+          // ensure controls know about the change
+          controlsRef.current.update();
+        } catch (e) {
+          // ignore errors during idle rotation
+        }
+      })}
     </>
   );
 }

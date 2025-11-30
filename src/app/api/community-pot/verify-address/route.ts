@@ -54,6 +54,9 @@ async function verifyRecaptcha(token: string): Promise<boolean> {
   }
 
   try {
+    // Use a fetch with timeout to avoid hanging if Google's endpoint is slow
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -61,12 +64,18 @@ async function verifyRecaptcha(token: string): Promise<boolean> {
         secret: secretKey,
         response: token,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     const data = await response.json();
     return data.success === true;
   } catch (err) {
-    console.error("[verify-address] reCAPTCHA verification failed:", err);
+    if ((err as any)?.name === 'AbortError') {
+      console.error('[verify-address] reCAPTCHA verification timed out');
+    } else {
+      console.error("[verify-address] reCAPTCHA verification failed:", err);
+    }
     return false;
   }
 }
@@ -77,6 +86,10 @@ async function verifyRecaptcha(token: string): Promise<boolean> {
 async function getPolBalance(address: string, isTestnet: boolean): Promise<bigint> {
   const rpcUrl = isTestnet ? POLYGON_RPC_AMOY : POLYGON_RPC_MAINNET;
 
+  // Add a timeout to RPC calls to avoid hanging the request
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
   const response = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -86,7 +99,10 @@ async function getPolBalance(address: string, isTestnet: boolean): Promise<bigin
       params: [address, "latest"],
       id: 1,
     }),
+    signal: controller.signal,
   });
+
+  clearTimeout(timeout);
 
   const data = await response.json();
   
@@ -144,17 +160,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<VerifyAdd
       }, { status: 400 });
     }
 
-    // Verify reCAPTCHA
-    const recaptchaValid = await verifyRecaptcha(recaptchaToken);
-    if (!recaptchaValid) {
-      return NextResponse.json({
-        valid: true,
-        hasGas: false,
-        balancePol: "0",
-        recaptchaValid: false,
-        error: "reCAPTCHA verification failed. Please try again.",
-      }, { status: 400 });
-    }
+    // NOTE: Do NOT validate the reCAPTCHA token here — tokens returned by
+    // the client-side widget are single-use. The client calls this endpoint
+    // as a lightweight pre-check for wallet balance; the authoritative
+    // reCAPTCHA verification happens server-side when the user actually
+    // submits `join` (to avoid consuming the token twice).
+    // We still accept a `recaptchaToken` in the request body for compatibility,
+    // but we won't call Google's siteverify here.
+    const recaptchaValid = true;
 
     // Check POL balance
     let balanceWei: bigint;
@@ -188,7 +201,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<VerifyAdd
       valid: true,
       hasGas: true,
       balancePol,
-      recaptchaValid: true,
+      recaptchaValid,
     });
 
   } catch (err) {

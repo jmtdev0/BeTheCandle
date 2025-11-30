@@ -773,12 +773,12 @@ export default function CommunityPotPage() {
           <div className="space-y-3">
             <button
               onClick={() => setShowRequirements(!showRequirements)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-blue-500/10 border border-[#2276cb]/40 rounded-lg hover:bg-blue-500/15 transition-colors"
+              className="w-full relative flex items-center px-4 py-3 bg-blue-500/10 border border-[#2276cb]/40 rounded-lg hover:bg-blue-500/15 transition-colors"
               aria-expanded={showRequirements}
               aria-controls="requirements-content"
             >
-              <h3 className="text-sm font-semibold text-white/80">Requirements</h3>
-              <span className="text-white/60 text-lg">
+              <h3 className="text-sm font-semibold text-white/80 mx-auto text-center">Requirements</h3>
+              <span className="absolute right-3 text-white/60 text-lg">
                 {showRequirements ? "−" : "+"}
               </span>
             </button>
@@ -816,12 +816,12 @@ export default function CommunityPotPage() {
           <div className="space-y-3">
             <button
               onClick={() => setShowPlease(!showPlease)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-400/40 rounded-lg hover:bg-emerald-500/15 transition-colors"
+              className="w-full relative flex items-center px-4 py-3 bg-emerald-500/10 border border-emerald-400/40 rounded-lg hover:bg-emerald-500/15 transition-colors"
               aria-expanded={showPlease}
               aria-controls="please-content"
             >
-              <h3 className="text-sm font-semibold text-white/80">Please 🙏</h3>
-              <span className="text-white/60 text-lg">
+              <h3 className="text-sm font-semibold text-white/80 mx-auto text-center">Please 🙏</h3>
+              <span className="absolute right-3 text-white/60 text-lg">
                 {showPlease ? "−" : "+"}
               </span>
             </button>
@@ -838,7 +838,7 @@ export default function CommunityPotPage() {
                   
                   {/* Donation address with copy button */}
                   <div className="bg-black/40 rounded-lg p-3 mb-3">
-                    <p className="text-xs text-emerald-200/70 mb-2">Donation address (ETH/Polygon):</p>
+                    <p className="text-xs text-emerald-200/70 mb-2">Donation address (Polygon - USDC):</p>
                     <div className="flex items-center gap-2">
                       <code className="text-xs text-emerald-100 font-mono break-all flex-1">
                         0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81
@@ -875,18 +875,6 @@ export default function CommunityPotPage() {
             )}
           </div>
 
-          {/* reCAPTCHA - only show when address is entered */}
-          {polygonAddress.trim() && (
-            <div className="flex justify-center py-2">
-              <ReCAPTCHA
-                ref={recaptchaRef}
-                sitekey={RECAPTCHA_SITE_KEY}
-                onChange={handleRecaptchaChange}
-                theme="dark"
-              />
-            </div>
-          )}
-          
           {/* Error and status messages */}
           <div aria-live="polite" aria-atomic="true">
             {joinError && <p className="text-sm text-red-300 text-center" role="alert">{joinError}</p>}
@@ -901,17 +889,32 @@ export default function CommunityPotPage() {
               All slots are taken. Cookies prevent duplicate entries this week—check back after the Sunday payout.
             </p>
           )}
-          
-          {/* Submit button */}
-          <button
-            onClick={handleJoin}
-            disabled={disableJoinButton || !recaptchaToken}
-            aria-busy={isSubmitting}
-            aria-disabled={disableJoinButton || !recaptchaToken}
-            className="w-full px-6 py-3 bg-[#2276cb] text-white rounded-lg font-semibold hover:bg-[#1a5ba8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2276cb]/50 focus:ring-offset-2 focus:ring-offset-black"
-          >
-            {isSubmitting ? "Verifying..." : buttonLabel}
-          </button>
+
+          {/* Inline row: reCAPTCHA (when address entered) + Submit button */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {polygonAddress.trim() && (
+              <div className="shrink-0 flex items-center">
+                <ReCAPTCHA
+                  ref={recaptchaRef}
+                  sitekey={RECAPTCHA_SITE_KEY}
+                  onChange={handleRecaptchaChange}
+                  theme="dark"
+                />
+              </div>
+            )}
+
+            <div className="flex-1 min-w-[160px] flex items-center">
+              <button
+                onClick={handleJoin}
+                disabled={disableJoinButton || !recaptchaToken}
+                aria-busy={isSubmitting}
+                aria-disabled={disableJoinButton || !recaptchaToken}
+                className="w-full h-[78px] flex items-center justify-center px-6 bg-[#2276cb] text-white rounded-lg font-semibold hover:bg-[#1a5ba8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2276cb]/50 focus:ring-offset-2 focus:ring-offset-black"
+              >
+                {isSubmitting ? "Verifying..." : buttonLabel}
+              </button>
+            </div>
+          </div>
         </div>
         </div>
       )}
@@ -931,7 +934,7 @@ export default function CommunityPotPage() {
             <span className="text-2xl" role="img" aria-hidden="true">✅</span>
             <div>
               <p className="font-semibold text-emerald-100">Successfully joined!</p>
-              <p className="text-sm text-emerald-200/80">Your address is now registered for this week&apos;s payout.</p>
+              <p className="text-sm text-emerald-100">Your address is now registered for this week&apos;s payout.</p>
             </div>
           </div>
         </motion.div>
