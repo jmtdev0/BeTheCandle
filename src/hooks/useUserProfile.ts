@@ -46,21 +46,43 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
     setError(null);
 
     try {
+      if (!supabaseUrl || !supabaseAnonKey) {
+        const msg = `Supabase env missing: NEXT_PUBLIC_SUPABASE_URL=${Boolean(
+          supabaseUrl
+        )}, NEXT_PUBLIC_SUPABASE_ANON_KEY=${Boolean(supabaseAnonKey)}`;
+        console.error(msg);
+        setError(msg);
+        setLoading(false);
+        return;
+      }
+
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
       if (id) {
-        const { data: profileByUserId, error: profileByUserIdError } = await supabase
-          .from("user_profiles")
-          .select("*")
-          .eq("user_id", id)
-          .maybeSingle();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const looksLikeUuid = uuidRegex.test(id);
 
-        if (!profileByUserIdError && profileByUserId) {
-          setProfile(profileByUserId);
-          return;
-        }
+        if (!looksLikeUuid) {
+          console.warn(`Skipping userId lookup; invalid UUID format: ${id}`);
+        } else {
+          const { data: profileByUserId, error: profileByUserIdError } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("user_id", id)
+            .maybeSingle();
 
-        if (profileByUserIdError && profileByUserIdError.code !== "PGRST116") {
-          throw profileByUserIdError;
+          if (!profileByUserIdError && profileByUserId) {
+            setProfile(profileByUserId);
+            return;
+          }
+
+          // Ignore 'resource not found' and invalid-input errors here and fall back to display_name lookup
+          if (
+            profileByUserIdError &&
+            profileByUserIdError.code !== "PGRST116" &&
+            profileByUserIdError.code !== "22P02"
+          ) {
+            throw profileByUserIdError;
+          }
         }
       }
 
@@ -90,8 +112,23 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
         setProfile(data);
       }
     } catch (err) {
-      console.error("Error loading profile:", err);
-      setError(err instanceof Error ? err.message : "Failed to load profile");
+      const serializeError = (e: unknown) => {
+        try {
+          if (e instanceof Error) return e.message;
+          if (typeof e === "string") return e;
+          return JSON.stringify(e, Object.getOwnPropertyNames(e as object));
+        } catch (_) {
+          try {
+            return String(e);
+          } catch {
+            return "<unserializable error>";
+          }
+        }
+      };
+
+      console.error("Error loading profile:", serializeError(err));
+      const errMsg = err instanceof Error ? err.message : serializeError(err);
+      setError(errMsg || "Failed to load profile");
     } finally {
       setLoading(false);
     }

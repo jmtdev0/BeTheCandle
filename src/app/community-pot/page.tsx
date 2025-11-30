@@ -108,6 +108,7 @@ export default function CommunityPotPage() {
 
   // Detect quick taps (not long-press) on background to toggle mobile UI.
   const pointerStartRef = useRef<{ time: number; x: number; y: number; id?: number | null } | null>(null);
+  const uiPanelRef = useRef<HTMLDivElement | null>(null);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!isMobile) return;
@@ -150,6 +151,21 @@ export default function CommunityPotPage() {
     const TAP_MAX_DURATION = 250; // ms
     const TAP_MAX_MOVE = 12; // px
     if (duration <= TAP_MAX_DURATION && distance <= TAP_MAX_MOVE) {
+      // If the tap occurred where the info panel sits, toggle the whole mobile UI
+      try {
+        const x = e.clientX ?? 0;
+        const y = e.clientY ?? 0;
+        if (uiPanelRef.current) {
+          const r = uiPanelRef.current.getBoundingClientRect();
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            setMobileUIVisible(prev => !prev);
+            return;
+          }
+        }
+      } catch (err) {
+        // ignore and fallback to general toggle
+      }
+
       setMobileUIVisible(prev => !prev);
     }
   }, [isMobile]);
@@ -429,7 +445,25 @@ export default function CommunityPotPage() {
   // Determine if UI should be visible (desktop hover OR mobile toggle)
   const shouldShowInfo = isMobile ? mobileUIVisible : (infoVisible || infoHovering);
   const shouldShowRankings = isMobile ? mobileUIVisible : (rankingsVisible || rankingsHovering);
+  // On mobile, show/hide the join button together with other controls
   const shouldShowJoinButton = isMobile ? mobileUIVisible : (participantCount === 0 || joinButtonVisible || joinButtonHovering);
+
+  // When the sidebar opens elsewhere, hide mobile UI controls to avoid overlap
+  useEffect(() => {
+    const handleSidebar = (ev: Event) => {
+      try {
+        const detail = (ev as CustomEvent).detail as boolean | undefined;
+        if (detail) {
+          setMobileUIVisible(false);
+          setSelectedParticipantId(null);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    window.addEventListener('sidebar-open', handleSidebar as EventListener);
+    return () => window.removeEventListener('sidebar-open', handleSidebar as EventListener);
+  }, []);
 
   return (
     <div 
@@ -452,6 +486,7 @@ export default function CommunityPotPage() {
             setSelectedParticipantId(id);
             setMobileUIVisible(false);
           }}
+          isMobile={isMobile}
         />
       )}
 
@@ -469,9 +504,44 @@ export default function CommunityPotPage() {
           onHoverChange={setRankingsHovering}
         />
       )}
-
+      <div className={`absolute -right-8 top-4 flex-col gap-1 ${isMobileLandscape ? 'hidden' : 'md:flex'}`} style={{ pointerEvents: "auto" }}>
+            {/* Mobile landscape: vertical Current/Last tabs on the right (outside the info panel) */}
+            {isMobileLandscape && (
+              <div className="absolute top-4 right-16 z-30 flex-col gap-1" style={{ pointerEvents: "auto" }}>
+                <button
+                  onClick={() => {
+                    setActiveInfoTab("current");
+                    refreshIfStale(0);
+                  }}
+                  className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer ${
+                    activeInfoTab === "current"
+                      ? "bg-[#2276cb] text-white"
+                      : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white"
+                  }`}
+                  style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+                >
+                  Current
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveInfoTab("last");
+                    loadLastPayout();
+                  }}
+                  className={`w-8 h-16 rounded-r-lg text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer ${
+                    activeInfoTab === "last"
+                      ? "bg-[#2276cb] text-white"
+                      : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white"
+                  }`}
+                  style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+                >
+                  Last
+                </button>
+              </div>
+            )}
+          </div>
       {/* UI Overlay with hover reveal */}
       <motion.div 
+        ref={uiPanelRef}
         className={`ui-panel absolute top-16 left-4 md:top-8 md:left-8 z-10 bg-black/60 backdrop-blur-md rounded-xl border border-[#2276cb]/40 w-[calc(100vw-2rem)] max-w-[385px] overflow-visible ${isMobile ? 'max-h-[70vh] overflow-y-auto pb-6' : ''}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: shouldShowInfo ? 1 : 0 }}
@@ -486,7 +556,7 @@ export default function CommunityPotPage() {
         onPointerLeave={() => !isMobile && setInfoHovering(false)}
       >
         {/* Tab bookmark on the right side - always interactive */}
-        <div className={`absolute -right-8 top-4 flex-col gap-1 ${isMobileLandscape ? 'flex' : 'hidden'} md:flex`} style={{ pointerEvents: "auto" }}>
+        <div className={`absolute -right-8 top-4 flex-col gap-1 ${isMobileLandscape ? 'hidden' : 'md:flex'}`} style={{ pointerEvents: "auto" }}>
           <button
             onClick={() => {
               setActiveInfoTab("current");
@@ -616,7 +686,7 @@ export default function CommunityPotPage() {
       <motion.div 
         className={`ui-panel fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
         style={participantCount > 0 ? (
-          isMobileLandscape ? { top: '0.75rem', right: '4.5rem', left: 'auto', transform: 'none' } : (
+          isMobileLandscape ? { top: '1rem', right: '2rem', left: 'auto', transform: 'none', zIndex: 40 } : (
             isMobile ? { top: '0.75rem', right: '0.75rem', left: '50%', transform: 'translateX(-50%)' } : { top: '1.5rem', right: '92px' }
           )
         ) : undefined}

@@ -48,13 +48,7 @@ export default function GlobalMusicPlayer() {
     const handleMobileUI = (ev: Event) => {
       try {
         const detail = (ev as CustomEvent).detail as boolean | undefined;
-        const isSmall = typeof window !== "undefined" && window.innerWidth <= 768;
-        if (!isSmall) return;
-        if (detail) {
-          setIsVisible(true);
-        } else {
-          setIsVisible(false);
-        }
+        setIsVisible(Boolean(detail));
       } catch (e) {
         // ignore
       }

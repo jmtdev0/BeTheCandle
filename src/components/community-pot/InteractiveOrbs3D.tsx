@@ -16,6 +16,7 @@ interface InteractiveOrbs3DProps {
   onHoverParticipant: (address: string | null) => void;
   selectedParticipantId?: string | null;
   onSelectParticipant?: (address: string | null) => void;
+  isMobile?: boolean;
 }
 
 // Generate a random light color based on participant ID
@@ -345,7 +346,37 @@ function OrbsScene({
   onHoverParticipant,
   selectedParticipantId,
   onSelectParticipant,
+  isMobile,
 }: InteractiveOrbs3DProps) {
+  const controlsRef = useRef<any>(null);
+  // Center camera on a participant when on small screens
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!participants || participants.length === 0) return;
+    // pick the first participant to center on
+    const participant = participants[0];
+    const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const index = 0;
+    const angle = (index / participants.length) * Math.PI * 2;
+    const radius = 8 + (hash % 5);
+    const x = Math.cos(angle) * radius;
+    const y = -3 + ((hash % 7) - 3) * 1.5;
+
+    try {
+      // move camera slightly towards that orb and set controls target
+      const cam = (controlsRef.current as any)?._camera || null;
+      if (controlsRef.current) {
+        controlsRef.current.target.set(x, y, 0);
+        controlsRef.current.update();
+      }
+      if (cam) {
+        cam.position.set(x * 0.2, y * 0.2, 22);
+        cam.updateProjectionMatrix?.();
+      }
+    } catch (e) {
+      // ignore if controls not ready
+    }
+  }, [isMobile, participants]);
   return (
     <>
       {participants.map((participant, index) => {
@@ -392,6 +423,7 @@ function OrbsScene({
 
       {/* Controles de órbita - rotación con zoom limitado */}
       <OrbitControls
+        ref={controlsRef}
         enableZoom={true}
         enablePan={false}
         rotateSpeed={0.5}

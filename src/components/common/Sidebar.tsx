@@ -46,6 +46,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const touchStartX = useRef<number | null>(null);
+  const touchHasMoved = useRef(false);
   const pathname = usePathname();
   const { navigate } = usePageTransition();
 
@@ -63,6 +65,15 @@ export default function Sidebar({
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
+
+  // Notify others when sidebar opens/closes so UI can adapt (hide info panels, etc.)
+  useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('sidebar-open', { detail: isOpen }));
+    } catch (e) {
+      // ignore
+    }
+  }, [isOpen]);
 
   // Close the sidebar when clicking/tapping outside of it (use pointerdown to catch touch)
   useEffect(() => {
@@ -82,12 +93,41 @@ export default function Sidebar({
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isOpen]);
 
+  // Touch handlers for swipe-to-close on mobile: swipe left to close
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isOpen) return;
+    if (!e.touches || e.touches.length === 0) return;
+    touchStartX.current = e.touches[0].clientX;
+    touchHasMoved.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isOpen) return;
+    if (touchStartX.current == null) return;
+    const x = e.touches[0].clientX;
+    const dx = x - (touchStartX.current ?? 0);
+    // If user swipes left more than threshold, close sidebar
+    const SWIPE_THRESHOLD = -60; // negative => left swipe
+    if (dx <= SWIPE_THRESHOLD && !touchHasMoved.current) {
+      setIsOpen(false);
+      touchHasMoved.current = true;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartX.current = null;
+    touchHasMoved.current = false;
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
           ref={containerRef}
           className="fixed left-0 top-0 h-[72vh] md:h-[50vh] w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl z-50 border-r border-b border-orange-500/30 rounded-br-2xl"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           initial={{ x: -256 }}
           animate={{ x: 0 }}
           exit={{ x: -256 }}
@@ -130,7 +170,7 @@ export default function Sidebar({
                       </div>
                         {/* Tooltip for Lobby (mobile & desktop) */}
                         {isLobby && (
-                          <div id="lobby-tooltip" role="status" aria-hidden="true" className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 bg-black/80 text-xs text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div id="lobby-tooltip" role="status" aria-hidden="true" className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-black/80 text-xs text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                             Under construction
                           </div>
                         )}
