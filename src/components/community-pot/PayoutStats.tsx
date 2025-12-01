@@ -48,7 +48,7 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
         setPayoutCount(countData || 0);
       }
 
-      // Get top recipients
+      // Get top recipients (Hola)
       const { data: recipientsData, error: recipientsError } = await supabase.rpc(
         "community_pot_get_top_recipients",
         { p_is_testnet: isTestnet, p_limit: 10 }
