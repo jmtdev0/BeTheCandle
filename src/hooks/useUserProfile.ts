@@ -1,8 +1,5 @@
 import { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
 
 export interface SocialLink {
   platform: string;
@@ -46,17 +43,7 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
     setError(null);
 
     try {
-      if (!supabaseUrl || !supabaseAnonKey) {
-        const msg = `Supabase env missing: NEXT_PUBLIC_SUPABASE_URL=${Boolean(
-          supabaseUrl
-        )}, NEXT_PUBLIC_SUPABASE_ANON_KEY=${Boolean(supabaseAnonKey)}`;
-        console.error(msg);
-        setError(msg);
-        setLoading(false);
-        return;
-      }
-
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const supabase = getSupabaseBrowserClient();
       if (id) {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const looksLikeUuid = uuidRegex.test(id);
@@ -148,7 +135,7 @@ export function useUserProfile(displayName: string | null, userId?: string | nul
     setError(null);
 
     try {
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const supabase = getSupabaseBrowserClient();
       const { data, error: rpcError } = await supabase.rpc("register_user_profile", {
         p_user_id: userId,
         p_display_name: displayName,

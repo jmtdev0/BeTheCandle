@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseBrowserClient } from '@/lib/supabaseBrowserClient';
 import type { Planet } from '@/types/socket';
 import { getOrCreateUserId } from '@/lib/userId';
 
@@ -59,22 +59,13 @@ const MOCK_PLANETS: Planet[] = [
   },
 ];
 
-function createSupabaseClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anon) {
+function getSupabaseClientSafe(): SupabaseClient | null {
+  try {
+    return getSupabaseBrowserClient();
+  } catch {
     console.warn('Supabase URL or anon key missing; realtime planet features disabled');
     return null;
   }
-
-  return createClient(url, anon, {
-    realtime: {
-      params: {
-        eventsPerSecond: 5,
-      },
-    },
-  });
 }
 
 function hashString(input: string) {
@@ -150,7 +141,7 @@ export function useSocket() {
       return;
     }
 
-    const supabase = createSupabaseClient();
+    const supabase = getSupabaseClientSafe();
     supabaseRef.current = supabase;
 
     if (!supabase) {

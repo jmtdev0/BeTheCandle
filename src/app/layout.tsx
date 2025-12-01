@@ -11,7 +11,7 @@ import { CookieConsentProvider } from "@/contexts/CookieConsentContext";
 
 export const metadata: Metadata = {
   title: "Bitcoin Daily Collection - Donation Platform",
-  description: "Non-custodial Bitcoin donation platform with animated bubbles",
+  description: "Non-custodial Bitcoin donation platform with animated bubbles"
 };
 
 export default function RootLayout({

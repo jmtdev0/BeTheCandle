@@ -23,6 +23,11 @@ export function getSupabaseBrowserClient(): SupabaseClient {
       persistSession: true,
       autoRefreshToken: true,
     },
+    realtime: {
+      params: {
+        eventsPerSecond: 5,
+      },
+    },
   });
 
   return cachedBrowserClient;
