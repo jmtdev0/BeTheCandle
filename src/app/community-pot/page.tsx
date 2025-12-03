@@ -472,6 +472,19 @@ export default function CommunityPotPage() {
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
+      {/* Initial loading state */}
+      {loading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative w-16 h-16">
+              <div className="absolute inset-0 rounded-full border-4 border-[#2276cb]/20" />
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-[#2276cb] animate-spin" />
+            </div>
+            <p className="text-[#2276cb] font-medium text-lg">Loading Community Pot...</p>
+          </div>
+        </div>
+      )}
+
       {/* Mobile: hint removed per UX request */}
 
       {/* 3D Interactive Orbs */}
@@ -682,16 +695,16 @@ export default function CommunityPotPage() {
         </div>
       </motion.div>
 
-      {/* Join experience - centered when no participants, hover reveal otherwise */}
+      {/* Join experience - centered when no participants (and not loading), hover reveal otherwise */}
       <motion.div 
-        className={`ui-panel fixed group ${participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
-        style={participantCount > 0 ? (
+        className={`ui-panel fixed group ${!loading && participantCount === 0 ? 'inset-0 flex items-center justify-center pointer-events-none' : 'z-30'}`}
+        style={loading || participantCount > 0 ? (
           isMobileLandscape ? { top: '1rem', right: '2rem', left: 'auto', transform: 'none', zIndex: 40 } : (
             isMobile ? { top: '0.75rem', right: '0.75rem', left: '50%', transform: 'translateX(-50%)' } : { top: '1.5rem', right: '92px' }
           )
         ) : undefined}
         initial={{ opacity: 0 }}
-        animate={{ opacity: shouldShowJoinButton ? 1 : 0 }}
+        animate={{ opacity: shouldShowJoinButton && !loading ? 1 : 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         onPointerEnter={() => {
           if (participantCount > 0 && !isMobile) {
@@ -704,7 +717,7 @@ export default function CommunityPotPage() {
         <button
           onClick={() => setShowJoinModal(true)}
           aria-label={viewerHasCurrentSlot ? "Change your reserved wallet address" : "Reserve your slot in the community pot"}
-          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-white/50 ${participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-4 py-2 md:px-6 md:py-3 text-sm md:text-base'}`}
+          className={`bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors shadow-lg shadow-[#2276cb]/40 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-white/50 ${!loading && participantCount === 0 ? 'px-10 py-5 text-xl' : 'px-4 py-2 md:px-6 md:py-3 text-sm md:text-base'}`}
           style={{ pointerEvents: shouldShowJoinButton ? "auto" : "none" }}
         >
           {viewerHasCurrentSlot ? "Change address" : "Reserve your slot"}

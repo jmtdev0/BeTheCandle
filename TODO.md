@@ -2,8 +2,9 @@ En este archivo, vamos a tratar los diferentes puntos que nos quedan para que la
 
 # Ajustes y mejoras (Community Pot)
 
+* Nombre / mensaje personalizado de dirección de wallet
+* Top donors
 * Errores de consola
-* Nombre personalizado de dirección de wallet
 * Indexar dirección de wallet en Google
 * Mover el botón de Reserve a la derecha en móvil horizontal
 * LA HORA REAL

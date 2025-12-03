@@ -10,7 +10,7 @@ import { PageTransitionProvider } from "@/contexts/PageTransitionContext";
 import { CookieConsentProvider } from "@/contexts/CookieConsentContext";
 
 export const metadata: Metadata = {
-  title: "Bitcoin Daily Collection - Donation Platform",
+  title: "Be The Candle",
   description: "Non-custodial Bitcoin donation platform with animated bubbles"
 };
 
