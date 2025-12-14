@@ -22,6 +22,7 @@ interface PayoutStatsProps {
 export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutStatsProps) {
   const [activeTab, setActiveTab] = useState<NetworkType>("mainnet");
   const [payoutCount, setPayoutCount] = useState<number>(0);
+  const [totalDistributed, setTotalDistributed] = useState<number>(0);
   const [topRecipients, setTopRecipients] = useState<TopRecipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -46,6 +47,18 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
         console.error("Error loading payout count:", countError);
       } else {
         setPayoutCount(countData || 0);
+      }
+
+      // Get total distributed
+      const { data: totalData, error: totalError } = await supabase.rpc(
+        "community_pot_get_total_distributed",
+        { p_is_testnet: isTestnet }
+      );
+
+      if (totalError) {
+        console.error("Error loading total distributed:", totalError);
+      } else {
+        setTotalDistributed(totalData || 0);
       }
 
       // Get top recipients (Hola)
@@ -165,13 +178,23 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
               </div>
             ) : (
               <>
-                {/* Payout Count */}
-                <div className="bg-slate-800/50 rounded-lg p-4">
-                  <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">
-                    Completed Payouts
+                {/* Payout Stats */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-800/50 rounded-lg p-4">
+                    <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">
+                      Completed Payouts
+                    </div>
+                    <div className="text-2xl font-bold text-blue-400">
+                      {payoutCount}
+                    </div>
                   </div>
-                  <div className="text-3xl font-bold text-blue-400">
-                    {payoutCount}
+                  <div className="bg-slate-800/50 rounded-lg p-4">
+                    <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">
+                      Total Distributed
+                    </div>
+                    <div className="text-2xl font-bold text-green-400">
+                      ${formatUsdc(totalDistributed.toString())}
+                    </div>
                   </div>
                 </div>
 

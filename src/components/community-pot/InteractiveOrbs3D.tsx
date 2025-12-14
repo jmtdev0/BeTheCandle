@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Html } from "@react-three/drei";
+import { OrbitControls, Html, Environment, Lightformer } from "@react-three/drei";
 import * as THREE from "three";
 
 interface Participant {
@@ -274,9 +274,20 @@ function Orb({
   onLeave: () => void;
   onSelect?: () => void;
 }) {
+  const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const startTime = useRef(Date.now() / 1000 + delay);
   const color = getRandomLightColor(participant.id);
+
+  // Determine shape based on participant ID
+  const shapeType = React.useMemo(() => {
+    const shapes = [
+      'sphere', 'box', 'torus', 'cone', 'cylinder', 
+      'icosahedron', 'octahedron', 'torusKnot', 'dodecahedron'
+    ] as const;
+    const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return shapes[hash % shapes.length];
+  }, [participant.id]);
 
   useEffect(() => {
     if (meshRef.current) {
@@ -285,42 +296,61 @@ function Orb({
   }, [isHovered]);
 
   useFrame((state: { clock: { getElapsedTime: () => number } }) => {
-    if (!meshRef.current) return;
+    if (!groupRef.current || !meshRef.current) return;
 
     const time = state.clock.getElapsedTime();
     const elapsed = time - startTime.current;
 
-    // Animación de flotación
+    // Animación de flotación (en el grupo contenedor)
     const floatOffset = Math.sin(elapsed / duration * Math.PI * 2) * 0.5;
-    meshRef.current.position.y = position[1] + floatOffset;
+    groupRef.current.position.y = position[1] + floatOffset;
+
+    // Animación de rotación (tumble) (solo en la malla)
+    meshRef.current.rotation.x = elapsed * 0.2;
+    meshRef.current.rotation.y = elapsed * 0.15;
   });
 
   return (
-    <mesh
-      ref={meshRef}
+    <group
+      ref={groupRef}
       position={position}
       scale={isHovered ? scale * 1.15 : scale}
-      onPointerDown={(e) => {
-        // Stop propagation so container handlers don't also treat this as a background tap
-        e.stopPropagation();
-        // Treat pointer down on an orb as a hover/select
-        onHover();
-        onSelect?.();
-      }}
-      onPointerEnter={onHover}
-      onPointerLeave={onLeave}
     >
-      <sphereGeometry args={[1, 32, 32]} />
-      <meshStandardMaterial
-        color={color}
-        transparent
-        opacity={isHovered ? 1 : 0.85}
-        emissive={color}
-        emissiveIntensity={isHovered ? 0.8 : 0.4}
-        metalness={0.3}
-        roughness={0.4}
-        depthWrite={true}
-      />
+      <mesh
+        ref={meshRef}
+        onPointerDown={(e) => {
+          // Stop propagation so container handlers don't also treat this as a background tap
+          e.stopPropagation();
+          // Treat pointer down on an orb as a hover/select
+          onHover();
+          onSelect?.();
+        }}
+        onPointerEnter={onHover}
+        onPointerLeave={onLeave}
+      >
+        {shapeType === 'sphere' && <sphereGeometry args={[1, 32, 32]} />}
+        {shapeType === 'box' && <boxGeometry args={[1.3, 1.3, 1.3]} />}
+        {shapeType === 'torus' && <torusGeometry args={[0.8, 0.3, 16, 32]} />}
+        {shapeType === 'cone' && <coneGeometry args={[0.9, 1.6, 32]} />}
+        {shapeType === 'cylinder' && <cylinderGeometry args={[0.8, 0.8, 1.6, 32]} />}
+        {shapeType === 'icosahedron' && <icosahedronGeometry args={[1.1, 0]} />}
+        {shapeType === 'octahedron' && <octahedronGeometry args={[1.2, 0]} />}
+        {shapeType === 'torusKnot' && <torusKnotGeometry args={[0.7, 0.25, 64, 8]} />}
+        {shapeType === 'dodecahedron' && <dodecahedronGeometry args={[1.1, 0]} />}
+
+        <meshStandardMaterial
+          color={color}
+          transparent
+          opacity={isHovered ? 1 : 0.85}
+          emissive={color}
+          emissiveIntensity={isHovered ? 0.8 : 0.4}
+          metalness={0.85}
+          roughness={0.18}
+          envMapIntensity={1.2}
+          depthWrite={true}
+        />
+      </mesh>
+      
       {isHovered && (
         <Html
           position={[0, 2.6, 0]}
@@ -336,7 +366,7 @@ function Orb({
           </div>
         </Html>
       )}
-    </mesh>
+    </group>
   );
 }
 
@@ -352,6 +382,8 @@ function OrbsScene({
   const idleRef = useRef({ lastInteraction: Date.now(), isIdle: false });
   const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
   const IDLE_ROTATION_SPEED = 0.02; // radians per second (very slow)
+  const orbitGroupRef = useRef<THREE.Group>(null);
+
   // Center camera on a participant when on small screens
   useEffect(() => {
     if (!isMobile) return;
@@ -405,43 +437,92 @@ function OrbsScene({
       for (const ev of events) window.removeEventListener(ev, resetIdle);
     };
   }, []);
+
+  // Orbital rotation for the entire group of participants
+  useFrame((_state: any, delta: number) => {
+    if (orbitGroupRef.current) {
+      orbitGroupRef.current.rotation.y += delta * 0.05; // Slow rotation speed
+    }
+  });
+
   return (
     <>
-      {participants.map((participant, index) => {
-        const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        
-        // Distribución en un espacio 3D
-        const angle = (index / participants.length) * Math.PI * 2;
-        const radius = 8 + (hash % 5);
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-        const y = -3 + ((hash % 7) - 3) * 1.5;
+      <group ref={orbitGroupRef}>
+        {participants.map((participant, index) => {
+          const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          
+          // Distribución en un espacio 3D
+          const angle = (index / participants.length) * Math.PI * 2;
+          const radius = 8 + (hash % 5);
+          const x = Math.cos(angle) * radius;
+          const z = Math.sin(angle) * radius;
+          const y = -3 + ((hash % 7) - 3) * 1.5;
 
-        const scale = 0.4 + ((hash % 5) * 0.08);
-        const duration = 8 + (hash % 5);
-        const delay = (hash % 10) * 0.3;
-        const isHovered = hoveredParticipantId === participant.polygonAddress || (selectedParticipantId === participant.polygonAddress);
+          const scale = 0.4 + ((hash % 5) * 0.08);
+          const duration = 8 + (hash % 5);
+          const delay = (hash % 10) * 0.3;
+          const isHovered = hoveredParticipantId === participant.polygonAddress || (selectedParticipantId === participant.polygonAddress);
 
-        return (
-          <Orb
-            key={participant.id}
-            participant={participant}
-            position={[x, y, z]}
-            scale={scale}
-            duration={duration}
-            delay={delay}
-            isHovered={isHovered}
-            onHover={() => onHoverParticipant(participant.polygonAddress)}
-            onLeave={() => onHoverParticipant(null)}
-            onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}
-          />
-        );
-      })}
+          return (
+            <Orb
+              key={participant.id}
+              participant={participant}
+              position={[x, y, z]}
+              scale={scale}
+              duration={duration}
+              delay={delay}
+              isHovered={isHovered}
+              onHover={() => onHoverParticipant(participant.polygonAddress)}
+              onLeave={() => onHoverParticipant(null)}
+              onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}
+            />
+          );
+        })}
+      </group>
 
       {/* Iluminación */}
       <ambientLight intensity={0.6} />
       <directionalLight position={[10, 10, 5]} intensity={0.8} />
       <pointLight position={[0, 0, 0]} intensity={0.5} color="#ffffff" />
+
+      {/**
+       * Environment-based reflections (no remote HDR fetch).
+       * Using Lightformer generates a local PMREM environment map.
+       */}
+      <Environment resolution={256} frames={1}>
+        <Lightformer
+          form="rect"
+          intensity={2.2}
+          position={[0, 6, -12]}
+          rotation={[0, 0, 0]}
+          scale={[14, 10, 1]}
+          color="#ffffff"
+        />
+        <Lightformer
+          form="circle"
+          intensity={1.2}
+          position={[-10, 2, 6]}
+          rotation={[0, Math.PI / 2, 0]}
+          scale={6}
+          color="#4a90e2"
+        />
+        <Lightformer
+          form="circle"
+          intensity={1.0}
+          position={[10, -2, 6]}
+          rotation={[0, -Math.PI / 2, 0]}
+          scale={5}
+          color="#f472b6"
+        />
+        <Lightformer
+          form="rect"
+          intensity={0.8}
+          position={[0, -8, -4]}
+          rotation={[Math.PI / 2, 0, 0]}
+          scale={[10, 10, 1]}
+          color="#fbbf24"
+        />
+      </Environment>
 
       {/* Aviones lejanos */}
       <DistantPlanes />
@@ -456,7 +537,7 @@ function OrbsScene({
         enablePan={false}
         rotateSpeed={0.5}
         zoomSpeed={0.3}
-        minDistance={12}
+        minDistance={14}
         maxDistance={35}
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={Math.PI / 1.5}

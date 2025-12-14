@@ -65,7 +65,17 @@ export default function CommunityPotPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileLandscape, setIsMobileLandscape] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [buttonFadeVisible, setButtonFadeVisible] = useState(true);
   const recaptchaRef = useRef<ReCAPTCHA>(null);
+
+  // Check URL parameter for auto-opening reserve modal
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const shouldReserve = urlParams.get('reserve') === 'true';
+    if (shouldReserve && !loading) {
+      setShowJoinModal(true);
+    }
+  }, [loading]);
 
   // Detect mobile/touch device
   useEffect(() => {
@@ -105,6 +115,21 @@ export default function CommunityPotPage() {
       }
     };
   }, []);
+
+  // Fade in/out animation for Reserve your slot button (but not for Change address)
+  useEffect(() => {
+    // Only apply fade effect if user hasn't reserved a slot
+    if (viewerHasCurrentSlot) {
+      setButtonFadeVisible(true);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setButtonFadeVisible(prev => !prev);
+    }, 10000); // Toggle every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [viewerHasCurrentSlot]);
 
   // Detect quick taps (not long-press) on background to toggle mobile UI.
   const pointerStartRef = useRef<{ time: number; x: number; y: number; id?: number | null } | null>(null);
@@ -445,8 +470,15 @@ export default function CommunityPotPage() {
   // Determine if UI should be visible (desktop hover OR mobile toggle)
   const shouldShowInfo = isMobile ? mobileUIVisible : (infoVisible || infoHovering);
   const shouldShowRankings = isMobile ? mobileUIVisible : (rankingsVisible || rankingsHovering);
-  // On mobile, show/hide the join button together with other controls
-  const shouldShowJoinButton = isMobile ? mobileUIVisible : (participantCount === 0 || joinButtonVisible || joinButtonHovering);
+  // Join button visibility:
+  // - "Reveal" mode: desktop hover hotspot OR mobile UI toggle OR always when no participants
+  // - "Pulse" mode: fades in/out every 10s (only when user has not reserved a slot)
+  const joinButtonReveal = isMobile
+    ? (participantCount === 0 || mobileUIVisible)
+    : (participantCount === 0 || joinButtonVisible || joinButtonHovering);
+
+  const joinButtonPulseEnabled = participantCount > 0 && !viewerHasCurrentSlot;
+  const shouldShowJoinButton = joinButtonReveal || (joinButtonPulseEnabled && buttonFadeVisible);
 
   // When the sidebar opens elsewhere, hide mobile UI controls to avoid overlap
   useEffect(() => {
@@ -704,8 +736,21 @@ export default function CommunityPotPage() {
           )
         ) : undefined}
         initial={{ opacity: 0 }}
-        animate={{ opacity: shouldShowJoinButton && !loading ? 1 : 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
+        animate={{
+          opacity: !loading
+            ? (
+                viewerHasCurrentSlot
+                  ? (shouldShowJoinButton ? 1 : 0)
+                  : (joinButtonReveal || (joinButtonPulseEnabled && buttonFadeVisible))
+                    ? 1
+                    : 0
+              )
+            : 0,
+        }}
+        transition={{
+          duration: joinButtonReveal || viewerHasCurrentSlot ? 0.2 : 1,
+          ease: joinButtonReveal || viewerHasCurrentSlot ? "easeOut" : "easeInOut",
+        }}
         onPointerEnter={() => {
           if (participantCount > 0 && !isMobile) {
             setJoinButtonHovering(true);
