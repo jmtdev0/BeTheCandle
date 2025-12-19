@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, type RootState } from "@react-three/fiber";
 import { OrbitControls, Html, Environment, Lightformer, Text, Stars, Text3D, Center } from "@react-three/drei";
 import * as THREE from "three";
 import { useDayNightCycle } from "@/hooks/useDayNightCycle";
@@ -374,7 +374,7 @@ function Orb({
 function CentralCoin() {
   const spinRef = useRef<THREE.Group>(null);
 
-  useFrame((state, delta) => {
+  useFrame((state: RootState, delta: number) => {
     if (spinRef.current) {
       // Rotate the coin slowly on its Y axis
       spinRef.current.rotation.y += delta * 0.2;
