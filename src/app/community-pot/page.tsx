@@ -7,6 +7,7 @@ import { useCommunityPot } from "@/hooks/useCommunityPot";
 import PayoutStats from "@/components/community-pot/PayoutStats";
 import InteractiveOrbs3D from "@/components/community-pot/InteractiveOrbs3D";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
+import { useDayNightCycle } from "@/hooks/useDayNightCycle";
 
 const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
@@ -24,6 +25,7 @@ interface LastPayoutData {
 }
 
 export default function CommunityPotPage() {
+  const { gradient } = useDayNightCycle();
   const communityPot = useCommunityPot();
   const {
     week,
@@ -499,14 +501,18 @@ export default function CommunityPotPage() {
 
   return (
     <div 
-      className="relative w-full h-screen overflow-hidden bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]"
+      className="relative w-full h-screen overflow-hidden transition-all duration-[5000ms]"
+      style={{ background: gradient }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
       {/* Initial loading state */}
       {loading && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-[#4a7ba7] via-[#87c4e8] to-[#daf3fe]">
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center transition-all duration-[5000ms]"
+          style={{ background: gradient }}
+        >
           <div className="flex flex-col items-center gap-4">
             <div className="relative w-16 h-16">
               <div className="absolute inset-0 rounded-full border-4 border-[#2276cb]/20" />

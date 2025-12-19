@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Html, Environment, Lightformer } from "@react-three/drei";
+import { OrbitControls, Html, Environment, Lightformer, Text, Stars, Text3D, Center } from "@react-three/drei";
 import * as THREE from "three";
+import { useDayNightCycle } from "@/hooks/useDayNightCycle";
 
 interface Participant {
   id: string;
@@ -370,6 +371,118 @@ function Orb({
   );
 }
 
+function CentralCoin() {
+  const spinRef = useRef<THREE.Group>(null);
+
+  useFrame((state, delta) => {
+    if (spinRef.current) {
+      // Rotate the coin slowly on its Y axis
+      spinRef.current.rotation.y += delta * 0.2;
+    }
+  });
+
+  const arcLength = Math.PI - 0.6;
+  const blueColor = "#5CA0F2"; // Even lighter blue
+  const ringColor = "#d4d4d4"; // Slightly darker than white
+
+  // Shared material for the logo parts to ensure they look like a single piece
+  const logoMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    color: "white",
+    roughness: 0.4,
+    metalness: 0.1,
+  }), []);
+
+  return (
+    <group position={[0, 0, 0]} rotation={[0.2, 0, 0.1]}>
+      <group ref={spinRef}>
+        {/* Sphere Body */}
+        <mesh>
+          <sphereGeometry args={[4, 64, 64]} />
+          <meshStandardMaterial 
+            color={blueColor} 
+            metalness={0.1} 
+            roughness={0.5} 
+          />
+        </mesh>
+        
+        {/* Front Face Detail */}
+        <group>
+          {/* Broken Ring - Right Segment */}
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, -arcLength / 2]}>
+            <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
+            <meshStandardMaterial color={ringColor} />
+          </mesh>
+          {/* Broken Ring - Left Segment */}
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, Math.PI - arcLength / 2]}>
+            <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
+            <meshStandardMaterial color={ringColor} />
+          </mesh>
+          
+          {/* The 'S' */}
+          <Center position={[0, -0.15, 4.1]}>
+            <Text3D
+              font="https://raw.githubusercontent.com/mrdoob/three.js/master/examples/fonts/helvetiker_bold.typeface.json"
+              size={2.3}
+              height={0.05}
+              curveSegments={12}
+              material={logoMaterial}
+            >
+              S
+            </Text3D>
+          </Center>
+          
+          {/* Top vertical stroke */}
+           <mesh position={[0, 1.2, 4.1]} material={logoMaterial}>
+             <boxGeometry args={[0.28, 0.4, 0.05]} />
+          </mesh>
+          
+          {/* Bottom vertical stroke */}
+           <mesh position={[0, -1.45, 4.1]} material={logoMaterial}>
+             <boxGeometry args={[0.28, 0.4, 0.05]} />
+          </mesh>
+        </group>
+
+        {/* Back Face Detail */}
+        <group rotation={[0, Math.PI, 0]}>
+           {/* Broken Ring - Right Segment */}
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, -arcLength / 2]}>
+            <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
+            <meshStandardMaterial color={ringColor} />
+          </mesh>
+          {/* Broken Ring - Left Segment */}
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, Math.PI - arcLength / 2]}>
+            <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
+            <meshStandardMaterial color={ringColor} />
+          </mesh>
+          
+          {/* The 'S' */}
+          <Center position={[0, -0.15, 4.1]}>
+            <Text3D
+              font="https://raw.githubusercontent.com/mrdoob/three.js/master/examples/fonts/helvetiker_bold.typeface.json"
+              size={2.3}
+              height={0.05}
+              curveSegments={12}
+              material={logoMaterial}
+            >
+              S
+            </Text3D>
+          </Center>
+          
+          {/* Top vertical stroke */}
+           <mesh position={[0, 1.2, 4.1]} material={logoMaterial}>
+             <boxGeometry args={[0.28, 0.4, 0.05]} />
+          </mesh>
+          
+          {/* Bottom vertical stroke */}
+           <mesh position={[0, -1.45, 4.1]} material={logoMaterial}>
+             <boxGeometry args={[0.28, 0.4, 0.05]} />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  );
+}
+
 function OrbsScene({
   participants,
   hoveredParticipantId,
@@ -377,7 +490,18 @@ function OrbsScene({
   selectedParticipantId,
   onSelectParticipant,
   isMobile,
-}: InteractiveOrbs3DProps) {
+  lightColor,
+  lightIntensity,
+  ambientIntensity,
+  isNight,
+  starOpacity
+}: InteractiveOrbs3DProps & {
+  lightColor: string;
+  lightIntensity: number;
+  ambientIntensity: number;
+  isNight: boolean;
+  starOpacity: number;
+}) {
   const controlsRef = useRef<any>(null);
   const idleRef = useRef({ lastInteraction: Date.now(), isIdle: false });
   const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
@@ -447,6 +571,7 @@ function OrbsScene({
 
   return (
     <>
+      <CentralCoin />
       <group ref={orbitGroupRef}>
         {participants.map((participant, index) => {
           const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -481,9 +606,21 @@ function OrbsScene({
       </group>
 
       {/* Iluminación */}
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[10, 10, 5]} intensity={0.8} />
+      <ambientLight intensity={ambientIntensity} />
+      <directionalLight position={[10, 10, 5]} intensity={lightIntensity} color={lightColor} />
       <pointLight position={[0, 0, 0]} intensity={0.5} color="#ffffff" />
+
+      {isNight && (
+        <Stars 
+          radius={100} 
+          depth={50} 
+          count={isMobile ? 1500 : 5000} 
+          factor={4} 
+          saturation={0} 
+          fade 
+          speed={1} 
+        />
+      )}
 
       {/**
        * Environment-based reflections (no remote HDR fetch).
@@ -580,13 +717,22 @@ function OrbsScene({
 }
 
 export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
+  const { isNight, lightColor, lightIntensity, ambientIntensity, starOpacity } = useDayNightCycle();
+
   return (
     <div className="absolute inset-0" style={{ zIndex: 0 }}>
       <Canvas
         camera={{ position: [0, 0, 35], fov: 50 }}
         gl={{ alpha: true, antialias: true }}
       >
-        <OrbsScene {...props} />
+        <OrbsScene 
+          {...props} 
+          lightColor={lightColor}
+          lightIntensity={lightIntensity}
+          ambientIntensity={ambientIntensity}
+          isNight={isNight}
+          starOpacity={starOpacity}
+        />
       </Canvas>
     </div>
   );
