@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 // Polygon RPC endpoints
 const POLYGON_RPC_MAINNET = "https://polygon-rpc.com";
@@ -188,6 +189,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<VerifyAdd
     const balancePol = formatPolBalance(balanceWei);
 
     if (!hasGas) {
+      // Log the event so we can help the user
+      try {
+        const supabase = getSupabaseAdminClient();
+        await supabase.rpc("community_pot_log_event", {
+          p_message: `User tried to join with no POL: ${normalizedAddress}`,
+          p_log_from: "verify-address",
+        });
+      } catch (logErr) {
+        console.error("[verify-address] Failed to log no-gas event:", logErr);
+      }
+
       return NextResponse.json({
         valid: true,
         hasGas: false,

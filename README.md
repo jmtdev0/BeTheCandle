@@ -1,110 +1,101 @@
-# Goofy Mode
+# BeTheCandle - Community Pot
 
-Primary experience for the BeTheCandle Bitcoin donation platform. Focuses on the interactive 3D "Goofy Mode" orbit, where supporters float around a giant BTC planet.
+BeTheCandle is a Web3 platform featuring a unique "Community Pot" system—a gamified, weekly distribution mechanism running on the Polygon network. While originally conceived as a Bitcoin donation platform, the project evolved to focus on USDC distributions on Polygon. This shift was driven by the high cost of on-chain Bitcoin transactions and the user-facing complexity of alternatives like the Lightning Network. By leveraging Polygon, the platform ensures low transaction fees and a seamless experience for users, providing a more stable and efficient community reward system. This README focuses on the architecture and implementation of the Community Pot.
 
-## Highlights
+## ⚗️ The Community Pot
 
-- 🪐 Immersive Three.js scene with animated Bitcoin sphere
-- �️ Selectable satellite supporters with rich profile cards
-- � Persistent color customization for satellites
-- � Ambient soundtrack and playful animations powered by Framer Motion
+The Community Pot is a weekly cycle where authenticated users can register to receive a share of a USDC pool. It combines interactive 3D visualizations with real-time blockchain transactions.
 
-## Tech Stack
+### How it Works
+1.  **Weekly Cycle**: A new "week" starts automatically every Sunday.
+2.  **Join Phase**: Users authenticate and submit their Polygon wallet address to reserve a slot.
+3.  **Visualization**: Participants are represented as floating 3D orbs in the Community Pot lobby.
+4.  **Distribution**: At the end of the cycle (Sunday 16:30 Berlin Time), a secure process triggers the payout.
+5.  **Payout**: The total USDC amount in the pot is divided equally among all valid participants and sent directly to their wallets on the Polygon network.
 
-- **Framework**: Next.js 15 (App Router)
-- **Language**: TypeScript
-- **3D & Animations**: React Three Fiber, drei, Framer Motion
-- **Styling**: TailwindCSS
+## 🛠 Tech Stack
 
-## Getting Started
+### Core Framework
+- **Next.js 15** (App Router)
+- **React 19**
+- **TypeScript**
+- **TailwindCSS** & **Framer Motion** for styling and animations.
 
-1. Install dependencies
+### Web3 & Blockchain
+- **Network**: Polygon PoS (Mainnet) / Amoy (Testnet).
+- **Token**: USDC (USD Coin).
+- **Library**: **[viem](https://viem.sh/)** - Used for all blockchain interactions, including wallet management, contract calls, and transaction signing.
+- **Smart Contracts**: Standard ERC-20 interactions (USDC contract).
 
-   ```bash
-   npm install
-   ```
+### Backend & Infrastructure
+- **Supabase**:
+    - **PostgreSQL**: Stores weekly cycles, participants, and payout logs.
+    - **Edge Functions**: Secure server-less environment for executing the payout logic.
+    - **Realtime**: Pushes live updates (new participants, countdowns) to the frontend.
+    - **Auth**: Handles user authentication before joining the pot.
 
-2. Launch the development server
+## 🌐 Web3 Architecture
 
-   ```bash
-   npm run dev
-   ```
+The payout system is designed to be secure and automated, moving sensitive logic away from the client.
 
-3. Visit [http://localhost:3000/goofy-mode](http://localhost:3000/goofy-mode) in your browser
+### Payout Logic (`supabase/functions/community-pot-payout`)
+The distribution is handled by a Supabase Edge Function (`scheduled-distribution.ts`) powered by Deno and `viem`.
 
-### Environment variables
+1.  **Trigger**: The function is invoked via a scheduled Cron job or a secure API call.
+2.  **Verification**: It checks the current week's status and validates the participant list.
+3.  **Blockchain Interaction**:
+    - Loads the funding wallet using a private key (stored in secure environment variables).
+    - Connects to the Polygon RPC using `viem`.
+    - Calculates the split (Total Pot / Participants).
+    - Batches and executes ERC-20 `transfer` transactions for each participant.
+4.  **Settlement**: Updates the database with transaction hashes and marks the week as "completed".
 
-Set the following values (Netlify build settings already include them):
+## 🚀 Getting Started
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `DATABASE_URL` (Postgres connection for donation APIs)
+### Prerequisites
+- Node.js 18+
+- A Supabase project with the necessary database schema.
+- A Polygon wallet with MATIC (for gas) and USDC (for the pot).
 
-## Key Files
+### Installation
 
-```
-src/
-├── app/
-│   ├── layout.tsx              # Root layout
-│   ├── page.tsx                # Redirects / to /goofy-mode
-│   ├── globals.css             # Global styles
-│   ├── goofy-mode/page.tsx     # Goofy Mode entry point
-│   └── even-goofier-mode/      # Experimental playground
-└── components/
-   ├── DonationBubble.tsx      # Lobby orbit with animated donation bubbles
-   ├── InteractiveSphere3D.tsx # Higher-level scene composition
-   └── SatelliteInfoCard.tsx   # Overlay with supporter details
-```
+1.  **Clone the repository**
+    ```bash
+    git clone <repository-url>
+    cd bethecandle
+    ```
 
-## Scripts
+2.  **Install dependencies**
+    ```bash
+    npm install
+    ```
 
-- `npm run dev` – start development server
-- `npm run build` – build for production
-- `npm start` – run production build
-- `npm run lint` – lint project
-- `npm run community-pot:payout` – execute the Polygon USDC payout (accepts optional `--dry-run`)
+3.  **Environment Setup**
+    Create a `.env.local` file with the following keys:
 
-## Community Pot weekly cycle
+    ```env
+    # Supabase
+    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    
+    # Community Pot (Server-side / Edge Function vars)
+    COMMUNITY_POT_PAYOUT_SECRET=your_secure_secret
+    COMMUNITY_POT_RPC_URL=https://polygon-rpc.com
+    COMMUNITY_POT_PAYOUT_PRIVATE_KEY=your_wallet_private_key
+    ```
 
-The Community Pot allows up to 10 authenticated supporters to register a Polygon address and receive an equal share of a weekly USDC amount. The frontend shows a live countdown, available slots, and the participant list, while the backend exposes secured APIs plus a payout script/endpoint.
+4.  **Run Development Server**
+    ```bash
+    npm run dev
+    ```
 
-### Database migration
+## 📂 Key Directories
 
-Run the Supabase migration located at `supabase/scripts/20241113_create_community_pot.sql` (e.g. via `supabase db push`) to create the `community_pot_*` tables, triggers, and RLS policies.
+- `src/app/community-pot/`: Frontend pages for the pot interface.
+- `src/components/community-pot/`: 3D Orbs and UI components.
+- `supabase/functions/community-pot-payout/`: The Deno Edge Function containing the `viem` payout logic.
+- `src/lib/communityPot.ts`: Shared logic and types.
 
-### API endpoints
-
-- `GET /api/community-pot/status` – public status payload (active week, countdown, participants)
-- `POST /api/community-pot/join` – authenticated users can claim/update their Polygon address for the week
-- `POST /api/community-pot/payout` – secured endpoint that triggers the Polygon USDC distribution (expects `x-community-pot-secret` header)
-- `supabase/functions/community-pot-payout` – Supabase Edge Function that performs the weekly payout (same env vars + secret header)
-
-### Scheduled/manual payouts
-
-Configure these environment variables wherever payouts run (Next.js route, cron job, or the CLI script):
-
-- `COMMUNITY_POT_PAYOUT_SECRET` – shared secret for the payout endpoint
-- `COMMUNITY_POT_RPC_URL` – Polygon RPC endpoint
-- `COMMUNITY_POT_PAYOUT_PRIVATE_KEY` – hex private key for the funding wallet
-- `COMMUNITY_POT_USDC_CONTRACT` – optional override (defaults to Polygon USDC `0x2791...4174`)
-
-You can execute payouts either by calling the secure API, the new Supabase Edge Function, or via the CLI helper:
-
-```bash
-npm run community-pot:payout -- --dry-run   # simulate transfers and verify config
-npm run community-pot:payout               # send transactions and log hashes
-```
-
-Supabase deployment steps:
-
-1. Deploy the edge function from `supabase/functions/community-pot-payout` (`supabase functions deploy community-pot-payout`).
-2. Wire a Supabase Cron (or any scheduler) to `POST https://<project>.functions.supabase.co/community-pot-payout` with header `x-community-pot-secret`.
-3. `supabase/scripts/community-pot-cron.sh` contains a minimal `curl` helper you can reuse inside Cron jobs.
-
-### Frontend integration
-
-The `/community-pot` page now shows the live countdown, status pill, slot availability, and participant list. Authenticated users can paste their Polygon address and reserve a slot; updates remain available even when the week is full.
-
-## License
+## 📄 License
 
 MIT

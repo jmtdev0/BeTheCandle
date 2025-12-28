@@ -65,16 +65,42 @@ const PHASES = {
 };
 
 export function useDayNightCycle() {
-  const [time, setTime] = useState(() => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+  // Initialize with null to avoid hydration mismatch
+  const [time, setTime] = useState<number | null>(null);
 
   useEffect(() => {
     const updateTime = () => {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const timeParam = params.get("time");
+        const hourParam = params.get("hour");
+
+        if (timeParam) {
+          const [h, m] = timeParam.split(":").map(Number);
+          if (!isNaN(h) && !isNaN(m)) {
+            setTime(h * 60 + m);
+            return;
+          }
+        }
+        if (hourParam) {
+          const h = Number(hourParam);
+          if (!isNaN(h)) {
+            setTime(h * 60);
+            return;
+          }
+        }
+      }
+      
       const now = new Date();
       setTime(now.getHours() * 60 + now.getMinutes());
     };
+
+    // Initial update
+    updateTime();
+
+    // If we have a manual override in the URL, don't set up the interval
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("time") || params.has("hour")) return;
     
     // Update every minute
     const timer = setInterval(updateTime, 60000);
@@ -82,6 +108,19 @@ export function useDayNightCycle() {
   }, []);
 
   return useMemo(() => {
+    // Default to Night if time is not yet determined (SSR or initial client render)
+    if (time === null) {
+      const phase = PHASES.NIGHT;
+      return {
+        gradient: `linear-gradient(to bottom, ${phase.colors[0]}, ${phase.colors[1]}, ${phase.colors[2]})`,
+        isNight: phase.isNight,
+        lightColor: phase.lightColor,
+        lightIntensity: phase.lightIntensity,
+        ambientIntensity: phase.ambientIntensity,
+        starOpacity: phase.starOpacity
+      };
+    }
+
     // Define transition start times (in minutes)
     const dawnStart = 5 * 60;      // 05:00 -> 300
     const dayStart = 7 * 60;       // 07:00 -> 420
