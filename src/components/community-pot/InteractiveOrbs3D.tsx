@@ -254,6 +254,18 @@ function FadingCircles() {
   return <group ref={groupRef} />;
 }
 
+const SPECIAL_HEART_ADDRESS = "0xe7fa55dd51dd2a69a61d8edbe1f488c3dba6fda5";
+
+const heartShape = new THREE.Shape();
+const hx = 0, hy = 0;
+heartShape.moveTo(hx + 0.5, hy + 0.5);
+heartShape.bezierCurveTo(hx + 0.5, hy + 0.5, hx + 0.4, hy, hx, hy);
+heartShape.bezierCurveTo(hx - 0.6, hy, hx - 0.6, hy + 0.7, hx - 0.6, hy + 0.7);
+heartShape.bezierCurveTo(hx - 0.6, hy + 1.1, hx - 0.2, hy + 1.54, hx + 0.5, hy + 1.9);
+heartShape.bezierCurveTo(hx + 1.2, hy + 1.54, hx + 1.6, hy + 1.1, hx + 1.6, hy + 0.7);
+heartShape.bezierCurveTo(hx + 1.6, hy + 0.7, hx + 1.6, hy, hx + 1.0, hy);
+heartShape.bezierCurveTo(hx + 0.7, hy, hx + 0.5, hy + 0.5, hx + 0.5, hy + 0.5);
+
 function Orb({
   participant,
   position,
@@ -279,6 +291,7 @@ function Orb({
   const meshRef = useRef<THREE.Mesh>(null);
   const startTime = useRef(Date.now() / 1000 + delay);
   const color = getRandomLightColor(participant.id);
+  const leaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Determine shape based on participant ID
   const shapeType = React.useMemo(() => {
@@ -296,6 +309,14 @@ function Orb({
     }
   }, [isHovered]);
 
+  useEffect(() => {
+    return () => {
+      if (leaveTimeoutRef.current) {
+        clearTimeout(leaveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useFrame((state: { clock: { getElapsedTime: () => number } }) => {
     if (!groupRef.current || !meshRef.current) return;
 
@@ -311,6 +332,31 @@ function Orb({
     meshRef.current.rotation.y = elapsed * 0.15;
   });
 
+  const isHeart = participant.polygonAddress.toLowerCase() === SPECIAL_HEART_ADDRESS.toLowerCase();
+
+  const handleMeshLeave = () => {
+    // Delay hiding tooltip to give user time to move cursor to it
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+    }
+    leaveTimeoutRef.current = setTimeout(() => {
+      onLeave();
+    }, 150);
+  };
+
+  const handleTooltipEnter = () => {
+    // Cancel the hide timeout if user enters tooltip
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+    onHover();
+  };
+
+  const handleTooltipLeave = () => {
+    onLeave();
+  };
+
   return (
     <group
       ref={groupRef}
@@ -323,30 +369,47 @@ function Orb({
           // Stop propagation so container handlers don't also treat this as a background tap
           e.stopPropagation();
           // Treat pointer down on an orb as a hover/select
+          if (leaveTimeoutRef.current) {
+            clearTimeout(leaveTimeoutRef.current);
+            leaveTimeoutRef.current = null;
+          }
           onHover();
           onSelect?.();
         }}
-        onPointerEnter={onHover}
-        onPointerLeave={onLeave}
+        onPointerEnter={() => {
+          if (leaveTimeoutRef.current) {
+            clearTimeout(leaveTimeoutRef.current);
+            leaveTimeoutRef.current = null;
+          }
+          onHover();
+        }}
+        onPointerLeave={handleMeshLeave}
+        rotation={isHeart ? [Math.PI, 0, 0] : [0, 0, 0]}
       >
-        {shapeType === 'sphere' && <sphereGeometry args={[1, 32, 32]} />}
-        {shapeType === 'box' && <boxGeometry args={[1.3, 1.3, 1.3]} />}
-        {shapeType === 'torus' && <torusGeometry args={[0.8, 0.3, 16, 32]} />}
-        {shapeType === 'cone' && <coneGeometry args={[0.9, 1.6, 32]} />}
-        {shapeType === 'cylinder' && <cylinderGeometry args={[0.8, 0.8, 1.6, 32]} />}
-        {shapeType === 'icosahedron' && <icosahedronGeometry args={[1.1, 0]} />}
-        {shapeType === 'octahedron' && <octahedronGeometry args={[1.2, 0]} />}
-        {shapeType === 'torusKnot' && <torusKnotGeometry args={[0.7, 0.25, 64, 8]} />}
-        {shapeType === 'dodecahedron' && <dodecahedronGeometry args={[1.1, 0]} />}
+        {isHeart ? (
+          <extrudeGeometry args={[heartShape, { depth: 0.4, bevelEnabled: true, bevelSegments: 2, steps: 2, bevelSize: 0.1, bevelThickness: 0.1 }]} />
+        ) : (
+          <>
+            {shapeType === 'sphere' && <sphereGeometry args={[1, 32, 32]} />}
+            {shapeType === 'box' && <boxGeometry args={[1.3, 1.3, 1.3]} />}
+            {shapeType === 'torus' && <torusGeometry args={[0.8, 0.3, 16, 32]} />}
+            {shapeType === 'cone' && <coneGeometry args={[0.9, 1.6, 32]} />}
+            {shapeType === 'cylinder' && <cylinderGeometry args={[0.8, 0.8, 1.6, 32]} />}
+            {shapeType === 'icosahedron' && <icosahedronGeometry args={[1.1, 0]} />}
+            {shapeType === 'octahedron' && <octahedronGeometry args={[1.2, 0]} />}
+            {shapeType === 'torusKnot' && <torusKnotGeometry args={[0.7, 0.25, 64, 8]} />}
+            {shapeType === 'dodecahedron' && <dodecahedronGeometry args={[1.1, 0]} />}
+          </>
+        )}
 
         <meshStandardMaterial
-          color={color}
+          color={isHeart ? "#ffffff" : color}
           transparent
           opacity={isHovered ? 1 : 0.85}
-          emissive={color}
-          emissiveIntensity={isHovered ? 0.8 : 0.4}
-          metalness={0.85}
-          roughness={0.18}
+          emissive={isHeart ? "#ffffff" : color}
+          emissiveIntensity={isHeart ? (isHovered ? 0.5 : 0.2) : (isHovered ? 0.8 : 0.4)}
+          metalness={isHeart ? 0.5 : 0.85}
+          roughness={isHeart ? 0.2 : 0.18}
           envMapIntensity={1.2}
           depthWrite={true}
         />
@@ -358,12 +421,22 @@ function Orb({
           scale={1}
           renderOrder={1000}
           zIndexRange={[1000, 0]}
+          style={{ pointerEvents: 'auto' }}
         >
           <div
-            className="absolute -translate-x-1/2 -translate-y-full bg-black/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-blue-300/60 shadow-2xl pointer-events-none whitespace-nowrap select-none"
-            style={{ zIndex: 1000 }}
+            className="absolute -translate-x-1/2 -translate-y-full bg-black/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-blue-300/60 shadow-2xl whitespace-nowrap"
+            style={{ zIndex: 1000, userSelect: 'text' }}
+            onPointerEnter={handleTooltipEnter}
+            onPointerLeave={handleTooltipLeave}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
           >
-            <p className="text-xs font-mono text-blue-100 select-none">{participant.polygonAddress}</p>
+            <p className="text-xs font-mono text-blue-100">{participant.polygonAddress}</p>
+            {isHeart && (
+              <div className="mt-1 text-[10px] text-amber-300 leading-tight max-w-[200px] whitespace-normal">
+                Funds accumulated in this address are sent to <a href="https://www.juegaterapia.org/proyectos-solidarios-cancer-infantil/" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-200 pointer-events-auto">Juegaterapia</a>. Scroll down on their page to see several cool projects that need funding.
+              </div>
+            )}
           </div>
         </Html>
       )}

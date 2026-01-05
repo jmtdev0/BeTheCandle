@@ -7,6 +7,7 @@ import PageLoader from "@/components/common/PageLoader";
 interface PageTransitionContextType {
   isTransitioning: boolean;
   navigate: (href: string) => void;
+  setDataReady: (ready: boolean) => void;
 }
 
 const PageTransitionContext = createContext<PageTransitionContextType | undefined>(undefined);
@@ -15,6 +16,8 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
   const [isTransitioning, setIsTransitioning] = useState(true); // Start with true for initial load
   const [transitionMessage, setTransitionMessage] = useState("Loading...");
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [dataReady, setDataReady] = useState(false);
+  const dataReadyPathRef = React.useRef<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const childrenArray = Children.toArray(children);
@@ -42,6 +45,18 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
     router.push(href);
   }, [router, pathname]);
 
+  // Pages that require data loading before hiding the loader
+  const pagesRequiringData = ["/community-pot", "/lobby"];
+  const requiresDataReady = pagesRequiringData.includes(pathname);
+
+  // Reset dataReady when navigating to a new page
+  useEffect(() => {
+    if (dataReadyPathRef.current !== pathname) {
+      setDataReady(false);
+      dataReadyPathRef.current = pathname;
+    }
+  }, [pathname]);
+
   // Handle initial page load
   useEffect(() => {
     if (isInitialLoad) {
@@ -55,32 +70,48 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
       };
       setTransitionMessage(messages[pathname] || "Loading...");
 
-      // Hide loader after initial mount
+      // For pages that require data, wait for dataReady signal
+      // For other pages, use a short timeout
+      if (!requiresDataReady) {
+        const timer = setTimeout(() => {
+          setIsTransitioning(false);
+          setIsInitialLoad(false);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isInitialLoad, pathname, requiresDataReady]);
+
+  // Hide loader when data is ready (for pages that require it)
+  useEffect(() => {
+    if (!isTransitioning) return;
+    
+    if (requiresDataReady) {
+      // Wait for dataReady signal
+      if (dataReady) {
+        const timer = setTimeout(() => {
+          setIsTransitioning(false);
+          setIsInitialLoad(false);
+        }, 200);
+        return () => clearTimeout(timer);
+      }
+    } else if (!isInitialLoad) {
+      // For pages not requiring data, hide after short delay
       const timer = setTimeout(() => {
         setIsTransitioning(false);
-        setIsInitialLoad(false);
-      }, 800);
-      
+      }, 200);
       return () => clearTimeout(timer);
     }
-  }, [isInitialLoad, pathname]);
-
-  // Hide loader once new page content has mounted
-  useEffect(() => {
-    if (isInitialLoad) return;
-    if (!isTransitioning) return;
-
-    const timer = setTimeout(() => {
-      setIsTransitioning(false);
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [pageContent, isInitialLoad, isTransitioning]);
+  }, [pageContent, isInitialLoad, isTransitioning, requiresDataReady, dataReady]);
 
   // Separate children into persistent components and page content
 
+  const setDataReadyCallback = useCallback((ready: boolean) => {
+    setDataReady(ready);
+  }, []);
+
   return (
-    <PageTransitionContext.Provider value={{ isTransitioning, navigate }}>
+    <PageTransitionContext.Provider value={{ isTransitioning, navigate, setDataReady: setDataReadyCallback }}>
       {isTransitioning && <PageLoader message={transitionMessage} />}
       {/* Persistent components (Sidebar, Music Player) - always visible */}
       {persistentComponents}

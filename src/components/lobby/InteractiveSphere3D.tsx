@@ -6,6 +6,18 @@ import { useFrame, useThree, extend } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { DEFAULT_SATELLITE_COLOR, getPaletteForColor } from "@/lib/satelliteColors";
 
+const SPECIAL_HEART_ADDRESS = "0xe7fa55dd51dd2a69a61d8edbe1f488c3dba6fda5";
+
+const heartShape = new THREE.Shape();
+const hx = 0, hy = 0;
+heartShape.moveTo(hx + 0.5, hy + 0.5);
+heartShape.bezierCurveTo(hx + 0.5, hy + 0.5, hx + 0.4, hy, hx, hy);
+heartShape.bezierCurveTo(hx - 0.6, hy, hx - 0.6, hy + 0.7, hx - 0.6, hy + 0.7);
+heartShape.bezierCurveTo(hx - 0.6, hy + 1.1, hx - 0.2, hy + 1.54, hx + 0.5, hy + 1.9);
+heartShape.bezierCurveTo(hx + 1.2, hy + 1.54, hx + 1.6, hy + 1.1, hx + 1.6, hy + 0.7);
+heartShape.bezierCurveTo(hx + 1.6, hy + 0.7, hx + 1.6, hy, hx + 1.0, hy);
+heartShape.bezierCurveTo(hx + 0.7, hy, hx + 0.5, hy + 0.5, hx + 0.5, hy + 0.5);
+
 /**
  * GLSL Shader for Realistic Animated Star
  * Uses 3D Simplex noise to create turbulent plasma surface
@@ -1772,18 +1784,37 @@ export default function InteractiveSphere3D({
               <sphereGeometry args={[sat.size, 32, 32]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} depthTest={false} />
             </mesh>
-            {/* Satellite sphere with realistic lighting - illuminated and dark sides */}
-            <mesh castShadow receiveShadow>
-              <sphereGeometry args={[sat.size, 64, 64]} />
-              <meshStandardMaterial 
-                color={sat.color} 
-                metalness={0.2} 
-                roughness={0.7}
-                // Reduced emissive for realistic lighting
-                emissive={sat.color}
-                emissiveIntensity={hoveredSatId === sat.user?.id ? 0.08 : 0.02}
-              />
-            </mesh>
+            {/* Satellite sphere or Heart for special address */}
+            {sat.user?.walletAddress?.toLowerCase() === SPECIAL_HEART_ADDRESS.toLowerCase() ? (
+              <mesh 
+                castShadow 
+                receiveShadow 
+                rotation={[Math.PI, 0, 0]} 
+                position={[-sat.size * 0.4, -sat.size * 0.8, 0]} 
+                scale={[sat.size * 0.8, sat.size * 0.8, sat.size * 0.8]}
+              >
+                <extrudeGeometry args={[heartShape, { depth: 0.4, bevelEnabled: true, bevelSegments: 2, steps: 2, bevelSize: 0.1, bevelThickness: 0.1 }]} />
+                <meshStandardMaterial 
+                  color="#ffffff" 
+                  metalness={0.5} 
+                  roughness={0.2}
+                  emissive="#ffffff"
+                  emissiveIntensity={hoveredSatId === sat.user?.id ? 0.3 : 0.1}
+                />
+              </mesh>
+            ) : (
+              <mesh castShadow receiveShadow>
+                <sphereGeometry args={[sat.size, 64, 64]} />
+                <meshStandardMaterial 
+                  color={sat.color} 
+                  metalness={0.2} 
+                  roughness={0.7}
+                  // Reduced emissive for realistic lighting
+                  emissive={sat.color}
+                  emissiveIntensity={hoveredSatId === sat.user?.id ? 0.08 : 0.02}
+                />
+              </mesh>
+            )}
             {/* Small subtle glow only when hovered */}
             {hoveredSatId === sat.user?.id && (
               <mesh scale={[1.15, 1.15, 1.15]}>

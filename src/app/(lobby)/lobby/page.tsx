@@ -16,6 +16,7 @@ import { useLobbyProfiles } from "@/hooks/useLobbyProfiles";
 import { useUserProfile, type UserProfile as UserProfileData } from "@/hooks/useUserProfile";
 import { useSupabaseAuth } from "@/components/common/AuthProvider";
 import { getOrCreateUserId, persistUserId } from "@/lib/userId";
+import { usePageTransition } from "@/contexts/PageTransitionContext";
 
 // Component to set initial camera position to max zoom out
 function CameraController({ controlsRef }: { controlsRef: React.RefObject<any> }) {
@@ -42,9 +43,17 @@ export default function GoofyModePage() {
   const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [mounted, setMounted] = useState(false);
   const { color: satelliteColor, setColor: setSatelliteColor } = useSatelliteColorPreference();
+  const { setDataReady } = usePageTransition();
   
   // Socket integration
   const { planets, myPlanetId, isConnected, updateColor, joinAsPlanet } = useSocket();
+
+  // Notify PageTransitionContext when socket is connected (data is ready)
+  useEffect(() => {
+    if (isConnected) {
+      setDataReady(true);
+    }
+  }, [isConnected, setDataReady]);
 
   // Auth & profile state for satellite creation button
   const { session, requireAuthForSatellite, openAuthPrompt, closeAuthPrompt } = useSupabaseAuth();
@@ -168,6 +177,7 @@ export default function GoofyModePage() {
         color: planet.color,
         profileDisplayName: planet.userName ?? null,
         orbitSpeedMultiplier: profileData?.orbit_speed_multiplier ?? 1.0,
+        walletAddress: profileData?.btc_address,
       };
     }), 
     [planets, myPlanetId, profilesMap]

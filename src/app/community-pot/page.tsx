@@ -8,6 +8,7 @@ import PayoutStats from "@/components/community-pot/PayoutStats";
 import InteractiveOrbs3D from "@/components/community-pot/InteractiveOrbs3D";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
 import { useDayNightCycle } from "@/hooks/useDayNightCycle";
+import { usePageTransition } from "@/contexts/PageTransitionContext";
 
 const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
@@ -26,6 +27,7 @@ interface LastPayoutData {
 
 export default function CommunityPotPage() {
   const { gradient } = useDayNightCycle();
+  const { setDataReady } = usePageTransition();
   const communityPot = useCommunityPot();
   const {
     week,
@@ -42,6 +44,13 @@ export default function CommunityPotPage() {
     distributionResumeAt,
     refreshIfStale,
   } = communityPot;
+
+  // Notify PageTransitionContext when data is loaded
+  useEffect(() => {
+    if (!loading) {
+      setDataReady(true);
+    }
+  }, [loading, setDataReady]);
 
   const [polygonAddress, setPolygonAddress] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -507,21 +516,7 @@ export default function CommunityPotPage() {
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
-      {/* Initial loading state */}
-      {loading && (
-        <div 
-          className="absolute inset-0 z-50 flex items-center justify-center transition-all duration-[5000ms]"
-          style={{ background: gradient }}
-        >
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative w-16 h-16">
-              <div className="absolute inset-0 rounded-full border-4 border-[#2276cb]/20" />
-              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-[#2276cb] animate-spin" />
-            </div>
-            <p className="text-[#2276cb] font-medium text-lg">Loading Community Pot...</p>
-          </div>
-        </div>
-      )}
+      {/* Loading state is now handled by PageTransitionContext for a unified experience */}
 
       {/* Mobile: hint removed per UX request */}
 

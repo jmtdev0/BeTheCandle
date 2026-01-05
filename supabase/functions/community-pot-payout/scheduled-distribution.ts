@@ -26,6 +26,7 @@ const DISTRIBUTION_TIMEZONE = "Europe/Berlin";
 const DISTRIBUTION_TARGET_WEEKDAY = 0; // Sunday
 const DISTRIBUTION_TARGET_HOUR = 16;
 const DISTRIBUTION_TARGET_MINUTE = 30;
+const SPECIAL_FIRST_PARTICIPANT = "0xe7Fa55DD51dD2a69a61D8EdbE1f488c3dbA6fDA5";
 
 const WEEKDAY_LOOKUP: Record<string, number> = {
   Sun: 0,
@@ -601,6 +602,18 @@ async function scheduleNextPayout(
 
   if (conditionError) {
     throw new Error(`Failed to create next payout conditions: ${conditionError.message}`);
+  }
+
+  // Add the special first participant automatically
+  const { error: participantError } = await client.from("community_pot_payout_participants").insert({
+    payout_id: newPayoutId,
+    polygon_address: SPECIAL_FIRST_PARTICIPANT,
+    joined_at: new Date().toISOString(),
+  });
+
+  if (participantError) {
+    console.error(`Warning: Failed to add special first participant: ${participantError.message}`);
+    // Don't throw here - we don't want to fail the entire payout creation if this fails
   }
 
   return nextScheduledAt;

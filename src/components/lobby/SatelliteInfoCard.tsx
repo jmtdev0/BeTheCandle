@@ -5,6 +5,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { ExternalLink, Link as LinkIcon, Loader2 } from "lucide-react";
 import { SatelliteUser } from "./InteractiveSphere3D";
 
+const SPECIAL_HEART_ADDRESS = "0xe7fa55dd51dd2a69a61d8edbe1f488c3dba6fda5";
+
 interface SatelliteInfoCardProps {
   user: SatelliteUser | null;
   onClose: () => void;
@@ -233,9 +235,16 @@ export default function SatelliteInfoCard({ user, onClose }: SatelliteInfoCardPr
                 {subtitleName || "Platform user"}
               </p>
               {donationAddress && (
-                <div className="mt-2 text-[11px] text-slate-200/80 font-mono truncate max-w-[220px]" title={donationAddress}>
-                  {donationAddress}
-                </div>
+                <>
+                  <div className="mt-2 text-[11px] text-slate-200/80 font-mono truncate max-w-[220px]" title={donationAddress}>
+                    {donationAddress}
+                  </div>
+                  {donationAddress.toLowerCase() === SPECIAL_HEART_ADDRESS.toLowerCase() && (
+                    <div className="mt-2 text-[10px] text-amber-300 leading-tight">
+                      Funds accumulated in this address are sent to <a href="https://www.juegaterapia.org/proyectos-solidarios-cancer-infantil/" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-200">Juegaterapia</a>. Scroll down on their page to see several cool projects that need funding.
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
