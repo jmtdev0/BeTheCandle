@@ -317,6 +317,8 @@ function Orb({
     };
   }, []);
 
+  const isHeart = participant.polygonAddress.toLowerCase() === SPECIAL_HEART_ADDRESS.toLowerCase();
+
   useFrame((state: { clock: { getElapsedTime: () => number } }) => {
     if (!groupRef.current || !meshRef.current) return;
 
@@ -328,11 +330,18 @@ function Orb({
     groupRef.current.position.y = position[1] + floatOffset;
 
     // Animación de rotación (tumble) (solo en la malla)
-    meshRef.current.rotation.x = elapsed * 0.2;
-    meshRef.current.rotation.y = elapsed * 0.15;
+    // Para el corazón, limitamos la rotación en X para que no se voltee completamente
+    if (isHeart) {
+      // El corazón tiene una rotación base de Math.PI en X para estar derecho
+      // Añadimos balanceo suave encima de esa base
+      meshRef.current.rotation.x = Math.PI + Math.sin(elapsed * 0.3) * 0.26; // Base + balanceo ~15°
+      meshRef.current.rotation.y = elapsed * 0.15; // Giro sobre sí mismo
+      meshRef.current.rotation.z = Math.sin(elapsed * 0.2) * 0.17; // ~10 grados balanceo lateral
+    } else {
+      meshRef.current.rotation.x = elapsed * 0.2;
+      meshRef.current.rotation.y = elapsed * 0.15;
+    }
   });
-
-  const isHeart = participant.polygonAddress.toLowerCase() === SPECIAL_HEART_ADDRESS.toLowerCase();
 
   const handleMeshLeave = () => {
     // Delay hiding tooltip to give user time to move cursor to it
