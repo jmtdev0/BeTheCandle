@@ -363,6 +363,7 @@ interface InteractiveSphere3DProps {
   selectedSatelliteId?: string; // ID of selected satellite for camera focus
   satelliteColor?: string;
   currentUserId?: string | null;
+  onSceneReady?: () => void;
 }
 
 export default function InteractiveSphere3D({ 
@@ -374,6 +375,7 @@ export default function InteractiveSphere3D({
   selectedSatelliteId,
   satelliteColor = DEFAULT_SATELLITE_COLOR,
   currentUserId = null,
+  onSceneReady,
 }: InteractiveSphere3DProps) {
   const meshRef = useRef<THREE.Mesh | null>(null);
   const starMaterialRef = useRef<StarMaterial>(new StarMaterial());
@@ -404,6 +406,18 @@ export default function InteractiveSphere3D({
   const lastSelectedIdRef = useRef<string | null>(null);
   const [userLabelVisibility, setUserLabelVisibility] = useState<Record<string, boolean>>({});
   const userLabelVisibilityRef = useRef<Record<string, boolean>>({});
+  const sceneReadyNotifiedRef = useRef(false);
+  const frameCountRef = useRef(0);
+  
+  // Notify when scene has rendered (after a few frames to ensure all assets are loaded)
+  useFrame(() => {
+    frameCountRef.current += 1;
+    if (!sceneReadyNotifiedRef.current && frameCountRef.current >= 3 && onSceneReady) {
+      sceneReadyNotifiedRef.current = true;
+      console.log('[InteractiveSphere3D] Notifying scene ready after', frameCountRef.current, 'frames');
+      onSceneReady();
+    }
+  });
 
   // NOTE: Bitcoin planet texture and mesh removed as requested. The nebula, stars and satellites
   // remain. If you want to re-enable the planet later, re-add the texture generation and the

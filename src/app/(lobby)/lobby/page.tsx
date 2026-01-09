@@ -48,12 +48,32 @@ export default function GoofyModePage() {
   // Socket integration
   const { planets, myPlanetId, isConnected, updateColor, joinAsPlanet } = useSocket();
 
-  // Notify PageTransitionContext when socket is connected (data is ready)
+  // Track both socket connection and 3D scene readiness
+  const [sceneReady, setSceneReady] = useState(false);
+  
+  // Notify PageTransitionContext when both socket is connected AND scene is ready
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && sceneReady) {
       setDataReady(true);
     }
-  }, [isConnected, setDataReady]);
+  }, [isConnected, sceneReady, setDataReady]);
+
+  // Fallback timeout: if scene doesn't report ready within 3 seconds, show anyway
+  useEffect(() => {
+    if (isConnected && !sceneReady) {
+      const fallbackTimer = setTimeout(() => {
+        console.log('[Lobby] Scene ready fallback triggered after 3s');
+        setSceneReady(true);
+      }, 3000);
+      return () => clearTimeout(fallbackTimer);
+    }
+  }, [isConnected, sceneReady]);
+  
+  // Callback from InteractiveSphere3D when 3D scene has rendered
+  const handleSceneReady = useCallback(() => {
+    console.log('[Lobby] Scene ready callback received');
+    setSceneReady(true);
+  }, []);
 
   // Auth & profile state for satellite creation button
   const { session, requireAuthForSatellite, openAuthPrompt, closeAuthPrompt } = useSupabaseAuth();
@@ -286,6 +306,7 @@ The central star symbolizes Bitcoin itself - the gravitational center bringing u
           selectedSatelliteId={selectedUser?.id}
           satelliteColor={satelliteColor}
           currentUserId={myPlanetId}
+          onSceneReady={handleSceneReady}
         />
         {/* Allow zoom but restrict min/max so user cannot zoom out indefinitely */}
         <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} minDistance={4} maxDistance={60} />

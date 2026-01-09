@@ -205,7 +205,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<VerifyAdd
         hasGas: false,
         balancePol,
         recaptchaValid: true,
-        error: "Your wallet needs some POL for gas fees to operate with USDC. Please add POL to your address first.",
+        error: "Your wallet needs some POL for gas fees to operate with USDC. Even 0.01 POL is enough! Please add POL to your address first.",
       }, { status: 400 });
     }
 

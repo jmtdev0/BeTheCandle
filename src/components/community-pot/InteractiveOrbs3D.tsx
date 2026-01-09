@@ -18,6 +18,25 @@ interface InteractiveOrbs3DProps {
   selectedParticipantId?: string | null;
   onSelectParticipant?: (address: string | null) => void;
   isMobile?: boolean;
+  onSceneReady?: () => void;
+}
+
+// Component that notifies when the scene has been rendered
+function SceneReadyNotifier({ onReady }: { onReady?: () => void }) {
+  const hasNotifiedRef = useRef(false);
+  const frameCountRef = useRef(0);
+  
+  useFrame(() => {
+    // Wait for 3 frames to ensure all geometries are loaded and rendered
+    frameCountRef.current += 1;
+    if (!hasNotifiedRef.current && frameCountRef.current >= 3 && onReady) {
+      hasNotifiedRef.current = true;
+      console.log('[SceneReadyNotifier] Notifying scene ready after', frameCountRef.current, 'frames');
+      onReady();
+    }
+  });
+  
+  return null;
 }
 
 // Generate a random light color based on participant ID
@@ -249,6 +268,527 @@ function FadingCircles() {
         }
       }
     });
+  });
+
+  return <group ref={groupRef} />;
+}
+
+// Bird flock component - elegant white pixel birds that appear during daytime
+const BIRD_FLOCK_INTERVAL = 15 * 60; // 15 minutes in seconds
+
+function BirdFlock({ isDay }: { isDay: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const birdsRef = useRef<THREE.Points | null>(null);
+  const flockStateRef = useRef<{
+    active: boolean;
+    startTime: number;
+    lastSpawnTime: number;
+    positions: Float32Array;
+    velocities: { x: number; y: number; z: number }[];
+    direction: number; // 1 = left to right, -1 = right to left
+  }>({
+    active: false,
+    startTime: 0,
+    lastSpawnTime: -BIRD_FLOCK_INTERVAL, // Allow first flock to appear soon
+    positions: new Float32Array(0),
+    velocities: [],
+    direction: 1,
+  });
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    // Create birds geometry
+    const birdCount = 12 + Math.floor(Math.random() * 8); // 12-20 birds per flock
+    const positions = new Float32Array(birdCount * 3);
+    
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.15,
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+    });
+
+    const points = new THREE.Points(geometry, material);
+    points.visible = false;
+    groupRef.current.add(points);
+    birdsRef.current = points;
+
+    flockStateRef.current.positions = positions;
+
+    return () => {
+      geometry.dispose();
+      material.dispose();
+      if (groupRef.current && points) {
+        groupRef.current.remove(points);
+      }
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number } }) => {
+    const time = state.clock.getElapsedTime();
+    const flock = flockStateRef.current;
+    const birds = birdsRef.current;
+    
+    if (!birds || !isDay) {
+      if (birds) {
+        birds.visible = false;
+        (birds.material as THREE.PointsMaterial).opacity = 0;
+      }
+      flock.active = false;
+      return;
+    }
+
+    // Check if it's time to spawn a new flock
+    if (!flock.active && time - flock.lastSpawnTime >= BIRD_FLOCK_INTERVAL) {
+      // Initialize a new flock
+      flock.active = true;
+      flock.startTime = time;
+      flock.lastSpawnTime = time;
+      flock.direction = Math.random() > 0.5 ? 1 : -1;
+      
+      const birdCount = flock.positions.length / 3;
+      flock.velocities = [];
+      
+      // Starting position - top of screen, either left or right edge
+      const startX = flock.direction === 1 ? -45 : 45;
+      const baseY = 12 + Math.random() * 4; // High in the sky
+      const baseZ = -15 - Math.random() * 10;
+      
+      // Create V-formation or scattered formation
+      const isVFormation = Math.random() > 0.3;
+      
+      for (let i = 0; i < birdCount; i++) {
+        let x, y, z;
+        
+        if (isVFormation) {
+          // V-formation
+          const side = i % 2 === 0 ? 1 : -1;
+          const depth = Math.floor(i / 2);
+          x = startX + depth * 0.8 * -flock.direction;
+          y = baseY - depth * 0.3 + side * depth * 0.4;
+          z = baseZ + depth * 0.5;
+        } else {
+          // Scattered flock
+          x = startX + (Math.random() - 0.5) * 6;
+          y = baseY + (Math.random() - 0.5) * 3;
+          z = baseZ + (Math.random() - 0.5) * 4;
+        }
+        
+        flock.positions[i * 3] = x;
+        flock.positions[i * 3 + 1] = y;
+        flock.positions[i * 3 + 2] = z;
+        
+        // Individual bird velocity variations
+        flock.velocities.push({
+          x: (0.08 + Math.random() * 0.02) * flock.direction,
+          y: (Math.random() - 0.5) * 0.005, // Slight vertical movement
+          z: (Math.random() - 0.5) * 0.002,
+        });
+      }
+      
+      birds.visible = true;
+      (birds.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    }
+
+    if (flock.active) {
+      const elapsed = time - flock.startTime;
+      const birdCount = flock.positions.length / 3;
+      
+      // Fade in during first 2 seconds
+      const fadeIn = Math.min(elapsed / 2, 1);
+      // Fade out during last 2 seconds (total journey ~25 seconds)
+      const fadeOut = elapsed > 23 ? Math.max(0, 1 - (elapsed - 23) / 2) : 1;
+      (birds.material as THREE.PointsMaterial).opacity = 0.8 * fadeIn * fadeOut;
+      
+      // Update bird positions
+      for (let i = 0; i < birdCount; i++) {
+        const vel = flock.velocities[i];
+        flock.positions[i * 3] += vel.x;
+        flock.positions[i * 3 + 1] += vel.y + Math.sin(time * 2 + i) * 0.003; // Gentle bobbing
+        flock.positions[i * 3 + 2] += vel.z;
+      }
+      
+      (birds.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      
+      // Check if flock has crossed the screen (finished)
+      const leaderX = flock.positions[0];
+      if ((flock.direction === 1 && leaderX > 50) || (flock.direction === -1 && leaderX < -50)) {
+        flock.active = false;
+        birds.visible = false;
+      }
+    }
+  });
+
+  return <group ref={groupRef} />;
+}
+
+// Soft clouds component - appears during daytime
+function SoftClouds({ isDay }: { isDay: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const cloudsRef = useRef<
+    Array<{
+      mesh: THREE.Mesh;
+      baseX: number;
+      speed: number;
+      y: number;
+      z: number;
+      scale: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    const cloudCount = 6;
+    const clouds: typeof cloudsRef.current = [];
+
+    for (let i = 0; i < cloudCount; i++) {
+      // Create cloud using multiple overlapping spheres for soft look
+      const cloudGroup = new THREE.Group();
+      
+      // Main cloud shape - multiple soft spheres
+      const sphereCount = 4 + Math.floor(Math.random() * 3);
+      for (let j = 0; j < sphereCount; j++) {
+        const geometry = new THREE.SphereGeometry(1.5 + Math.random() * 1, 16, 12);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0,
+        });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.set(
+          (j - sphereCount / 2) * 1.2 + (Math.random() - 0.5) * 0.8,
+          (Math.random() - 0.5) * 0.6,
+          (Math.random() - 0.5) * 0.5
+        );
+        sphere.scale.set(
+          1 + Math.random() * 0.3,
+          0.5 + Math.random() * 0.2,
+          0.6 + Math.random() * 0.2
+        );
+        cloudGroup.add(sphere);
+      }
+
+      const x = -60 + Math.random() * 120;
+      const y = 14 + Math.random() * 6;
+      const z = -30 - Math.random() * 20;
+      const scale = 0.8 + Math.random() * 0.6;
+      const speed = 0.003 + Math.random() * 0.004;
+
+      cloudGroup.position.set(x, y, z);
+      cloudGroup.scale.setScalar(scale);
+      groupRef.current.add(cloudGroup);
+
+      clouds.push({
+        mesh: cloudGroup as unknown as THREE.Mesh,
+        baseX: x,
+        speed,
+        y,
+        z,
+        scale,
+      });
+    }
+
+    cloudsRef.current = clouds;
+
+    return () => {
+      clouds.forEach((cloud) => {
+        cloud.mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.geometry.dispose();
+            (child.material as THREE.Material).dispose();
+          }
+        });
+        groupRef.current?.remove(cloud.mesh);
+      });
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number } }) => {
+    const time = state.clock.getElapsedTime();
+
+    cloudsRef.current.forEach((cloud) => {
+      // Move cloud slowly
+      cloud.mesh.position.x += cloud.speed;
+      
+      // Wrap around when off screen
+      if (cloud.mesh.position.x > 70) {
+        cloud.mesh.position.x = -70;
+        cloud.mesh.position.y = 14 + Math.random() * 6;
+      }
+
+      // Update opacity based on isDay
+      const targetOpacity = isDay ? 0.25 : 0;
+      cloud.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const material = child.material as THREE.MeshBasicMaterial;
+          material.opacity += (targetOpacity - material.opacity) * 0.02;
+        }
+      });
+    });
+  });
+
+  return <group ref={groupRef} />;
+}
+
+// Shooting stars component - appears during nighttime
+const SHOOTING_STAR_MIN_INTERVAL = 120; // 2 minutes
+const SHOOTING_STAR_MAX_INTERVAL = 180; // 3 minutes
+
+function ShootingStars({ isNight }: { isNight: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const starRef = useRef<{
+    mesh: THREE.Mesh | null;
+    trail: THREE.Line | null;
+    active: boolean;
+    startTime: number;
+    nextSpawnTime: number;
+    startPos: THREE.Vector3;
+    endPos: THREE.Vector3;
+    duration: number;
+  }>({
+    mesh: null,
+    trail: null,
+    active: false,
+    startTime: 0,
+    nextSpawnTime: 30, // First star after 30 seconds
+    startPos: new THREE.Vector3(),
+    endPos: new THREE.Vector3(),
+    duration: 1.5,
+  });
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    // Create shooting star mesh (small bright sphere)
+    const starGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+    const starMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+    });
+    const starMesh = new THREE.Mesh(starGeometry, starMaterial);
+    starMesh.visible = false;
+    groupRef.current.add(starMesh);
+    starRef.current.mesh = starMesh;
+
+    // Create trail
+    const trailGeometry = new THREE.BufferGeometry();
+    const trailPositions = new Float32Array(30 * 3); // 30 points for trail
+    trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailMaterial = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+    });
+    const trail = new THREE.Line(trailGeometry, trailMaterial);
+    trail.visible = false;
+    groupRef.current.add(trail);
+    starRef.current.trail = trail;
+
+    return () => {
+      starGeometry.dispose();
+      starMaterial.dispose();
+      trailGeometry.dispose();
+      trailMaterial.dispose();
+      if (groupRef.current) {
+        groupRef.current.remove(starMesh);
+        groupRef.current.remove(trail);
+      }
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number } }) => {
+    const time = state.clock.getElapsedTime();
+    const star = starRef.current;
+
+    if (!star.mesh || !star.trail || !isNight) {
+      if (star.mesh) {
+        star.mesh.visible = false;
+        (star.mesh.material as THREE.MeshBasicMaterial).opacity = 0;
+      }
+      if (star.trail) {
+        star.trail.visible = false;
+      }
+      star.active = false;
+      return;
+    }
+
+    // Check if it's time to spawn a new shooting star
+    if (!star.active && time >= star.nextSpawnTime) {
+      star.active = true;
+      star.startTime = time;
+      star.duration = 1 + Math.random() * 0.8;
+      
+      // Random start position in upper part of sky
+      const startX = -30 + Math.random() * 60;
+      const startY = 15 + Math.random() * 10;
+      const startZ = -20 - Math.random() * 15;
+      
+      // Direction: diagonal downward
+      const angle = (Math.PI / 6) + Math.random() * (Math.PI / 4); // 30-75 degrees
+      const direction = Math.random() > 0.5 ? 1 : -1;
+      const distance = 15 + Math.random() * 10;
+      
+      star.startPos.set(startX, startY, startZ);
+      star.endPos.set(
+        startX + Math.cos(angle) * distance * direction,
+        startY - Math.sin(angle) * distance,
+        startZ + (Math.random() - 0.5) * 5
+      );
+      
+      star.mesh.visible = true;
+      star.trail.visible = true;
+      
+      // Schedule next shooting star
+      star.nextSpawnTime = time + SHOOTING_STAR_MIN_INTERVAL + 
+        Math.random() * (SHOOTING_STAR_MAX_INTERVAL - SHOOTING_STAR_MIN_INTERVAL);
+    }
+
+    if (star.active) {
+      const elapsed = time - star.startTime;
+      const progress = Math.min(elapsed / star.duration, 1);
+      
+      // Easing for smooth movement
+      const eased = 1 - Math.pow(1 - progress, 2);
+      
+      // Update star position
+      star.mesh.position.lerpVectors(star.startPos, star.endPos, eased);
+      
+      // Fade in quickly, stay bright, fade out at end
+      let opacity = 1;
+      if (progress < 0.1) {
+        opacity = progress / 0.1;
+      } else if (progress > 0.7) {
+        opacity = (1 - progress) / 0.3;
+      }
+      (star.mesh.material as THREE.MeshBasicMaterial).opacity = opacity * 0.9;
+      (star.trail.material as THREE.LineBasicMaterial).opacity = opacity * 0.6;
+      
+      // Update trail
+      const trailPositions = star.trail.geometry.attributes.position as THREE.BufferAttribute;
+      const trailLength = 30;
+      for (let i = 0; i < trailLength; i++) {
+        const t = Math.max(0, eased - (i / trailLength) * 0.15);
+        const pos = new THREE.Vector3().lerpVectors(star.startPos, star.endPos, t);
+        trailPositions.setXYZ(i, pos.x, pos.y, pos.z);
+      }
+      trailPositions.needsUpdate = true;
+      
+      // End animation
+      if (progress >= 1) {
+        star.active = false;
+        star.mesh.visible = false;
+        star.trail.visible = false;
+      }
+    }
+  });
+
+  return <group ref={groupRef} />;
+}
+
+// Golden dust particles - appears especially during sunset
+function GoldenDust({ starOpacity }: { starOpacity: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const particlesRef = useRef<THREE.Points | null>(null);
+  const velocitiesRef = useRef<{ x: number; y: number; z: number }[]>([]);
+  
+  // Sunset is when starOpacity is between 0.1 and 0.5 (transitioning)
+  const isSunset = starOpacity > 0 && starOpacity < 0.5;
+  const targetOpacity = isSunset ? 0.6 : 0;
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    const particleCount = 80;
+    const positions = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    const velocities: { x: number; y: number; z: number }[] = [];
+
+    for (let i = 0; i < particleCount; i++) {
+      // Spread particles across the scene
+      positions[i * 3] = (Math.random() - 0.5) * 80;
+      positions[i * 3 + 1] = -5 + Math.random() * 25;
+      positions[i * 3 + 2] = -30 + Math.random() * 20;
+      
+      sizes[i] = 0.08 + Math.random() * 0.12;
+      
+      velocities.push({
+        x: (Math.random() - 0.5) * 0.01,
+        y: 0.005 + Math.random() * 0.01, // Slowly rising
+        z: (Math.random() - 0.5) * 0.005,
+      });
+    }
+
+    velocitiesRef.current = velocities;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const material = new THREE.PointsMaterial({
+      color: 0xffd700, // Gold color
+      size: 0.1,
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    groupRef.current.add(particles);
+    particlesRef.current = particles;
+
+    return () => {
+      geometry.dispose();
+      material.dispose();
+      if (groupRef.current && particles) {
+        groupRef.current.remove(particles);
+      }
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number } }) => {
+    const time = state.clock.getElapsedTime();
+    const particles = particlesRef.current;
+
+    if (!particles) return;
+
+    const material = particles.material as THREE.PointsMaterial;
+    const positions = particles.geometry.attributes.position as THREE.BufferAttribute;
+    const velocities = velocitiesRef.current;
+
+    // Smooth opacity transition
+    material.opacity += (targetOpacity - material.opacity) * 0.02;
+
+    // Update particle positions
+    for (let i = 0; i < velocities.length; i++) {
+      const vel = velocities[i];
+      
+      // Add gentle floating motion
+      positions.array[i * 3] += vel.x + Math.sin(time * 0.5 + i) * 0.002;
+      positions.array[i * 3 + 1] += vel.y + Math.sin(time * 0.3 + i * 0.5) * 0.003;
+      positions.array[i * 3 + 2] += vel.z;
+
+      // Wrap particles that go too high or too far
+      if (positions.array[i * 3 + 1] > 25) {
+        positions.array[i * 3 + 1] = -5;
+        positions.array[i * 3] = (Math.random() - 0.5) * 80;
+      }
+      if (Math.abs(positions.array[i * 3]) > 45) {
+        positions.array[i * 3] = -positions.array[i * 3] * 0.5;
+      }
+    }
+
+    positions.needsUpdate = true;
+    
+    // Shimmer effect - vary size slightly
+    material.size = 0.1 + Math.sin(time * 2) * 0.02;
   });
 
   return <group ref={groupRef} />;
@@ -572,16 +1112,19 @@ function OrbsScene({
   selectedParticipantId,
   onSelectParticipant,
   isMobile,
+  onSceneReady,
   lightColor,
   lightIntensity,
   ambientIntensity,
   isNight,
+  isDay,
   starOpacity
 }: InteractiveOrbs3DProps & {
   lightColor: string;
   lightIntensity: number;
   ambientIntensity: number;
   isNight: boolean;
+  isDay: boolean;
   starOpacity: number;
 }) {
   const controlsRef = useRef<any>(null);
@@ -653,6 +1196,9 @@ function OrbsScene({
 
   return (
     <>
+      {/* Notifies when the scene has rendered */}
+      <SceneReadyNotifier onReady={onSceneReady} />
+      
       <CentralCoin />
       <group ref={orbitGroupRef}>
         {participants.map((participant, index) => {
@@ -749,6 +1295,18 @@ function OrbsScene({
       {/* Circunferencias amarillas de fondo */}
       <FadingCircles />
 
+      {/* Bandadas de pájaros (solo durante el día) */}
+      <BirdFlock isDay={isDay} />
+
+      {/* Nubes suaves durante el día */}
+      <SoftClouds isDay={isDay} />
+
+      {/* Estrellas fugaces durante la noche */}
+      <ShootingStars isNight={isNight} />
+
+      {/* Polvo dorado flotante (especialmente durante el atardecer) */}
+      <GoldenDust starOpacity={starOpacity} />
+
       {/* Controles de órbita - rotación con zoom limitado */}
       <OrbitControls
         ref={controlsRef}
@@ -799,7 +1357,7 @@ function OrbsScene({
 }
 
 export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
-  const { isNight, lightColor, lightIntensity, ambientIntensity, starOpacity } = useDayNightCycle();
+  const { isNight, isDay, lightColor, lightIntensity, ambientIntensity, starOpacity } = useDayNightCycle();
 
   return (
     <div className="absolute inset-0" style={{ zIndex: 0 }}>
@@ -813,6 +1371,7 @@ export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
           lightIntensity={lightIntensity}
           ambientIntensity={ambientIntensity}
           isNight={isNight}
+          isDay={isDay ?? false}
           starOpacity={starOpacity}
         />
       </Canvas>

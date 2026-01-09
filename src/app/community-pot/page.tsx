@@ -45,12 +45,38 @@ export default function CommunityPotPage() {
     refreshIfStale,
   } = communityPot;
 
-  // Notify PageTransitionContext when data is loaded
+  // Track both data loading and 3D scene readiness
+  const [sceneReady, setSceneReady] = useState(false);
+  const participantCount = participants.length;
+  
+  // Notify PageTransitionContext when both data is loaded AND scene is ready
   useEffect(() => {
     if (!loading) {
-      setDataReady(true);
+      // If there are no participants, no 3D scene to wait for
+      if (participantCount === 0) {
+        setDataReady(true);
+      } else if (sceneReady) {
+        setDataReady(true);
+      }
     }
-  }, [loading, setDataReady]);
+  }, [loading, participantCount, sceneReady, setDataReady]);
+
+  // Fallback timeout: if scene doesn't report ready within 3 seconds, show anyway
+  useEffect(() => {
+    if (!loading && participantCount > 0 && !sceneReady) {
+      const fallbackTimer = setTimeout(() => {
+        console.log('[CommunityPot] Scene ready fallback triggered after 3s');
+        setSceneReady(true);
+      }, 3000);
+      return () => clearTimeout(fallbackTimer);
+    }
+  }, [loading, participantCount, sceneReady]);
+
+  // Callback from InteractiveOrbs3D when 3D scene has rendered
+  const handleSceneReady = useCallback(() => {
+    console.log('[CommunityPot] Scene ready callback received');
+    setSceneReady(true);
+  }, []);
 
   const [polygonAddress, setPolygonAddress] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -224,8 +250,6 @@ export default function CommunityPotPage() {
       setPolygonAddress(viewerAddress);
     }
   }, [viewerAddress]);
-
-  const participantCount = participants.length;
 
 
   useEffect(() => {
@@ -533,6 +557,7 @@ export default function CommunityPotPage() {
             setMobileUIVisible(false);
           }}
           isMobile={isMobile}
+          onSceneReady={handleSceneReady}
         />
       )}
 
@@ -856,7 +881,7 @@ export default function CommunityPotPage() {
                   <span className="text-cyan-400 mt-0.5" aria-hidden="true">⛽</span>
                   <div>
                     <p className="text-xs font-semibold text-cyan-200">POL for Gas</p>
-                    <p className="text-xs text-cyan-100/70">Your wallet must have some POL (native token) for gas fees to transfer or swap USDC later.</p>
+                    <p className="text-xs text-cyan-100/70">Your wallet must have some POL (native token) for gas fees to transfer or swap USDC later. Even 0.01 POL is enough!</p>
                   </div>
                 </div>
                 

@@ -189,10 +189,15 @@ export function useDayNightCycle() {
     // We consider it night if we are in Night phase or transitioning to/from it with significant darkness
     // Or simply if starOpacity > 0.1
     const isNight = starOpacity > 0.1;
+    
+    // Determine isDay boolean - strictly daytime (after dawn, before sunset)
+    // Day phase is from dayStart + TRANSITION_DURATION (07:15) to sunsetStart (18:00)
+    const isDay = time >= dayStart + TRANSITION_DURATION && time < sunsetStart;
 
     return {
       gradient,
       isNight,
+      isDay,
       lightColor,
       lightIntensity,
       ambientIntensity,

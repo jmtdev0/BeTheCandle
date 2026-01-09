@@ -178,6 +178,7 @@ interface CommunityPotPayoutDefaultConfig {
   schedule_weekday: number | null;
   schedule_time: string | null;
   schedule_timezone: string | null;
+  add_donation_address: boolean | null;
 }
 
 interface SentTransaction {
@@ -265,7 +266,7 @@ async function fetchDefaultPayoutConfig(client: SupabaseClient): Promise<Communi
   const { data, error } = await client
     .from("community_pot_payout_default_config")
     .select(
-      "amount_usdc, max_participants, is_testnet, schedule_weekday, schedule_time, schedule_timezone"
+      "amount_usdc, max_participants, is_testnet, schedule_weekday, schedule_time, schedule_timezone, add_donation_address"
     )
     .maybeSingle();
 
@@ -604,16 +605,20 @@ async function scheduleNextPayout(
     throw new Error(`Failed to create next payout conditions: ${conditionError.message}`);
   }
 
-  // Add the special first participant automatically
-  const { error: participantError } = await client.from("community_pot_payout_participants").insert({
-    payout_id: newPayoutId,
-    polygon_address: SPECIAL_FIRST_PARTICIPANT,
-    joined_at: new Date().toISOString(),
-  });
+  // Add the special first participant only if add_donation_address is true in config
+  const shouldAddDonationAddress = defaultConfig?.add_donation_address === true;
+  
+  if (shouldAddDonationAddress) {
+    const { error: participantError } = await client.from("community_pot_payout_participants").insert({
+      payout_id: newPayoutId,
+      polygon_address: SPECIAL_FIRST_PARTICIPANT,
+      joined_at: new Date().toISOString(),
+    });
 
-  if (participantError) {
-    console.error(`Warning: Failed to add special first participant: ${participantError.message}`);
-    // Don't throw here - we don't want to fail the entire payout creation if this fails
+    if (participantError) {
+      console.error(`Warning: Failed to add special first participant: ${participantError.message}`);
+      // Don't throw here - we don't want to fail the entire payout creation if this fails
+    }
   }
 
   return nextScheduledAt;
