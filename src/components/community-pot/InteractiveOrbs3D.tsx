@@ -66,9 +66,10 @@ function DistantPlanes() {
   const planesRef = useRef<
     Array<{
       mesh: THREE.Mesh;
-      startX: number;
-      endX: number;
-      speed: number;
+      angle: number;
+      angularSpeed: number;
+      radius: number;
+      y: number;
       respawnTime: number;
     }>
   >([]);
@@ -76,7 +77,7 @@ function DistantPlanes() {
   useEffect(() => {
     if (!groupRef.current) return;
 
-    const planeCount = 3;
+    const planeCount = 5; // More planes to cover 360°
     const planes: typeof planesRef.current = [];
 
     for (let i = 0; i < planeCount; i++) {
@@ -88,19 +89,22 @@ function DistantPlanes() {
       });
       const mesh = new THREE.Mesh(geometry, material);
 
-      const startX = -40;
-      const endX = 40;
+      // Distribute around 360° using angle
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 25 + Math.random() * 15; // Distance from center
+      const y = -8 + Math.random() * 4;
+      const angularSpeed = (0.0008 + Math.random() * 0.0012) * (Math.random() > 0.5 ? 1 : -1);
       const respawnTime = Math.random() * 10;
 
-      // Posición inicial aleatoria detrás de las bolas
-      const y = -8 + Math.random() * 4;
-      const z = -20 - Math.random() * 15;
-      const speed = 0.02 + Math.random() * 0.03;
-
-      mesh.position.set(startX + Math.random() * (endX - startX), y, z);
+      // Position using cylindrical coordinates
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      mesh.position.set(x, y, z);
+      // Rotate plane to be tangent to the circle
+      mesh.rotation.y = angle + Math.PI / 2;
       groupRef.current.add(mesh);
 
-      planes.push({ mesh, startX, endX, speed, respawnTime });
+      planes.push({ mesh, angle, angularSpeed, radius, y, respawnTime });
     }
 
     planesRef.current = planes;
@@ -124,16 +128,12 @@ function DistantPlanes() {
       }
 
       plane.mesh.visible = true;
-      plane.mesh.position.x += plane.speed;
-
-      if (plane.mesh.position.x > plane.endX) {
-        // Respawnear en nueva posición aleatoria
-        plane.mesh.position.x = plane.startX;
-        plane.mesh.position.y = -8 + Math.random() * 4;
-        plane.mesh.position.z = -20 - Math.random() * 15;
-        plane.speed = 0.02 + Math.random() * 0.03;
-        plane.respawnTime = time + Math.random() * 8;
-      }
+      // Move in a circular path around the scene
+      plane.angle += plane.angularSpeed;
+      const x = Math.cos(plane.angle) * plane.radius;
+      const z = Math.sin(plane.angle) * plane.radius;
+      plane.mesh.position.set(x, plane.y, z);
+      plane.mesh.rotation.y = plane.angle + Math.PI / 2;
     });
   });
 
@@ -158,7 +158,7 @@ function FadingCircles() {
   useEffect(() => {
     if (!groupRef.current) return;
 
-    const circleCount = 5;
+    const circleCount = 8; // More circles to cover 360°
     const circles: typeof circlesRef.current = [];
 
     for (let i = 0; i < circleCount; i++) {
@@ -175,10 +175,12 @@ function FadingCircles() {
       });
       const mesh = new THREE.Mesh(geometry, material);
 
-      // Posición aleatoria en el fondo
-      const x = -25 + Math.random() * 50;
+      // Posición aleatoria en 360° usando coordenadas esféricas
+      const angle = Math.random() * Math.PI * 2; // 0 to 360°
+      const distanceFromCenter = 30 + Math.random() * 15;
       const y = -12 + Math.random() * 8;
-      const z = -25 - Math.random() * 15;
+      const x = Math.cos(angle) * distanceFromCenter;
+      const z = Math.sin(angle) * distanceFromCenter;
 
       mesh.position.set(x, y, z);
       groupRef.current.add(mesh);
@@ -474,11 +476,14 @@ function SoftClouds({ isDay }: { isDay: boolean }) {
         cloudGroup.add(sphere);
       }
 
-      const x = -60 + Math.random() * 120;
+      // Distribute clouds in 360° using angle
+      const angle = Math.random() * Math.PI * 2;
+      const distanceFromCenter = 40 + Math.random() * 20;
+      const x = Math.cos(angle) * distanceFromCenter;
       const y = 14 + Math.random() * 6;
-      const z = -30 - Math.random() * 20;
+      const z = Math.sin(angle) * distanceFromCenter;
       const scale = 0.8 + Math.random() * 0.6;
-      const speed = 0.003 + Math.random() * 0.004;
+      const angularSpeed = (0.0001 + Math.random() * 0.00015) * (Math.random() > 0.5 ? 1 : -1);
 
       cloudGroup.position.set(x, y, z);
       cloudGroup.scale.setScalar(scale);
@@ -486,10 +491,10 @@ function SoftClouds({ isDay }: { isDay: boolean }) {
 
       clouds.push({
         mesh: cloudGroup as unknown as THREE.Mesh,
-        baseX: x,
-        speed,
+        baseX: angle, // Now stores angle instead of x
+        speed: angularSpeed, // Now angular speed
         y,
-        z,
+        z: distanceFromCenter, // Now stores radius
         scale,
       });
     }
@@ -513,14 +518,11 @@ function SoftClouds({ isDay }: { isDay: boolean }) {
     const time = state.clock.getElapsedTime();
 
     cloudsRef.current.forEach((cloud) => {
-      // Move cloud slowly
-      cloud.mesh.position.x += cloud.speed;
-      
-      // Wrap around when off screen
-      if (cloud.mesh.position.x > 70) {
-        cloud.mesh.position.x = -70;
-        cloud.mesh.position.y = 14 + Math.random() * 6;
-      }
+      // Move cloud in circular path (baseX is angle, z is radius)
+      cloud.baseX += cloud.speed; // Update angle
+      const radius = cloud.z;
+      cloud.mesh.position.x = Math.cos(cloud.baseX) * radius;
+      cloud.mesh.position.z = Math.sin(cloud.baseX) * radius;
 
       // Update opacity based on isDay
       const targetOpacity = isDay ? 0.25 : 0;
@@ -625,21 +627,24 @@ function ShootingStars({ isNight }: { isNight: boolean }) {
       star.startTime = time;
       star.duration = 1 + Math.random() * 0.8;
       
-      // Random start position in upper part of sky
-      const startX = -30 + Math.random() * 60;
+      // Random start position in upper part of sky - 360° distribution
+      const horizontalAngle = Math.random() * Math.PI * 2; // 0 to 360°
+      const skyRadius = 30 + Math.random() * 15;
+      const startX = Math.cos(horizontalAngle) * skyRadius;
       const startY = 15 + Math.random() * 10;
-      const startZ = -20 - Math.random() * 15;
+      const startZ = Math.sin(horizontalAngle) * skyRadius;
       
-      // Direction: diagonal downward
-      const angle = (Math.PI / 6) + Math.random() * (Math.PI / 4); // 30-75 degrees
-      const direction = Math.random() > 0.5 ? 1 : -1;
+      // Direction: diagonal downward toward center
+      const fallAngle = (Math.PI / 6) + Math.random() * (Math.PI / 4); // 30-75 degrees
       const distance = 15 + Math.random() * 10;
+      // Fall direction is toward the center with some randomness
+      const fallDirection = horizontalAngle + Math.PI + (Math.random() - 0.5) * 0.5;
       
       star.startPos.set(startX, startY, startZ);
       star.endPos.set(
-        startX + Math.cos(angle) * distance * direction,
-        startY - Math.sin(angle) * distance,
-        startZ + (Math.random() - 0.5) * 5
+        startX + Math.cos(fallDirection) * Math.cos(fallAngle) * distance,
+        startY - Math.sin(fallAngle) * distance,
+        startZ + Math.sin(fallDirection) * Math.cos(fallAngle) * distance
       );
       
       star.mesh.visible = true;
@@ -711,17 +716,21 @@ function GoldenDust({ starOpacity }: { starOpacity: number }) {
     const velocities: { x: number; y: number; z: number }[] = [];
 
     for (let i = 0; i < particleCount; i++) {
-      // Spread particles across the scene
-      positions[i * 3] = (Math.random() - 0.5) * 80;
+      // Spread particles across the scene in 360° using cylindrical coordinates
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 10 + Math.random() * 35;
+      positions[i * 3] = Math.cos(angle) * radius;
       positions[i * 3 + 1] = -5 + Math.random() * 25;
-      positions[i * 3 + 2] = -30 + Math.random() * 20;
+      positions[i * 3 + 2] = Math.sin(angle) * radius;
       
       sizes[i] = 0.08 + Math.random() * 0.12;
       
+      // Angular velocity for circular motion
+      const angularVel = (Math.random() - 0.5) * 0.002;
       velocities.push({
-        x: (Math.random() - 0.5) * 0.01,
+        x: angularVel, // Now represents angular velocity
         y: 0.005 + Math.random() * 0.01, // Slowly rising
-        z: (Math.random() - 0.5) * 0.005,
+        z: radius, // Store initial radius
       });
     }
 
@@ -766,22 +775,29 @@ function GoldenDust({ starOpacity }: { starOpacity: number }) {
     // Smooth opacity transition
     material.opacity += (targetOpacity - material.opacity) * 0.02;
 
-    // Update particle positions
+    // Update particle positions in circular motion
     for (let i = 0; i < velocities.length; i++) {
       const vel = velocities[i];
+      const radius = vel.z; // Stored radius
       
-      // Add gentle floating motion
-      positions.array[i * 3] += vel.x + Math.sin(time * 0.5 + i) * 0.002;
+      // Calculate current angle from position
+      const currentX = positions.array[i * 3];
+      const currentZ = positions.array[i * 3 + 2];
+      let currentAngle = Math.atan2(currentZ, currentX);
+      
+      // Add angular velocity plus gentle floating motion
+      currentAngle += vel.x + Math.sin(time * 0.5 + i) * 0.001;
+      positions.array[i * 3] = Math.cos(currentAngle) * radius;
+      positions.array[i * 3 + 2] = Math.sin(currentAngle) * radius;
       positions.array[i * 3 + 1] += vel.y + Math.sin(time * 0.3 + i * 0.5) * 0.003;
-      positions.array[i * 3 + 2] += vel.z;
 
-      // Wrap particles that go too high or too far
+      // Wrap particles that go too high
       if (positions.array[i * 3 + 1] > 25) {
         positions.array[i * 3 + 1] = -5;
-        positions.array[i * 3] = (Math.random() - 0.5) * 80;
-      }
-      if (Math.abs(positions.array[i * 3]) > 45) {
-        positions.array[i * 3] = -positions.array[i * 3] * 0.5;
+        // Reset to new random angle
+        const newAngle = Math.random() * Math.PI * 2;
+        positions.array[i * 3] = Math.cos(newAngle) * radius;
+        positions.array[i * 3 + 2] = Math.sin(newAngle) * radius;
       }
     }
 
@@ -1133,34 +1149,26 @@ function OrbsScene({
   const IDLE_ROTATION_SPEED = 0.02; // radians per second (very slow)
   const orbitGroupRef = useRef<THREE.Group>(null);
 
-  // Center camera on a participant when on small screens
+  // Center camera on the USDC sphere (CentralCoin at 0,0,0) when on small screens
   useEffect(() => {
     if (!isMobile) return;
-    if (!participants || participants.length === 0) return;
-    // pick the first participant to center on
-    const participant = participants[0];
-    const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const index = 0;
-    const angle = (index / participants.length) * Math.PI * 2;
-    const radius = 8 + (hash % 5);
-    const x = Math.cos(angle) * radius;
-    const y = -3 + ((hash % 7) - 3) * 1.5;
 
     try {
-      // move camera slightly towards that orb and set controls target
+      // Set camera to look at the USDC sphere at origin
       const cam = (controlsRef.current as any)?._camera || null;
       if (controlsRef.current) {
-        controlsRef.current.target.set(x, y, 0);
+        controlsRef.current.target.set(0, 0, 0); // USDC sphere is at origin
         controlsRef.current.update();
       }
       if (cam) {
-        cam.position.set(x * 0.2, y * 0.2, 22);
+        // Position camera to frame the USDC sphere nicely
+        cam.position.set(0, 2, 18);
         cam.updateProjectionMatrix?.();
       }
     } catch (e) {
       // ignore if controls not ready
     }
-  }, [isMobile, participants]);
+  }, [isMobile]);
 
   // Idle detection: rotate camera slowly when user hasn't interacted for IDLE_TIMEOUT_MS
   useEffect(() => {
