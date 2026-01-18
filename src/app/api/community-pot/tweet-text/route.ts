@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
     const tweetText = `🎉 Community Pot distribution completed!
 
 💰 ${payout.totalDistributed} USDC distributed
-👥 ${payout.participantCount} unique participants (each gets $${(payout.totalDistributed / payout.participantCount).toFixed(2)})
+👥 ${payout.participantCount} unique participants (each gets ${(payout.totalDistributed / payout.participantCount).toFixed(2)} USDC)
 📅 ${dateStr} at ${timeStr} CET
 
 Thank you all for supporting BeTheCandle ✨.

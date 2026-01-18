@@ -45,7 +45,14 @@ export async function GET(request: NextRequest) {
         // Calculate total distributed and participant count from transactions
         const confirmedTransactions = transactions?.filter(tx => tx.status === 'confirmed') || [];
         const totalDistributed = confirmedTransactions.reduce((sum, tx) => sum + parseFloat(tx.amount_units || '0'), 0);
-        const participantCount = confirmedTransactions.length;
+        
+        // Count unique participants by address
+        const uniqueParticipants = new Set(
+          confirmedTransactions
+            .map(tx => tx.polygon_address?.toLowerCase())
+            .filter(addr => !!addr)
+        );
+        const participantCount = uniqueParticipants.size;
 
         // Access the nested conditions object
         const conditions = Array.isArray(payout.community_pot_payout_conditions) 

@@ -374,14 +374,71 @@ async function sendUsdcTransfers(
   const publicClient = createPublicClient({ chain: options.chain, transport: http(options.rpcUrl) });
 
   const sent: SentTransaction[] = [];
-  for (const plan of plans) {
-    const txHash = await walletClient.writeContract({
-      abi: erc20Abi,
-      address: options.contractAddress,
-      functionName: "transfer",
-      args: [plan.participant.polygon_address as Address, plan.amountUnits],
-    });
-    const receipt = (await publicClient.waitForTransactionReceipt({ hash: txHash })) as TransactionReceipt;
+  const DELAY_BETWEEN_TX_MS = 3000; // 3 seconds between transactions
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 12000; // 12 seconds for rate limit retry
+
+  for (let i = 0; i < plans.length; i++) {
+    const plan = plans[i];
+    let txHash: Hex | null = null;
+    let lastError: Error | null = null;
+
+    // Retry logic for rate limiting
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        txHash = await walletClient.writeContract({
+          abi: erc20Abi,
+          address: options.contractAddress,
+          functionName: "transfer",
+          args: [plan.participant.polygon_address as Address, plan.amountUnits],
+        });
+        break; // Success, exit retry loop
+      } catch (error) {
+        lastError = error as Error;
+        const errorMessage = (error as Error).message || "";
+        
+        // Check if it's a rate limit error
+        if (errorMessage.includes("rate limit") || errorMessage.includes("Too many requests")) {
+          console.log(`Rate limited on attempt ${attempt + 1}/${MAX_RETRIES}, waiting ${RETRY_DELAY_MS}ms...`);
+          if (attempt < MAX_RETRIES - 1) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+        }
+        throw error; // Re-throw if not rate limit or max retries reached
+      }
+    }
+
+    if (!txHash) {
+      throw lastError || new Error("Failed to send transaction after retries");
+    }
+
+    // Wait for transaction receipt with retry logic
+    let receipt: TransactionReceipt | null = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        receipt = (await publicClient.waitForTransactionReceipt({ hash: txHash })) as TransactionReceipt;
+        break; // Success, exit retry loop
+      } catch (error) {
+        lastError = error as Error;
+        const errorMessage = (error as Error).message || "";
+        
+        // Check if it's a rate limit error
+        if (errorMessage.includes("rate limit") || errorMessage.includes("Too many requests")) {
+          console.log(`Rate limited waiting for receipt on attempt ${attempt + 1}/${MAX_RETRIES}, waiting ${RETRY_DELAY_MS}ms...`);
+          if (attempt < MAX_RETRIES - 1) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+        }
+        throw error; // Re-throw if not rate limit or max retries reached
+      }
+    }
+
+    if (!receipt) {
+      throw lastError || new Error("Failed to get transaction receipt after retries");
+    }
+
     const gasUsed = receipt.gasUsed ?? null;
     const effectiveGasPrice = (receipt as { effectiveGasPrice?: bigint }).effectiveGasPrice ?? null;
     const gasPaidWei = gasUsed !== null && effectiveGasPrice !== null ? gasUsed * effectiveGasPrice : null;
@@ -391,6 +448,11 @@ async function sendUsdcTransfers(
       blockNumber: receipt.blockNumber ?? null,
       gasPaidWei,
     });
+
+    // Add delay between transactions to avoid rate limiting (except for the last one)
+    if (i < plans.length - 1) {
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_TX_MS));
+    }
   }
   return sent;
 }

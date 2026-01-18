@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ChevronUp, ExternalLink, Calendar, Users, DollarSign, Clock } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, Calendar, Users, DollarSign, Clock, Sparkles } from "lucide-react";
 
 interface Transaction {
   id: string;
@@ -226,6 +226,13 @@ export default function CommunityPotHistoryPage() {
                         <span className="text-white font-medium">{payout.transactions.length}</span>
                       </div>
                     </div>
+
+                    {payout.id === '100fa388-e4bf-4f12-a060-aed46a584a4f' && (
+                      <div className="mt-3 flex items-center gap-2 text-xs text-yellow-400/90 bg-yellow-400/10 px-3 py-1.5 rounded-full w-fit border border-yellow-400/20 animate-pulse">
+                        <Sparkles size={14} />
+                        <span>Happy Accident: Extra transactions executed! 🎁</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="ml-4">
