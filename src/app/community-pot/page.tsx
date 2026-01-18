@@ -61,13 +61,13 @@ export default function CommunityPotPage() {
     }
   }, [loading, participantCount, sceneReady, setDataReady]);
 
-  // Fallback timeout: if scene doesn't report ready within 3 seconds, show anyway
+  // Fallback timeout: if scene doesn't report ready within 1.5 seconds, show anyway
   useEffect(() => {
     if (!loading && participantCount > 0 && !sceneReady) {
       const fallbackTimer = setTimeout(() => {
-        console.log('[CommunityPot] Scene ready fallback triggered after 3s');
+        console.log('[CommunityPot] Scene ready fallback triggered after 1.5s');
         setSceneReady(true);
-      }, 3000);
+      }, 1500);
       return () => clearTimeout(fallbackTimer);
     }
   }, [loading, participantCount, sceneReady]);
@@ -717,6 +717,18 @@ export default function CommunityPotPage() {
                   <InfoRow label="Total distributed" value={`${Number(lastPayout.totalDistributed).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} />
                   <InfoRow label="Per participant" value={`${Number(lastPayout.perParticipantUsdc).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} highlight />
                   <InfoRow label="Network" value={lastPayout.isTestnet ? "Polygon Testnet" : "Polygon Mainnet"} />
+                  
+                  {/* Link to full history */}
+                  <div className="pt-3 border-t border-slate-700">
+                    <a
+                      href="/community-pot/history"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block font-semibold text-white text-right hover:text-orange-300 transition-colors underline underline-offset-2"
+                    >
+                      View full history →
+                    </a>
+                  </div>
                 </div>
               ) : (
                 <div className="text-center py-8 text-white/60 text-sm">

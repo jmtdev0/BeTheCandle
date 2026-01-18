@@ -58,13 +58,13 @@ export default function GoofyModePage() {
     }
   }, [isConnected, sceneReady, setDataReady]);
 
-  // Fallback timeout: if scene doesn't report ready within 3 seconds, show anyway
+  // Fallback timeout: if scene doesn't report ready within 1.5 seconds, show anyway
   useEffect(() => {
     if (isConnected && !sceneReady) {
       const fallbackTimer = setTimeout(() => {
-        console.log('[Lobby] Scene ready fallback triggered after 3s');
+        console.log('[Lobby] Scene ready fallback triggered after 1.5s');
         setSceneReady(true);
-      }, 3000);
+      }, 1500);
       return () => clearTimeout(fallbackTimer);
     }
   }, [isConnected, sceneReady]);

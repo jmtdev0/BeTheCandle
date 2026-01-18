@@ -28,6 +28,9 @@ const DISTRIBUTION_TARGET_HOUR = 16;
 const DISTRIBUTION_TARGET_MINUTE = 30;
 const SPECIAL_FIRST_PARTICIPANT = "0xe7Fa55DD51dD2a69a61D8EdbE1f488c3dbA6fDA5";
 
+// Twitter API Configuration (v1.1 - free with Elevated access)
+const TWITTER_API_URL = "https://api.twitter.com/1.1/statuses/update.json";
+
 const WEEKDAY_LOOKUP: Record<string, number> = {
   Sun: 0,
   Mon: 1,
@@ -448,6 +451,103 @@ async function logPayoutCompletion(
   });
   if (error) {
     console.error("community_pot_log_payout_completion failed", error.message);
+  }
+}
+
+/**
+ * Posts a tweet about the completed distribution
+ */
+async function postDistributionTweet(
+  totalAmountUsdc: string,
+  participantCount: number,
+  historyUrl: string
+): Promise<boolean> {
+  const apiKey = Deno.env.get("TWITTER_API_KEY");
+  const apiSecret = Deno.env.get("TWITTER_API_SECRET");
+  const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN");
+  const accessTokenSecret = Deno.env.get("TWITTER_ACCESS_TOKEN_SECRET");
+
+  // If Twitter credentials are not configured, skip tweeting
+  if (!apiKey || !apiSecret || !accessToken || !accessTokenSecret) {
+    console.log("Twitter credentials not configured, skipping tweet");
+    return false;
+  }
+
+  try {
+    const tweetText = `🌟 Community Pot Distribution Complete!\n\n` +
+      `💰 Amount: $${totalAmountUsdc} USDC\n` +
+      `👥 Participants: ${participantCount}\n\n` +
+      `View full history: ${historyUrl}\n\n` +
+      `#CryptoDonations #CommunityPot #Polygon`;
+
+    // Generate OAuth 1.0a signature (v1.1 requires status param in signature)
+    const oauth = {
+      oauth_consumer_key: apiKey,
+      oauth_token: accessToken,
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+      oauth_nonce: Math.random().toString(36).substring(2),
+      oauth_version: "1.0",
+    };
+
+    // For v1.1, include status parameter in signature
+    const params = {
+      ...oauth,
+      status: tweetText,
+    };
+
+    const paramString = Object.entries(params)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join("&");
+
+    const baseString = `POST&${encodeURIComponent(TWITTER_API_URL)}&${encodeURIComponent(paramString)}`;
+    const signingKey = `${encodeURIComponent(apiSecret)}&${encodeURIComponent(accessTokenSecret)}`;
+
+    // Use Deno's Web Crypto API for HMAC-SHA1
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(signingKey);
+    const messageData = encoder.encode(baseString);
+
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyData,
+      { name: "HMAC", hash: "SHA-1" },
+      false,
+      ["sign"]
+    );
+
+    const signature = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
+    const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+    const authHeader = `OAuth ${Object.entries({ ...oauth, oauth_signature: signatureBase64 })
+      .map(([key, value]) => `${encodeURIComponent(key)}="${encodeURIComponent(value)}"`)
+      .join(", ")}`;
+
+    // v1.1 uses URL-encoded body
+    const body = `status=${encodeURIComponent(tweetText)}`;
+
+    const response = await fetch(TWITTER_API_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": authHeader,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Failed to post tweet: ${response.status} ${errorText}`);
+      return false;
+    }
+
+    const result = await response.json();
+    console.log("Tweet posted successfully:", result);
+    return true;
+  } catch (error) {
+    console.error("Error posting tweet:", error);
+    return false;
   }
 }
 
@@ -895,6 +995,25 @@ serve(async (req) => {
         transactionCount: sentTransactions.length,
         nextScheduledAt: nextScheduledAtIso,
       });
+
+      // Post tweet about the distribution (only on mainnet)
+      if (payout.chain_id === 137) {
+        const baseUrl = Deno.env.get("PUBLIC_SITE_URL") || "https://bethecandle.vercel.app";
+        const historyUrl = `${baseUrl}/community-pot/history`;
+        
+        await logEvent(supabase, "Publicando tweet sobre el reparto...", payout.id);
+        const tweetSuccess = await postDistributionTweet(
+          totalAmountUsdc,
+          participantCount,
+          historyUrl
+        );
+        
+        if (tweetSuccess) {
+          await logEvent(supabase, "Tweet publicado con éxito", payout.id);
+        } else {
+          await logEvent(supabase, "No se pudo publicar el tweet (credenciales no configuradas o error)", payout.id);
+        }
+      }
     }
 
     return jsonResponse({

@@ -1032,6 +1032,15 @@ function CentralCoin() {
 
   return (
     <group position={[0, 0, 0]} rotation={[0.2, 0, 0.1]}>
+      {/* Blue light emanating from the USDC sphere */}
+      <pointLight 
+        position={[0, 0, 0]} 
+        color="#5CA0F2" 
+        intensity={2.5} 
+        distance={40} 
+        decay={2} 
+      />
+      
       <group ref={spinRef}>
         {/* Sphere Body */}
         <mesh>
@@ -1039,7 +1048,9 @@ function CentralCoin() {
           <meshStandardMaterial 
             color={blueColor} 
             metalness={0.1} 
-            roughness={0.5} 
+            roughness={0.5}
+            emissive={blueColor}
+            emissiveIntensity={0.3}
           />
         </mesh>
         

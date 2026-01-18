@@ -51,20 +51,21 @@ export default function Sidebar({
   const pathname = usePathname();
   const { navigate } = usePageTransition();
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      // Show sidebar when mouse is near left edge (within 50px)
-      if (e.clientX <= 50) {
-        setIsOpen(true);
-      } else if (e.clientX > 300) {
-        // Hide when mouse moves away (beyond sidebar width + buffer)
-        setIsOpen(false);
-      }
-    };
+  // Sidebar disabled - no longer opens on hover or mobile
+  // useEffect(() => {
+  //   const handleMouseMove = (e: MouseEvent) => {
+  //     // Show sidebar when mouse is near left edge (within 50px)
+  //     if (e.clientX <= 50) {
+  //       setIsOpen(true);
+  //     } else if (e.clientX > 300) {
+  //       // Hide when mouse moves away (beyond sidebar width + buffer)
+  //       setIsOpen(false);
+  //     }
+  //   };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+  //   window.addEventListener("mousemove", handleMouseMove);
+  //   return () => window.removeEventListener("mousemove", handleMouseMove);
+  // }, []);
 
   // Notify others when sidebar opens/closes so UI can adapt (hide info panels, etc.)
   useEffect(() => {
