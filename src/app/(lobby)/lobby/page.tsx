@@ -45,19 +45,7 @@ import { redirect } from "next/navigation";
 export default function LobbyPage() {
   redirect("/community-pot");
 }
-
 export default function GoofyModePage() {
+
   const controlsRef = useRef<any>(null);
-  const [selectedUser, setSelectedUser] = useState<SatelliteUser | null>(null);
-  const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const { color: satelliteColor, setColor: setSatelliteColor } = useSatelliteColorPreference();
-  const { setDataReady } = usePageTransition();
-  
-  // Socket integration
-  const { planets, myPlanetId, isConnected, updateColor, joinAsPlanet } = useSocket();
 
-  // Track both socket connection and 3D scene readiness
-  const [sceneReady, setSceneReady] = useState(false);
-
-  
