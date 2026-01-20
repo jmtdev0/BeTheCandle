@@ -14,14 +14,11 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-  { label: "Lobby", href: "/lobby", icon: "🌍" },
   { label: "Community Pot", href: "/community-pot", icon: "🌌" },
   // { label: "Even Goofier Mode", href: "/even-goofier-mode", icon: "🎪" },
 ];
 
 interface SidebarProps {
-  lobbyUserCount?: number;
-  isLobbyConnected?: boolean;
   onProfileClick?: () => void;
   onActivateClick?: () => void;
   onSignOutClick?: () => void;
@@ -33,8 +30,6 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  lobbyUserCount,
-  isLobbyConnected,
   onProfileClick,
   onActivateClick,
   onSignOutClick,
@@ -139,8 +134,6 @@ export default function Sidebar({
             <nav className="flex-1 space-y-4">
               {menuItems.map((item, index) => {
                 const isActive = pathname === item.href;
-                const isLobby = item.href === "/lobby";
-                
                 return (
                   <motion.div
                     key={item.href}
@@ -150,7 +143,6 @@ export default function Sidebar({
                   >
                       <button
                         onClick={() => navigate(item.href)}
-                        aria-describedby={isLobby ? "lobby-tooltip" : undefined}
                         className={`relative group w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                         isActive
                           ? "bg-gradient-to-r from-orange-500/20 to-yellow-500/20 border border-orange-500/50 text-orange-300"
@@ -159,29 +151,15 @@ export default function Sidebar({
                     >
                       <span className="text-xl">{item.icon}</span>
                       <div className="flex-1 text-left">
-                          <span className="text-sm font-medium">{item.label}{isLobby && <span className="ml-2 text-xs">🚧</span>}</span>
-                        {isLobby && lobbyUserCount !== undefined && (
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <div className={`w-1.5 h-1.5 rounded-full ${isLobbyConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
-                            <span className="text-xs text-slate-400">
-                              {lobbyUserCount} online
-                            </span>
-                          </div>
-                        )}
+                        <span className="text-sm font-medium">{item.label}</span>
                       </div>
-                        {/* Tooltip for Lobby (mobile & desktop) */}
-                        {isLobby && (
-                          <div id="lobby-tooltip" role="status" aria-hidden="true" className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-black/80 text-xs text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                            Under construction
-                          </div>
-                        )}
                     </button>
                   </motion.div>
                 );
               })}
             </nav>
 
-            {/* Profile button only - satellite creation moved to Lobby page */}
+            {/* Profile button */}
             {hasSatellite && (
               <div className="mt-auto pt-4 border-t border-slate-700">
                 <div className="space-y-2">

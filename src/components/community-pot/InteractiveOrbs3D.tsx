@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html, Environment, Lightformer, Text, Stars, Text3D, Center } from "@react-three/drei";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { useDayNightCycle } from "@/hooks/useDayNightCycle";
 
@@ -697,6 +698,91 @@ function ShootingStars({ isNight }: { isNight: boolean }) {
   return <group ref={groupRef} />;
 }
 
+// Star dust particles - night only, wide orbit around the USDC sphere
+function StarDust({ isNight }: { isNight: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const particlesRef = useRef<THREE.Points | null>(null);
+  const velocitiesRef = useRef<{ angular: number; radius: number }[]>([]);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    const particleCount = 180;
+    const positions = new Float32Array(particleCount * 3);
+    const velocities: { angular: number; radius: number }[] = [];
+
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 18 + Math.random() * 22;
+      const y = -6 + Math.random() * 20;
+      positions[i * 3] = Math.cos(angle) * radius;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = Math.sin(angle) * radius;
+
+      velocities.push({
+        angular: (Math.random() - 0.5) * 0.002,
+        radius,
+      });
+    }
+
+    velocitiesRef.current = velocities;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.08,
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    groupRef.current.add(particles);
+    particlesRef.current = particles;
+
+    return () => {
+      geometry.dispose();
+      material.dispose();
+      if (groupRef.current && particles) {
+        groupRef.current.remove(particles);
+      }
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number } }) => {
+    const particles = particlesRef.current;
+    if (!particles) return;
+
+    const material = particles.material as THREE.PointsMaterial;
+    const positions = particles.geometry.attributes.position as THREE.BufferAttribute;
+    const velocities = velocitiesRef.current;
+    const time = state.clock.getElapsedTime();
+
+    const targetOpacity = isNight ? 0.55 : 0;
+    material.opacity += (targetOpacity - material.opacity) * 0.03;
+
+    for (let i = 0; i < velocities.length; i++) {
+      const { angular, radius } = velocities[i];
+      const baseIndex = i * 3;
+      const currentX = positions.array[baseIndex];
+      const currentZ = positions.array[baseIndex + 2];
+      let angle = Math.atan2(currentZ, currentX);
+      angle += angular + Math.sin(time * 0.4 + i) * 0.0006;
+      positions.array[baseIndex] = Math.cos(angle) * radius;
+      positions.array[baseIndex + 2] = Math.sin(angle) * radius;
+      positions.array[baseIndex + 1] += Math.sin(time * 0.6 + i) * 0.002;
+    }
+
+    positions.needsUpdate = true;
+  });
+
+  return <group ref={groupRef} />;
+}
+
 // Golden dust particles - appears especially during sunset
 function GoldenDust({ starOpacity }: { starOpacity: number }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -829,6 +915,7 @@ function Orb({
   duration,
   delay,
   isHovered,
+  isNight,
   onHover,
   onLeave,
   onSelect,
@@ -839,6 +926,7 @@ function Orb({
   duration: number;
   delay: number;
   isHovered: boolean;
+  isNight: boolean;
   onHover: () => void;
   onLeave: () => void;
   onSelect?: () => void;
@@ -971,8 +1059,8 @@ function Orb({
           color={isHeart ? "#ffffff" : color}
           transparent
           opacity={isHovered ? 1 : 0.85}
-          emissive={isHeart ? "#ffffff" : color}
-          emissiveIntensity={isHeart ? (isHovered ? 0.5 : 0.2) : (isHovered ? 0.8 : 0.4)}
+          emissive={color}
+          emissiveIntensity={(isHovered ? 0.8 : 0.35) * (isNight ? 1 : 0.8)}
           metalness={isHeart ? 0.5 : 0.85}
           roughness={isHeart ? 0.2 : 0.18}
           envMapIntensity={1.2}
@@ -1009,7 +1097,7 @@ function Orb({
   );
 }
 
-function CentralCoin() {
+function CentralCoin({ isNight }: { isNight: boolean }) {
   const spinRef = useRef<THREE.Group>(null);
 
   useFrame((_state: unknown, delta: number) => {
@@ -1021,14 +1109,26 @@ function CentralCoin() {
 
   const arcLength = Math.PI - 0.6;
   const blueColor = "#5CA0F2"; // Even lighter blue
-  const ringColor = "#d4d4d4"; // Slightly darker than white
+  const neonWhite = "#ffffff";
+  const neonBase = "#f5f8ff";
+  const neonScale = isNight ? 1 : 0.85;
 
-  // Shared material for the logo parts to ensure they look like a single piece
+  // Shared neon materials for the logo parts
   const logoMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: "white",
-    roughness: 0.4,
-    metalness: 0.1,
-  }), []);
+    color: neonBase,
+    roughness: 0.18,
+    metalness: 0.2,
+    emissive: neonWhite,
+    emissiveIntensity: 1.8 * neonScale,
+  }), [neonScale]);
+
+  const ringMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    color: neonBase,
+    roughness: 0.18,
+    metalness: 0.2,
+    emissive: neonWhite,
+    emissiveIntensity: 1.8 * neonScale,
+  }), [neonScale]);
 
   return (
     <group position={[0, 0, 0]} rotation={[0.2, 0, 0.1]}>
@@ -1036,7 +1136,7 @@ function CentralCoin() {
       <pointLight 
         position={[0, 0, 0]} 
         color="#5CA0F2" 
-        intensity={2.5} 
+        intensity={1 * neonScale} 
         distance={40} 
         decay={2} 
       />
@@ -1049,22 +1149,20 @@ function CentralCoin() {
             color={blueColor} 
             metalness={0.1} 
             roughness={0.5}
-            emissive={blueColor}
-            emissiveIntensity={0.3}
+            emissive="#2671c4"
+            emissiveIntensity={1.2 * neonScale}
           />
         </mesh>
         
         {/* Front Face Detail */}
         <group>
           {/* Broken Ring - Right Segment */}
-          <mesh position={[0, 0, 3.5]} rotation={[0, 0, -arcLength / 2]}>
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, -arcLength / 2]} material={ringMaterial}>
             <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
-            <meshStandardMaterial color={ringColor} />
           </mesh>
           {/* Broken Ring - Left Segment */}
-          <mesh position={[0, 0, 3.5]} rotation={[0, 0, Math.PI - arcLength / 2]}>
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, Math.PI - arcLength / 2]} material={ringMaterial}>
             <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
-            <meshStandardMaterial color={ringColor} />
           </mesh>
           
           {/* The 'S' */}
@@ -1094,14 +1192,12 @@ function CentralCoin() {
         {/* Back Face Detail */}
         <group rotation={[0, Math.PI, 0]}>
            {/* Broken Ring - Right Segment */}
-          <mesh position={[0, 0, 3.5]} rotation={[0, 0, -arcLength / 2]}>
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, -arcLength / 2]} material={ringMaterial}>
             <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
-            <meshStandardMaterial color={ringColor} />
           </mesh>
           {/* Broken Ring - Left Segment */}
-          <mesh position={[0, 0, 3.5]} rotation={[0, 0, Math.PI - arcLength / 2]}>
+          <mesh position={[0, 0, 3.5]} rotation={[0, 0, Math.PI - arcLength / 2]} material={ringMaterial}>
             <torusGeometry args={[2.2, 0.15, 16, 64, arcLength]} />
-            <meshStandardMaterial color={ringColor} />
           </mesh>
           
           {/* The 'S' */}
@@ -1213,12 +1309,15 @@ function OrbsScene({
     }
   });
 
+  const neonAmbient = ambientIntensity * (isNight ? 0.4 : 0.6);
+  const neonDirectional = lightIntensity * (isNight ? 0.6 : 0.85);
+
   return (
     <>
       {/* Notifies when the scene has rendered */}
       <SceneReadyNotifier onReady={onSceneReady} />
       
-      <CentralCoin />
+      <CentralCoin isNight={isNight} />
       <group ref={orbitGroupRef}>
         {participants.map((participant, index) => {
           const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -1244,6 +1343,7 @@ function OrbsScene({
               duration={duration}
               delay={delay}
               isHovered={isHovered}
+              isNight={isNight}
               onHover={() => onHoverParticipant(participant.polygonAddress)}
               onLeave={() => onHoverParticipant(null)}
               onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}
@@ -1253,9 +1353,13 @@ function OrbsScene({
       </group>
 
       {/* Iluminación */}
-      <ambientLight intensity={ambientIntensity} />
-      <directionalLight position={[10, 10, 5]} intensity={lightIntensity} color={lightColor} />
+      <ambientLight intensity={neonAmbient} />
+      <directionalLight position={[10, 10, 5]} intensity={neonDirectional} color={lightColor} />
       <pointLight position={[0, 0, 0]} intensity={0.5} color="#ffffff" />
+
+      <EffectComposer>
+        <Bloom intensity={1.5} luminanceThreshold={0.1} mipmapBlur />
+      </EffectComposer>
 
       {isNight && (
         <Stars 
@@ -1309,10 +1413,10 @@ function OrbsScene({
       </Environment>
 
       {/* Aviones lejanos */}
-      <DistantPlanes />
+      {!isNight && <DistantPlanes />}
 
       {/* Circunferencias amarillas de fondo */}
-      <FadingCircles />
+      {!isNight && <FadingCircles />}
 
       {/* Bandadas de pájaros (solo durante el día) */}
       <BirdFlock isDay={isDay} />
@@ -1322,6 +1426,9 @@ function OrbsScene({
 
       {/* Estrellas fugaces durante la noche */}
       <ShootingStars isNight={isNight} />
+
+      {/* Polvo estelar durante la noche */}
+      <StarDust isNight={isNight} />
 
       {/* Polvo dorado flotante (especialmente durante el atardecer) */}
       <GoldenDust starOpacity={starOpacity} />
@@ -1377,6 +1484,7 @@ function OrbsScene({
 
 export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
   const { isNight, isDay, lightColor, lightIntensity, ambientIntensity, starOpacity } = useDayNightCycle();
+  const backgroundColor = starOpacity >= 0.7 ? "#010102" : null;
 
   return (
     <div className="absolute inset-0" style={{ zIndex: 0 }}>
@@ -1384,6 +1492,7 @@ export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
         camera={{ position: [0, 0, 35], fov: 50 }}
         gl={{ alpha: true, antialias: true }}
       >
+        {backgroundColor && <color attach="background" args={[backgroundColor]} />}
         <OrbsScene 
           {...props} 
           lightColor={lightColor}

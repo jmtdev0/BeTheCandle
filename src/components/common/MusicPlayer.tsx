@@ -13,7 +13,7 @@ interface Track {
 
 interface MusicPlayerProps {
   tracks?: Track[];
-  theme?: "blue" | "orange"; // "blue" para Community Pot, "orange" para Lobby
+  theme?: "blue" | "orange"; // "blue" para Community Pot
 }
 
 // Helper functions para cookies

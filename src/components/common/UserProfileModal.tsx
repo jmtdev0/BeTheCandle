@@ -338,7 +338,7 @@ export default function UserProfileModal({
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
-                    Save changes to sync this color to your lobby satellite.
+                    Save changes to sync this color to your profile.
                   </p>
                 </div>
               )}

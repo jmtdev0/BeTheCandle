@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Lobby - Be The Candle",
-  description: "Join the lobby and connect with the community",
+  title: "Be The Candle",
+  description: "Non-custodial Bitcoin donation platform",
 };
 
 export default function LobbyLayout({

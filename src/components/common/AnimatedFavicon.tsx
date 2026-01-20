@@ -19,18 +19,11 @@ function ensureFaviconLink(): HTMLLinkElement | null {
 export default function AnimatedFavicon() {
   const pathname = usePathname();
   const isCommunityPot = pathname === "/community-pot";
-  const isLobby = pathname === "/lobby";
 
   useEffect(() => {
     // Update page title based on route
     if (typeof document !== "undefined") {
-      if (isCommunityPot) {
-        document.title = "Community Pot - Be The Candle";
-      } else if (isLobby) {
-        document.title = "Lobby - Be The Candle";
-      } else {
-        document.title = "Be The Candle";
-      }
+      document.title = isCommunityPot ? "Community Pot - Be The Candle" : "Be The Candle";
     }
 
     const link = ensureFaviconLink();
@@ -111,7 +104,7 @@ export default function AnimatedFavicon() {
     return () => {
       cancelAnimationFrame(rafId);
     };
-  }, [pathname, isCommunityPot, isLobby]);
+  }, [pathname, isCommunityPot]);
 
   return null;
 }

@@ -46,10 +46,10 @@ function DonateContent() {
             </h1>
           </div>
           <Link
-            href="/lobby"
+            href="/community-pot"
             className="text-sm text-amber-200/80 hover:text-amber-100 transition"
           >
-            ← Back to Lobby
+            ← Back to Community Pot
           </Link>
         </div>
 
@@ -99,7 +99,7 @@ function DonateContent() {
                 ⚠️ Always double-check the address before sending funds. Bitcoin transactions are irreversible.
               </p>
               <p>
-                When your donation is confirmed on-chain, it will appear in the recipient’s activity feed and impact their orbit in the lobby view.
+                When your donation is confirmed on-chain, it will appear in the recipient’s activity feed.
               </p>
             </div>
           </div>

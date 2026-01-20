@@ -1,3 +1,5 @@
+/* Lobby removed to avoid dual scenes.
+
 "use client";
 
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
@@ -35,6 +37,13 @@ function CameraController({ controlsRef }: { controlsRef: React.RefObject<any> }
   }, [camera, controlsRef]);
   
   return null;
+}
+*/
+
+import { redirect } from "next/navigation";
+
+export default function LobbyPage() {
+  redirect("/community-pot");
 }
 
 export default function GoofyModePage() {

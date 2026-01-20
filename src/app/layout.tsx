@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import SidebarWithLobbyStatus from "@/components/common/SidebarWithLobbyStatus";
+import Sidebar from "@/components/common/Sidebar";
 import GlobalMusicPlayer from "@/components/common/GlobalMusicPlayer";
 import AnimatedFavicon from "@/components/common/AnimatedFavicon";
 import UserIdentityBootstrap from "@/components/common/UserIdentityBootstrap";
@@ -27,7 +27,7 @@ export default function RootLayout({
             <AnimatedFavicon />
             <UserIdentityBootstrap />
             <PageTransitionProvider>
-              <SidebarWithLobbyStatus />
+              <Sidebar />
               <GlobalMusicPlayer />
               {children}
             </PageTransitionProvider>

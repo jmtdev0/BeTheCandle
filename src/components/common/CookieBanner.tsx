@@ -83,7 +83,7 @@ export default function CookieBanner() {
                       <ul className="text-xs text-amber-100/60 space-y-1 ml-4 list-disc">
                         <li><code className="bg-black/30 px-1 rounded">music_volume</code> — Music volume level</li>
                         <li><code className="bg-black/30 px-1 rounded">music_muted</code> — Player mute state</li>
-                        <li><code className="bg-black/30 px-1 rounded">satelliteColor</code> — Your satellite color in the Lobby</li>
+                        <li><code className="bg-black/30 px-1 rounded">satelliteColor</code> — Your preferred accent color</li>
                       </ul>
                     </div>
 

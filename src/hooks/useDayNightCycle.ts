@@ -31,7 +31,7 @@ const TRANSITION_DURATION = 15; // minutes
 
 const PHASES = {
   NIGHT: {
-    colors: ["#0f2027", "#203a43", "#2c5364"],
+    colors: ["#010102", "#05070c", "#0a0f16"],
     isNight: true,
     lightColor: "#aaccff",
     lightIntensity: 0.4,
@@ -72,8 +72,27 @@ export function useDayNightCycle() {
     const updateTime = () => {
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
+        const phaseParam = params.get("phase");
         const timeParam = params.get("time");
         const hourParam = params.get("hour");
+
+        if (phaseParam) {
+          const dawnStart = 5 * 60;
+          const dayStart = 7 * 60;
+          const sunsetStart = 18 * 60;
+          const nightStart = 20 * 60;
+          const phaseMap: Record<string, number> = {
+            dawn: dawnStart + 5,
+            day: dayStart + TRANSITION_DURATION + 5,
+            sunset: sunsetStart + 5,
+            night: nightStart + TRANSITION_DURATION + 5,
+          };
+
+          if (phaseParam in phaseMap) {
+            setTime(phaseMap[phaseParam]);
+            return;
+          }
+        }
 
         if (timeParam) {
           const [h, m] = timeParam.split(":").map(Number);
@@ -100,7 +119,7 @@ export function useDayNightCycle() {
 
     // If we have a manual override in the URL, don't set up the interval
     const params = new URLSearchParams(window.location.search);
-    if (params.has("time") || params.has("hour")) return;
+    if (params.has("time") || params.has("hour") || params.has("phase")) return;
     
     // Update every minute
     const timer = setInterval(updateTime, 60000);
