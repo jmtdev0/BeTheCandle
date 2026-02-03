@@ -10,7 +10,10 @@
       "Bash(npm run dev:*)",
       "Bash(npx tsc:*)",
       "Bash(dir \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\public\" /b)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
