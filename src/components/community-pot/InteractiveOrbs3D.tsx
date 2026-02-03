@@ -281,7 +281,7 @@ function HorizontalBars({ visible = true }: { visible?: boolean }) {
     };
   }, []);
 
-  useFrame((state: { clock: { getElapsedTime: () => number }; camera: THREE.Camera }, delta) => {
+  useFrame((state: { clock: { getElapsedTime: () => number }; camera: THREE.Camera }, delta: number) => {
     const time = state.clock.getElapsedTime();
     const camera = state.camera;
 
