@@ -6,9 +6,11 @@ import ReCAPTCHA from "react-google-recaptcha";
 import { useCommunityPot } from "@/hooks/useCommunityPot";
 import PayoutStats from "@/components/community-pot/PayoutStats";
 import InteractiveOrbs3D from "@/components/community-pot/InteractiveOrbs3D";
+import TeardropsVideoBackground from "@/components/community-pot/TeardropsVideoBackground";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowserClient";
 import { useDayNightCycle } from "@/hooks/useDayNightCycle";
 import { usePageTransition } from "@/contexts/PageTransitionContext";
+import { useMusicTrack } from "@/contexts/MusicTrackContext";
 
 const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
@@ -28,6 +30,42 @@ interface LastPayoutData {
 export default function CommunityPotPage() {
   const { gradient } = useDayNightCycle();
   const { setDataReady } = usePageTransition();
+  const { currentTrackName } = useMusicTrack();
+
+  // Video settings from database
+  const [videoSettings, setVideoSettings] = useState<{ isEnabled: boolean; is4k: boolean }>({ isEnabled: true, is4k: false });
+
+  useEffect(() => {
+    async function fetchVideoSettings() {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase
+          .from('community_pot_video_settings')
+          .select('is_enabled, is_4k')
+          .single();
+        if (error) {
+          console.error('[CommunityPot] Error fetching video settings:', error);
+          return;
+        }
+        if (data) {
+          setVideoSettings({ isEnabled: data.is_enabled, is4k: data.is_4k });
+        }
+      } catch (err) {
+        console.error('[CommunityPot] Error fetching video settings:', err);
+      }
+    }
+    fetchVideoSettings();
+  }, []);
+
+  // Detect Telepath - Teardrops song for video background effect
+  const isTeardropsSong = currentTrackName?.includes("Telepath - Teardrops") ?? false;
+  // Also check for Another Day in Paradise
+  const isParadiseSong = currentTrackName?.includes("Another Day in Paradise") ?? false;
+
+  // When a video song plays AND videos are enabled, make background transparent
+  const isVideoSong = isTeardropsSong || isParadiseSong;
+  const isVideoActive = isVideoSong && videoSettings.isEnabled;
+  const effectiveBackground = isVideoActive ? "transparent" : gradient;
   const communityPot = useCommunityPot();
   const {
     week,
@@ -533,9 +571,9 @@ export default function CommunityPotPage() {
   }, []);
 
   return (
-    <div 
-      className="relative w-full h-screen overflow-hidden transition-all duration-[5000ms]"
-      style={{ background: gradient }}
+    <div
+      className="relative w-full h-screen overflow-hidden transition-[background] duration-[1500ms] ease-in-out"
+      style={{ background: effectiveBackground }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
@@ -543,6 +581,9 @@ export default function CommunityPotPage() {
       {/* Loading state is now handled by PageTransitionContext for a unified experience */}
 
       {/* Mobile: hint removed per UX request */}
+
+      {/* Video Background Effect - appears behind everything when a video song plays */}
+      <TeardropsVideoBackground is4k={videoSettings.is4k} isEnabled={videoSettings.isEnabled} />
 
       {/* 3D Interactive Orbs */}
       {participantCount > 0 && (
@@ -558,6 +599,7 @@ export default function CommunityPotPage() {
           }}
           isMobile={isMobile}
           onSceneReady={handleSceneReady}
+          isVideoActive={isVideoActive}
         />
       )}
 

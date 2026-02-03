@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(tasklist:*)",
+      "Bash(netstat:*)",
+      "Bash(echo:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npx tsc:*)",
+      "Bash(dir \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\public\" /b)",
+      "Bash(findstr:*)"
+    ]
+  }
+}

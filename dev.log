@@ -1,0 +1,21 @@
+
+> bethecandle@0.1.0 dev
+> next dev
+
+ ⚠ Port 3000 is in use by process 34188, using available port 3004 instead.
+   ▲ Next.js 15.5.9
+   - Local:        http://localhost:3004
+   - Network:      http://192.168.1.41:3004
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 1689ms
+ ○ Compiling /api/videos ...
+ ✓ Compiled /api/videos in 1964ms (299 modules)
+[Videos API] Found 53 videos
+ GET /api/videos 200 in 2095ms
+ ○ Compiling /community-pot ...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+ ✓ Compiled /community-pot in 9.8s (2754 modules)
+ GET /community-pot 200 in 10595ms
+ ✓ Compiled in 1122ms (1322 modules)

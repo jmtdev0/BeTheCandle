@@ -20,6 +20,7 @@ interface InteractiveOrbs3DProps {
   onSelectParticipant?: (address: string | null) => void;
   isMobile?: boolean;
   onSceneReady?: () => void;
+  isVideoActive?: boolean;
 }
 
 // Component that notifies when the scene has been rendered
@@ -62,7 +63,7 @@ function getRandomLightColor(id: string): string {
   return lightColors[hash % lightColors.length];
 }
 
-function DistantPlanes() {
+function DistantPlanes({ visible = true }: { visible?: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
   const planesRef = useRef<
     Array<{
@@ -94,7 +95,8 @@ function DistantPlanes() {
       const angle = Math.random() * Math.PI * 2;
       const radius = 25 + Math.random() * 15; // Distance from center
       const y = -8 + Math.random() * 4;
-      const angularSpeed = (0.0008 + Math.random() * 0.0012) * (Math.random() > 0.5 ? 1 : -1);
+      // Increased speed to avoid "frozen" look
+      const angularSpeed = (0.002 + Math.random() * 0.003) * (Math.random() > 0.5 ? 1 : -1);
       const respawnTime = Math.random() * 10;
 
       // Position using cylindrical coordinates
@@ -121,28 +123,36 @@ function DistantPlanes() {
 
   useFrame((state: { clock: { getElapsedTime: () => number } }) => {
     const time = state.clock.getElapsedTime();
+    const targetOpacity = visible ? 0.4 : 0;
 
     planesRef.current.forEach((plane) => {
-      if (time < plane.respawnTime) {
-        plane.mesh.visible = false;
-        return;
-      }
+      const material = plane.mesh.material as THREE.MeshBasicMaterial;
 
-      plane.mesh.visible = true;
-      // Move in a circular path around the scene
+      // Always apply fade transition
+      material.opacity += (targetOpacity - material.opacity) * 0.03;
+
+      // Always update position and rotation (even when invisible) to avoid freezing
       plane.angle += plane.angularSpeed;
       const x = Math.cos(plane.angle) * plane.radius;
       const z = Math.sin(plane.angle) * plane.radius;
       plane.mesh.position.set(x, plane.y, z);
       plane.mesh.rotation.y = plane.angle + Math.PI / 2;
+
+      // Control visibility based on respawn time and opacity
+      if (time < plane.respawnTime || material.opacity < 0.001) {
+        plane.mesh.visible = false;
+      } else {
+        plane.mesh.visible = true;
+      }
     });
   });
 
   return <group ref={groupRef} />;
 }
 
-function FadingCircles() {
+function FadingCircles({ visible = true }: { visible?: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
+  const visibilityRef = useRef(1);
   const circlesRef = useRef<
     Array<{
       mesh: THREE.Mesh;
@@ -213,8 +223,16 @@ function FadingCircles() {
     const time = state.clock.getElapsedTime();
     const camera = state.camera;
 
+    // Smooth visibility factor for video transition
+    const targetVis = visible ? 1 : 0;
+    visibilityRef.current += (targetVis - visibilityRef.current) * 0.03;
+    const visFactor = visibilityRef.current;
+
     circlesRef.current.forEach((circle) => {
       const material = circle.mesh.material as THREE.MeshBasicMaterial;
+
+      // Hide mesh entirely when faded out
+      circle.mesh.visible = visFactor > 0.001;
 
       // Make circle always face the camera (billboard effect)
       circle.mesh.quaternion.copy(camera.quaternion);
@@ -240,16 +258,17 @@ function FadingCircles() {
         case "fadeIn": {
           const fadeInProgress = (time - circle.fadeInStart) / circle.fadeInDuration;
           if (fadeInProgress >= 1) {
-            material.opacity = 0.35;
+            material.opacity = 0.35 * visFactor;
             circle.phase = "visible";
             circle.fadeInStart = time; // Reuse for visible phase timing
           } else {
-            material.opacity = fadeInProgress * 0.35;
+            material.opacity = fadeInProgress * 0.35 * visFactor;
           }
           break;
         }
 
         case "visible": {
+          material.opacity = 0.35 * visFactor;
           const visibleProgress = time - circle.fadeInStart;
           if (visibleProgress >= circle.visibleDuration) {
             circle.phase = "fadeOut";
@@ -265,7 +284,7 @@ function FadingCircles() {
             circle.phase = "waiting";
             circle.waitUntil = time + 8 + Math.random() * 12;
           } else {
-            material.opacity = (1 - fadeOutProgress) * 0.35;
+            material.opacity = (1 - fadeOutProgress) * 0.35 * visFactor;
           }
           break;
         }
@@ -1241,7 +1260,8 @@ function OrbsScene({
   ambientIntensity,
   isNight,
   isDay,
-  starOpacity
+  starOpacity,
+  isVideoActive
 }: InteractiveOrbs3DProps & {
   lightColor: string;
   lightIntensity: number;
@@ -1249,12 +1269,23 @@ function OrbsScene({
   isNight: boolean;
   isDay: boolean;
   starOpacity: number;
+  isVideoActive?: boolean;
 }) {
   const controlsRef = useRef<any>(null);
   const idleRef = useRef({ lastInteraction: Date.now(), isIdle: false });
   const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
   const IDLE_ROTATION_SPEED = 0.02; // radians per second (very slow)
   const orbitGroupRef = useRef<THREE.Group>(null);
+  const mainGroupRef = useRef<THREE.Group>(null);
+
+  // WASD/Arrow keys movement state with velocity
+  const movementRef = useRef({ x: 0, y: 0, z: 0 });
+  const velocityRef = useRef({ x: 0, y: 0, z: 0 });
+  const keysPressed = useRef<Set<string>>(new Set());
+  const MOVE_SPEED = 0.15; // Target speed
+  const ACCELERATION = 0.025; // How quickly we accelerate (increased for quicker response)
+  const DECELERATION = 0.88; // Damping factor (0-1, lower = more friction, reduced for quicker stop)
+  const MAX_OFFSET = 12; // Increased range (was 3)
 
   // Center camera on the USDC sphere (CentralCoin at 0,0,0) when on small screens
   useEffect(() => {
@@ -1302,10 +1333,101 @@ function OrbsScene({
     };
   }, []);
 
-  // Orbital rotation for the entire group of participants
-  useFrame((_state: any, delta: number) => {
+  // WASD/Arrow keys controls for moving the USDC sphere and participants
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        keysPressed.current.add(key);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      keysPressed.current.delete(key);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Orbital rotation and WASD movement for the entire group
+  useFrame((state: { camera: THREE.Camera }, delta: number) => {
     if (orbitGroupRef.current) {
       orbitGroupRef.current.rotation.y += delta * 0.05; // Slow rotation speed
+    }
+
+    // Apply WASD/Arrow movement relative to CAMERA orientation with smooth acceleration
+    const keys = keysPressed.current;
+    const camera = state.camera;
+
+    // Calculate desired movement direction in SCREEN space (Right/Up)
+    let moveRight = 0;
+    let moveUp = 0;
+
+    if (keys.has('w') || keys.has('arrowup')) moveUp += 1;
+    if (keys.has('s') || keys.has('arrowdown')) moveUp -= 1;
+    if (keys.has('a') || keys.has('arrowleft')) moveRight -= 1;
+    if (keys.has('d') || keys.has('arrowright')) moveRight += 1;
+
+    // Calculate target velocity based on input
+    let targetVelX = 0;
+    let targetVelY = 0;
+    let targetVelZ = 0;
+
+    if (moveRight !== 0 || moveUp !== 0) {
+      // Get camera's local vectors in world space
+      const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+      // Calculate target velocity vector
+      const targetVel = new THREE.Vector3()
+        .addScaledVector(camRight, moveRight)
+        .addScaledVector(camUp, moveUp)
+        .normalize()
+        .multiplyScalar(MOVE_SPEED);
+
+      targetVelX = targetVel.x;
+      targetVelY = targetVel.y;
+      targetVelZ = targetVel.z;
+    }
+
+    // Smooth acceleration/deceleration using lerp
+    const velocity = velocityRef.current;
+    velocity.x += (targetVelX - velocity.x) * ACCELERATION;
+    velocity.y += (targetVelY - velocity.y) * ACCELERATION;
+    velocity.z += (targetVelZ - velocity.z) * ACCELERATION;
+
+    // Apply damping when no input (deceleration)
+    if (moveRight === 0 && moveUp === 0) {
+      velocity.x *= DECELERATION;
+      velocity.y *= DECELERATION;
+      velocity.z *= DECELERATION;
+    }
+
+    // Update position based on velocity
+    movementRef.current.x += velocity.x;
+    movementRef.current.y += velocity.y;
+    movementRef.current.z += velocity.z;
+
+    // Clamp within a 3D box defined by MAX_OFFSET
+    movementRef.current.x = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.x));
+    movementRef.current.y = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.y));
+    movementRef.current.z = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.z));
+
+    // Stop velocity when hitting boundaries
+    if (Math.abs(movementRef.current.x) >= MAX_OFFSET) velocity.x = 0;
+    if (Math.abs(movementRef.current.y) >= MAX_OFFSET) velocity.y = 0;
+    if (Math.abs(movementRef.current.z) >= MAX_OFFSET) velocity.z = 0;
+
+    // Apply movement to main group
+    if (mainGroupRef.current) {
+      mainGroupRef.current.position.set(movementRef.current.x, movementRef.current.y, movementRef.current.z);
     }
   });
 
@@ -1316,40 +1438,43 @@ function OrbsScene({
     <>
       {/* Notifies when the scene has rendered */}
       <SceneReadyNotifier onReady={onSceneReady} />
-      
-      <CentralCoin isNight={isNight} />
-      <group ref={orbitGroupRef}>
-        {participants.map((participant, index) => {
-          const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-          
-          // Distribución en un espacio 3D
-          const angle = (index / participants.length) * Math.PI * 2;
-          const radius = 8 + (hash % 5);
-          const x = Math.cos(angle) * radius;
-          const z = Math.sin(angle) * radius;
-          const y = -3 + ((hash % 7) - 3) * 1.5;
 
-          const scale = 0.4 + ((hash % 5) * 0.08);
-          const duration = 8 + (hash % 5);
-          const delay = (hash % 10) * 0.3;
-          const isHovered = hoveredParticipantId === participant.polygonAddress || (selectedParticipantId === participant.polygonAddress);
+      {/* Main group that moves with WASD/Arrow keys */}
+      <group ref={mainGroupRef}>
+        <CentralCoin isNight={isNight} />
+        <group ref={orbitGroupRef}>
+          {participants.map((participant, index) => {
+            const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
 
-          return (
-            <Orb
-              key={participant.id}
-              participant={participant}
-              position={[x, y, z]}
-              scale={scale}
-              duration={duration}
-              delay={delay}
-              isHovered={isHovered}
-              isNight={isNight}
-              onHover={() => onHoverParticipant(participant.polygonAddress)}
-              onLeave={() => onHoverParticipant(null)}
-              onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}
-            />
-          );
-        })}
+            // Distribución en un espacio 3D
+            const angle = (index / participants.length) * Math.PI * 2;
+            const radius = 8 + (hash % 5);
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+            const y = -3 + ((hash % 7) - 3) * 1.5;
+
+            const scale = 0.4 + ((hash % 5) * 0.08);
+            const duration = 8 + (hash % 5);
+            const delay = (hash % 10) * 0.3;
+            const isHovered = hoveredParticipantId === participant.polygonAddress || (selectedParticipantId === participant.polygonAddress);
+
+            return (
+              <Orb
+                key={participant.id}
+                participant={participant}
+                position={[x, y, z]}
+                scale={scale}
+                duration={duration}
+                delay={delay}
+                isHovered={isHovered}
+                isNight={isNight}
+                onHover={() => onHoverParticipant(participant.polygonAddress)}
+                onLeave={() => onHoverParticipant(null)}
+                onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}
+              />
+            );
+          })}
+        </group>
       </group>
 
       {/* Iluminación */}
@@ -1361,15 +1486,15 @@ function OrbsScene({
         <Bloom intensity={1.5} luminanceThreshold={0.1} mipmapBlur />
       </EffectComposer>
 
-      {isNight && (
-        <Stars 
-          radius={100} 
-          depth={50} 
-          count={isMobile ? 1500 : 5000} 
-          factor={4} 
-          saturation={0} 
-          fade 
-          speed={1} 
+      {isNight && !isVideoActive && (
+        <Stars
+          radius={100}
+          depth={50}
+          count={isMobile ? 1500 : 5000}
+          factor={4}
+          saturation={0}
+          fade
+          speed={1}
         />
       )}
 
@@ -1413,25 +1538,25 @@ function OrbsScene({
       </Environment>
 
       {/* Aviones lejanos */}
-      {!isNight && <DistantPlanes />}
+      <DistantPlanes visible={!isNight && !isVideoActive} />
 
       {/* Circunferencias amarillas de fondo */}
-      {!isNight && <FadingCircles />}
+      <FadingCircles visible={!isNight && !isVideoActive} />
 
       {/* Bandadas de pájaros (solo durante el día) */}
-      <BirdFlock isDay={isDay} />
+      <BirdFlock isDay={isDay && !isVideoActive} />
 
       {/* Nubes suaves durante el día */}
-      <SoftClouds isDay={isDay} />
+      <SoftClouds isDay={isDay && !isVideoActive} />
 
       {/* Estrellas fugaces durante la noche */}
-      <ShootingStars isNight={isNight} />
+      {!isVideoActive && <ShootingStars isNight={isNight} />}
 
       {/* Polvo estelar durante la noche */}
-      <StarDust isNight={isNight} />
+      <StarDust isNight={isNight && !isVideoActive} />
 
       {/* Polvo dorado flotante (especialmente durante el atardecer) */}
-      <GoldenDust starOpacity={starOpacity} />
+      <GoldenDust starOpacity={isVideoActive ? 0 : starOpacity} />
 
       {/* Controles de órbita - rotación con zoom limitado */}
       <OrbitControls
@@ -1441,7 +1566,7 @@ function OrbsScene({
         rotateSpeed={0.5}
         zoomSpeed={0.3}
         minDistance={14}
-        maxDistance={35}
+        maxDistance={70}
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={Math.PI / 1.5}
       />
@@ -1484,23 +1609,34 @@ function OrbsScene({
 
 export default function InteractiveOrbs3D(props: InteractiveOrbs3DProps) {
   const { isNight, isDay, lightColor, lightIntensity, ambientIntensity, starOpacity } = useDayNightCycle();
-  const backgroundColor = starOpacity >= 0.7 ? "#010102" : null;
+  const shouldShowBackground = starOpacity >= 0.7 && !props.isVideoActive;
 
   return (
     <div className="absolute inset-0" style={{ zIndex: 0 }}>
+      {/* Background color layer with smooth fade transition */}
+      <div
+        className="absolute inset-0 transition-opacity duration-[3500ms] ease-in-out"
+        style={{
+          backgroundColor: "#010102",
+          opacity: shouldShowBackground ? 1 : 0,
+          pointerEvents: "none"
+        }}
+      />
+
+      {/* Three.js Canvas with transparent background */}
       <Canvas
         camera={{ position: [0, 0, 35], fov: 50 }}
         gl={{ alpha: true, antialias: true }}
       >
-        {backgroundColor && <color attach="background" args={[backgroundColor]} />}
-        <OrbsScene 
-          {...props} 
+        <OrbsScene
+          {...props}
           lightColor={lightColor}
           lightIntensity={lightIntensity}
           ambientIntensity={ambientIntensity}
           isNight={isNight}
           isDay={isDay ?? false}
           starOpacity={starOpacity}
+          isVideoActive={props.isVideoActive}
         />
       </Canvas>
     </div>
