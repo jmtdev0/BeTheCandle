@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useCookieConsent } from "@/contexts/CookieConsentContext";
+import { useMusicTrack } from "@/contexts/MusicTrackContext";
 
 interface Track {
   name: string;
@@ -33,6 +34,7 @@ function setCookie(name: string, value: string, days = 365) {
 
 export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
   const { allowPreferences } = useCookieConsent();
+  const { setMusicTrackState } = useMusicTrack();
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -275,6 +277,16 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   // Siempre mostrar el reproductor, incluso sin canciones (para que sea visible)
   const currentTrack = tracks.length > 0 ? tracks[currentTrackIndex] : null;
 
+  // Update global music track context whenever these values change
+  useEffect(() => {
+    setMusicTrackState({
+      currentTrackName: currentTrack?.name || null,
+      currentTrackPath: currentTrack?.path || null,
+      isPlaying,
+      currentTrackIndex,
+    });
+  }, [currentTrack?.name, currentTrack?.path, isPlaying, currentTrackIndex, setMusicTrackState]);
+
   // Colores según el tema
   const themeColors = theme === "blue" ? {
     icon: "text-blue-400",
@@ -295,7 +307,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-6 right-6 z-50">
       <div className="bg-gray-900/95 backdrop-blur-md rounded-lg shadow-2xl border border-gray-700/50 overflow-hidden transition-all duration-300">
         {/* Barra superior colapsable */}
         <div className="flex items-center justify-between p-3 border-b border-gray-700/50 bg-gray-800/50">

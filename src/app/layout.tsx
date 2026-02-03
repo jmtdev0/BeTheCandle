@@ -8,6 +8,7 @@ import CookieBanner from "@/components/common/CookieBanner";
 import { SupabaseAuthProvider } from "@/components/common/AuthProvider";
 import { PageTransitionProvider } from "@/contexts/PageTransitionContext";
 import { CookieConsentProvider } from "@/contexts/CookieConsentContext";
+import { MusicTrackProvider } from "@/contexts/MusicTrackContext";
 
 export const metadata: Metadata = {
   title: "Be The Candle",
@@ -24,13 +25,15 @@ export default function RootLayout({
       <body>
         <CookieConsentProvider>
           <SupabaseAuthProvider>
-            <AnimatedFavicon />
-            <UserIdentityBootstrap />
-            <PageTransitionProvider>
-              <Sidebar />
-              <GlobalMusicPlayer />
-              {children}
-            </PageTransitionProvider>
+            <MusicTrackProvider>
+              <AnimatedFavicon />
+              <UserIdentityBootstrap />
+              <PageTransitionProvider>
+                <Sidebar />
+                <GlobalMusicPlayer />
+                {children}
+              </PageTransitionProvider>
+            </MusicTrackProvider>
           </SupabaseAuthProvider>
           <CookieBanner />
         </CookieConsentProvider>
