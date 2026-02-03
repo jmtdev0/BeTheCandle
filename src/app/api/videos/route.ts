@@ -1,43 +1,23 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import videoData from '@/data/videos.json';
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const quality = searchParams.get('quality') || '4k';
+    const r2BaseUrl = process.env.R2_PUBLIC_URL;
 
-    const baseDir = path.join(process.cwd(), 'public', 'I LOVE FREE 4K STOCK VIDEOS');
-    const videosDir = quality === 'compressed'
-      ? path.join(baseDir, 'compressed')
-      : baseDir;
-    const pathPrefix = quality === 'compressed'
-      ? '/I LOVE FREE 4K STOCK VIDEOS/compressed'
-      : '/I LOVE FREE 4K STOCK VIDEOS';
-
-    // Check if directory exists
-    if (!fs.existsSync(videosDir)) {
-      console.warn('[Videos API] Directory not found:', videosDir);
+    if (!r2BaseUrl) {
+      console.error('[Videos API] R2_PUBLIC_URL environment variable is not set');
       return NextResponse.json({ videos: [] });
     }
 
-    // Read files from directory
-    const files = fs.readdirSync(videosDir);
-
-    // Filter video files (.mp4 and .mov)
-    const videoExtensions = ['.mp4', '.mov'];
-    const videos = files
-      .filter(file => {
-        const ext = path.extname(file).toLowerCase();
-        return videoExtensions.includes(ext) && !file.startsWith('.');
-      })
-      .map(file => `${pathPrefix}/${file}`)
+    const videos = videoData.videos
+      .map(filename => `${r2BaseUrl}/compressed/${encodeURIComponent(filename)}`)
       .sort();
 
-    console.log(`[Videos API] Found ${videos.length} videos (quality: ${quality})`);
+    console.log(`[Videos API] Returning ${videos.length} video URLs from R2`);
     return NextResponse.json({ videos });
   } catch (error) {
-    console.error('[Videos API] Error reading video files:', error);
+    console.error('[Videos API] Error:', error);
     return NextResponse.json({ videos: [] });
   }
 }

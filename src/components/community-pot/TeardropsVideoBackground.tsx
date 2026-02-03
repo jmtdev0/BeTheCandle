@@ -25,11 +25,10 @@ function useIsMobile() {
 }
 
 interface TeardropsVideoBackgroundProps {
-  is4k?: boolean;
   isEnabled?: boolean;
 }
 
-export default function TeardropsVideoBackground({ is4k = false, isEnabled = true }: TeardropsVideoBackgroundProps) {
+export default function TeardropsVideoBackground({ isEnabled = true }: TeardropsVideoBackgroundProps) {
   const { currentTrackName } = useMusicTrack();
   const isMobile = useIsMobile();
 
@@ -60,7 +59,7 @@ export default function TeardropsVideoBackground({ is4k = false, isEnabled = tru
           exit={{ opacity: 0 }}
           transition={{ duration: 3.5, ease: "easeInOut" }}
         >
-          <VideoBackgroundManager is4k={is4k} />
+          <VideoBackgroundManager />
         </motion.div>
       )}
     </AnimatePresence>

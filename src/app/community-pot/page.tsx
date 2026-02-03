@@ -33,7 +33,7 @@ export default function CommunityPotPage() {
   const { currentTrackName } = useMusicTrack();
 
   // Video settings from database
-  const [videoSettings, setVideoSettings] = useState<{ isEnabled: boolean; is4k: boolean }>({ isEnabled: true, is4k: false });
+  const [videoSettings, setVideoSettings] = useState<{ isEnabled: boolean }>({ isEnabled: true });
 
   useEffect(() => {
     async function fetchVideoSettings() {
@@ -41,14 +41,14 @@ export default function CommunityPotPage() {
         const supabase = getSupabaseBrowserClient();
         const { data, error } = await supabase
           .from('community_pot_video_settings')
-          .select('is_enabled, is_4k')
+          .select('is_enabled')
           .single();
         if (error) {
           console.error('[CommunityPot] Error fetching video settings:', error);
           return;
         }
         if (data) {
-          setVideoSettings({ isEnabled: data.is_enabled, is4k: data.is_4k });
+          setVideoSettings({ isEnabled: data.is_enabled });
         }
       } catch (err) {
         console.error('[CommunityPot] Error fetching video settings:', err);
@@ -583,7 +583,7 @@ export default function CommunityPotPage() {
       {/* Mobile: hint removed per UX request */}
 
       {/* Video Background Effect - appears behind everything when a video song plays */}
-      <TeardropsVideoBackground is4k={videoSettings.is4k} isEnabled={videoSettings.isEnabled} />
+      <TeardropsVideoBackground isEnabled={videoSettings.isEnabled} />
 
       {/* 3D Interactive Orbs */}
       {participantCount > 0 && (

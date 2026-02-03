@@ -63,92 +63,6 @@ function getRandomLightColor(id: string): string {
   return lightColors[hash % lightColors.length];
 }
 
-function DistantPlanes({ visible = true }: { visible?: boolean }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const planesRef = useRef<
-    Array<{
-      mesh: THREE.Mesh;
-      angle: number;
-      angularSpeed: number;
-      radius: number;
-      y: number;
-      respawnTime: number;
-    }>
-  >([]);
-
-  useEffect(() => {
-    if (!groupRef.current) return;
-
-    const planeCount = 5; // More planes to cover 360°
-    const planes: typeof planesRef.current = [];
-
-    for (let i = 0; i < planeCount; i++) {
-      const geometry = new THREE.BoxGeometry(1.5, 0.08, 0.08);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.4,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-
-      // Distribute around 360° using angle
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 25 + Math.random() * 15; // Distance from center
-      const y = -8 + Math.random() * 4;
-      // Increased speed to avoid "frozen" look
-      const angularSpeed = (0.002 + Math.random() * 0.003) * (Math.random() > 0.5 ? 1 : -1);
-      const respawnTime = Math.random() * 10;
-
-      // Position using cylindrical coordinates
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      mesh.position.set(x, y, z);
-      // Rotate plane to be tangent to the circle
-      mesh.rotation.y = angle + Math.PI / 2;
-      groupRef.current.add(mesh);
-
-      planes.push({ mesh, angle, angularSpeed, radius, y, respawnTime });
-    }
-
-    planesRef.current = planes;
-
-    return () => {
-      planes.forEach((plane) => {
-        plane.mesh.geometry.dispose();
-        (plane.mesh.material as THREE.Material).dispose();
-        groupRef.current?.remove(plane.mesh);
-      });
-    };
-  }, []);
-
-  useFrame((state: { clock: { getElapsedTime: () => number } }) => {
-    const time = state.clock.getElapsedTime();
-    const targetOpacity = visible ? 0.4 : 0;
-
-    planesRef.current.forEach((plane) => {
-      const material = plane.mesh.material as THREE.MeshBasicMaterial;
-
-      // Always apply fade transition
-      material.opacity += (targetOpacity - material.opacity) * 0.03;
-
-      // Always update position and rotation (even when invisible) to avoid freezing
-      plane.angle += plane.angularSpeed;
-      const x = Math.cos(plane.angle) * plane.radius;
-      const z = Math.sin(plane.angle) * plane.radius;
-      plane.mesh.position.set(x, plane.y, z);
-      plane.mesh.rotation.y = plane.angle + Math.PI / 2;
-
-      // Control visibility based on respawn time and opacity
-      if (time < plane.respawnTime || material.opacity < 0.001) {
-        plane.mesh.visible = false;
-      } else {
-        plane.mesh.visible = true;
-      }
-    });
-  });
-
-  return <group ref={groupRef} />;
-}
 
 function FadingCircles({ visible = true }: { visible?: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -242,11 +156,14 @@ function FadingCircles({ visible = true }: { visible?: boolean }) {
           if (time >= circle.waitUntil) {
             circle.phase = "fadeIn";
             circle.fadeInStart = time;
-            // Reposition randomly when starting new cycle
+            // Reposition randomly when starting new cycle in 360 degrees
+            const angle = Math.random() * Math.PI * 2;
+            const distanceFromCenter = 30 + Math.random() * 15;
+            const y = -12 + Math.random() * 8;
             circle.mesh.position.set(
-              -25 + Math.random() * 50,
-              -12 + Math.random() * 8,
-              -25 - Math.random() * 15
+              Math.cos(angle) * distanceFromCenter,
+              y,
+              Math.sin(angle) * distanceFromCenter
             );
             // 1% chance of purple on each new appearance
             circle.isPurple = Math.random() < 0.01;
@@ -285,6 +202,156 @@ function FadingCircles({ visible = true }: { visible?: boolean }) {
             circle.waitUntil = time + 8 + Math.random() * 12;
           } else {
             material.opacity = (1 - fadeOutProgress) * 0.35 * visFactor;
+          }
+          break;
+        }
+      }
+    });
+  });
+
+  return <group ref={groupRef} />;
+}
+
+function HorizontalBars({ visible = true }: { visible?: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const visibilityRef = useRef(1);
+  const barsRef = useRef<
+    Array<{
+      mesh: THREE.Mesh;
+      fadeInStart: number;
+      fadeInDuration: number;
+      visibleDuration: number;
+      fadeOutDuration: number;
+      phase: "fadeIn" | "visible" | "fadeOut" | "waiting";
+      waitUntil: number;
+      speed: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    const barCount = 10;
+    const bars: typeof barsRef.current = [];
+
+    for (let i = 0; i < barCount; i++) {
+      // Long, thin horizontal bars
+      const width = 3 + Math.random() * 5;
+      const height = 0.08 + Math.random() * 0.04;
+      const geometry = new THREE.PlaneGeometry(width, height);
+      
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff, // White bars
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+
+      // Random initial position
+      const angle = Math.random() * Math.PI * 2;
+      const distanceFromCenter = 30 + Math.random() * 20;
+      const y = -10 + Math.random() * 10;
+      const x = Math.cos(angle) * distanceFromCenter;
+      const z = Math.sin(angle) * distanceFromCenter;
+      
+      mesh.position.set(x, y, z);
+      groupRef.current.add(mesh);
+
+      bars.push({
+        mesh,
+        fadeInStart: Math.random() * 20,
+        fadeInDuration: 1.5 + Math.random() * 1,
+        visibleDuration: 3 + Math.random() * 4,
+        fadeOutDuration: 1.5 + Math.random() * 1,
+        phase: "waiting",
+        waitUntil: Math.random() * 20,
+        speed: (0.5 + Math.random() * 2) * (Math.random() > 0.5 ? 1 : -1), // Random speed and direction
+      });
+    }
+
+    barsRef.current = bars;
+
+    return () => {
+      bars.forEach((bar) => {
+        bar.mesh.geometry.dispose();
+        (bar.mesh.material as THREE.Material).dispose();
+        groupRef.current?.remove(bar.mesh);
+      });
+    };
+  }, []);
+
+  useFrame((state: { clock: { getElapsedTime: () => number }; camera: THREE.Camera }, delta) => {
+    const time = state.clock.getElapsedTime();
+    const camera = state.camera;
+
+    const targetVis = visible ? 1 : 0;
+    visibilityRef.current += (targetVis - visibilityRef.current) * 0.03;
+    const visFactor = visibilityRef.current;
+
+    barsRef.current.forEach((bar) => {
+      const material = bar.mesh.material as THREE.MeshBasicMaterial;
+
+      // Make bar always face the camera (billboard effect)
+      bar.mesh.quaternion.copy(camera.quaternion);
+
+      // Move along its own local X axis (horizontal relative to screen)
+      // Since we just set the quaternion/rotation to match camera, "local X" is "screen X"
+      // But we need to update position in world space to achieve this "slide"
+      // We can use translateX, which works in local space
+      if (bar.phase !== "waiting") {
+        bar.mesh.translateX(bar.speed * delta);
+      }
+
+      bar.mesh.visible = visFactor > 0.001;
+
+      switch (bar.phase) {
+        case "waiting":
+          if (time >= bar.waitUntil) {
+            bar.phase = "fadeIn";
+            bar.fadeInStart = time;
+            
+            // Random respawn position
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 30 + Math.random() * 20;
+            bar.mesh.position.set(
+              Math.cos(angle) * distance,
+              -10 + Math.random() * 10,
+              Math.sin(angle) * distance
+            );
+          }
+          break;
+
+        case "fadeIn": {
+          const progress = (time - bar.fadeInStart) / bar.fadeInDuration;
+          if (progress >= 1) {
+            material.opacity = 0.35 * visFactor;
+            bar.phase = "visible";
+            bar.fadeInStart = time;
+          } else {
+            material.opacity = progress * 0.35 * visFactor;
+          }
+          break;
+        }
+
+        case "visible": {
+          material.opacity = 0.35 * visFactor;
+          const progress = time - bar.fadeInStart;
+          if (progress >= bar.visibleDuration) {
+            bar.phase = "fadeOut";
+            bar.fadeInStart = time;
+          }
+          break;
+        }
+
+        case "fadeOut": {
+          const progress = (time - bar.fadeInStart) / bar.fadeOutDuration;
+          if (progress >= 1) {
+            material.opacity = 0;
+            bar.phase = "waiting";
+            bar.waitUntil = time + 5 + Math.random() * 10;
+          } else {
+            material.opacity = (1 - progress) * 0.35 * visFactor;
           }
           break;
         }
@@ -1537,8 +1604,8 @@ function OrbsScene({
         />
       </Environment>
 
-      {/* Aviones lejanos */}
-      <DistantPlanes visible={!isNight && !isVideoActive} />
+      {/* Barritas horizontales que atraviesan la escena */}
+      <HorizontalBars visible={!isNight && !isVideoActive} />
 
       {/* Circunferencias amarillas de fondo */}
       <FadingCircles visible={!isNight && !isVideoActive} />

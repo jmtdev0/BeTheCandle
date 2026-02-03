@@ -19,7 +19,13 @@ function getRandomDuration() {
   return Math.random() * (MAX_DURATION - MIN_DURATION) + MIN_DURATION;
 }
 
-export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolean }) {
+// Helper to log only in development
+const isDev = process.env.NODE_ENV === 'development' || typeof window !== 'undefined' && window.location.hostname === 'localhost';
+const devLog = (...args: any[]) => {
+  if (isDev) devLog(...args);
+};
+
+export default function VideoBackgroundManager() {
   const [videoList, setVideoList] = useState<string[]>([]);
   const [playlist, setPlaylist] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -39,7 +45,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
 
     async function fetchVideos() {
       try {
-        const response = await fetch(`/api/videos?quality=${is4k ? '4k' : 'compressed'}`);
+        const response = await fetch('/api/videos');
         if (ignore) return;
 
         const data = await response.json();
@@ -55,7 +61,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
         }
       } catch (error) {
         if (!ignore) {
-          console.error('[VideoBackgroundManager] Error loading videos:', error);
+          devLog('[VideoBackgroundManager] Error loading videos:', error);
         }
       }
     }
@@ -64,7 +70,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
     return () => {
       ignore = true;
     };
-  }, [is4k]);
+  }, []);
 
   // Bandwidth Tracker
   useEffect(() => {
@@ -79,7 +85,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
 
       for (const entry of entries) {
         // Filter for video files (mp4, mov, or specifically in our folder)
-        if (entry.name.match(/\.(mp4|mov)$/i) || entry.name.includes('STOCK VIDEOS')) {
+        if (entry.name.match(/\.(mp4|mov)$/i)) {
           const rEntry = entry as PerformanceResourceTiming;
           // transferSize matches bytes transferred over network (0 if cached)
           // This exactly attempts to measure "bandwidth consumption"
@@ -92,7 +98,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
 
       const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
       if (count > 0) {
-        console.log(`[Bandwidth Tracker] Session usage: ${totalMB} MB (${count} requests)`);
+        devLog(`[Bandwidth Tracker] Session usage: ${totalMB} MB (${count} requests)`);
       }
     }, 4000); // Log every 4 seconds
 
@@ -105,7 +111,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
     
     const logEvent = (id: string, e: Event) => {
       const target = e.target as HTMLVideoElement;
-      console.log(`[VideoBackgroundManager] ${id} event: ${e.type}`, {
+      devLog(`[VideoBackgroundManager] ${id} event: ${e.type}`, {
         src: target.src.split('/').pop(),
         readyState: target.readyState,
         paused: target.paused,
@@ -141,14 +147,14 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
   // Transition to next video
   const transitionToNext = useCallback(() => {
     if (isTransitioningRef.current) {
-      console.log('[VideoBackgroundManager] transitionToNext called but already transitioning');
+      devLog('[VideoBackgroundManager] transitionToNext called but already transitioning');
       return;
     }
 
     // Note: We removed the mountedRef check to avoid race conditions. 
     // If component is unmounted, setState will just warn, which is better than stalling.
 
-    console.log('[VideoBackgroundManager] Executing transitionToNext');
+    devLog('[VideoBackgroundManager] Executing transitionToNext');
     isTransitioningRef.current = true;
 
     // Clear any existing timer from the ref (just in case)
@@ -159,11 +165,11 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
 
     setCurrentIndex(prevIndex => {
       const nextIndex = (prevIndex + 1) % playlist.length;
-      console.log(`[VideoBackgroundManager] Updating index: ${prevIndex} -> ${nextIndex}`);
+      devLog(`[VideoBackgroundManager] Updating index: ${prevIndex} -> ${nextIndex}`);
 
       // Reshuffle if we've reached the end
       if (nextIndex === 0 && videoList.length > 0) {
-        console.log('[VideoBackgroundManager] Reshuffling playlist');
+        devLog('[VideoBackgroundManager] Reshuffling playlist');
         const newPlaylist = shuffleArray(videoList);
         setPlaylist(newPlaylist);
       }
@@ -181,7 +187,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
   const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const src = (e.target as HTMLVideoElement).src;
     const filename = src.split('/').pop();
-    console.log(`[VideoBackgroundManager] Video ended: ${filename}. Transitioning...`);
+    devLog(`[VideoBackgroundManager] Video ended: ${filename}. Transitioning...`);
     transitionToNext();
   }, [transitionToNext]);
 
@@ -207,7 +213,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
         // If video is short (e.g. less than 5 seconds), do a hard cut (0ms transition)
         // This avoids awkward loops during fade or transitions starting immediately
         if (videoDurationMs < 5000) {
-           console.log(`[VideoBackgroundManager] Short video detected (${(videoDurationMs/1000).toFixed(1)}s < 5s). Scheduling hard cut.`);
+           devLog(`[VideoBackgroundManager] Short video detected (${(videoDurationMs/1000).toFixed(1)}s < 5s). Scheduling hard cut.`);
            
            // Set transition to instant for the upcoming switch
            setTransitionDuration(0);
@@ -224,7 +230,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
            const safeRunTime = Math.max(0, videoDurationMs - fadeBuffer);
            
            if (duration > safeRunTime) {
-             console.log(`[VideoBackgroundManager] Video shorter than random cycle. Adjusting timer to start transition at ${(safeRunTime/1000).toFixed(1)}s`);
+             devLog(`[VideoBackgroundManager] Video shorter than random cycle. Adjusting timer to start transition at ${(safeRunTime/1000).toFixed(1)}s`);
              duration = safeRunTime;
            }
         }
@@ -233,10 +239,10 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
          setTransitionDuration(3500);
       }
 
-      console.log('[VideoBackgroundManager] Setting timer for', duration, 'ms');
+      devLog('[VideoBackgroundManager] Setting timer for', duration, 'ms');
 
       timerId = setTimeout(() => {
-        console.log('[VideoBackgroundManager] Timer triggered, transitioning');
+        devLog('[VideoBackgroundManager] Timer triggered, transitioning');
         transitionToNext();
       }, duration);
 
@@ -266,7 +272,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
 
     return () => {
       if (timerId) {
-        console.log('[VideoBackgroundManager] Clearing timer', timerId);
+        devLog('[VideoBackgroundManager] Clearing timer', timerId);
         clearTimeout(timerId);
       }
       if (timerRef.current === timerId) {
@@ -286,7 +292,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
     const nextIndex = (currentIndex + 1) % playlist.length;
     const nextVideo = playlist[nextIndex];
 
-    console.log('[VideoBackgroundManager] Loading videos. Current:', currentIndex, currentVideo);
+    devLog('[VideoBackgroundManager] Loading videos. Current:', currentIndex, currentVideo);
 
     // Even indices use videoA, odd indices use videoB
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
@@ -301,13 +307,13 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
       const srcNeedsUpdate = video.src !== currentVideo && !video.src.endsWith(currentVideo);
       
       if (srcNeedsUpdate) {
-        console.log(`[VideoBackgroundManager] Active video src update needed. setting to ${currentVideo}`);
+        devLog(`[VideoBackgroundManager] Active video src update needed. setting to ${currentVideo}`);
         video.src = currentVideo;
         video.load();
       }
       
       video.play().catch((err) => {
-        console.warn('[VideoBackgroundManager] Autoplay failed:', err);
+        devLog('[VideoBackgroundManager] Autoplay failed:', err);
       });
     }
 
@@ -327,7 +333,7 @@ export default function VideoBackgroundManager({ is4k = false }: { is4k?: boolea
         const srcNeedsUpdate = video.src !== nextVideo && !video.src.endsWith(nextVideo);
         
         if (srcNeedsUpdate) {
-          console.log(`[VideoBackgroundManager] Preloading next video: ${nextVideo}`);
+          devLog(`[VideoBackgroundManager] Preloading next video: ${nextVideo}`);
           video.src = nextVideo;
           video.load();
         }
