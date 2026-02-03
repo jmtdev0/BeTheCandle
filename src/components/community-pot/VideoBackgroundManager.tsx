@@ -22,7 +22,7 @@ function getRandomDuration() {
 // Helper to log only in development
 const isDev = process.env.NODE_ENV === 'development' || typeof window !== 'undefined' && window.location.hostname === 'localhost';
 const devLog = (...args: any[]) => {
-  if (isDev) devLog(...args);
+  if (isDev) console.log(...args);
 };
 
 export default function VideoBackgroundManager() {
