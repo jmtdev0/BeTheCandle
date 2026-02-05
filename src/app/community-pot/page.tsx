@@ -57,13 +57,12 @@ export default function CommunityPotPage() {
     fetchVideoSettings();
   }, []);
 
-  // Detect Telepath - Teardrops song for video background effect
-  const isTeardropsSong = currentTrackName?.includes("Telepath - Teardrops") ?? false;
-  // Also check for Another Day in Paradise
+  // Detect Another Day in Paradise - currently the only song with video files
   const isParadiseSong = currentTrackName?.includes("Another Day in Paradise") ?? false;
 
   // When a video song plays AND videos are enabled, make background transparent
-  const isVideoSong = isTeardropsSong || isParadiseSong;
+  // Telepath will be added here when its video files are available
+  const isVideoSong = isParadiseSong;
   const isVideoActive = isVideoSong && videoSettings.isEnabled;
   const effectiveBackground = isVideoActive ? "transparent" : gradient;
   const communityPot = useCommunityPot();

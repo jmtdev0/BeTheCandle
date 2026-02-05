@@ -1,28 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMusicTrack } from "@/contexts/MusicTrackContext";
 import VideoBackgroundManager from "./VideoBackgroundManager";
-
-// Hook to detect mobile devices
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkMobile = () => {
-      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      const isSmallScreen = window.innerWidth < 768;
-      setIsMobile(isTouchDevice || isSmallScreen);
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  return isMobile;
-}
 
 interface TeardropsVideoBackgroundProps {
   isEnabled?: boolean;
@@ -30,25 +11,23 @@ interface TeardropsVideoBackgroundProps {
 
 export default function TeardropsVideoBackground({ isEnabled = true }: TeardropsVideoBackgroundProps) {
   const { currentTrackName } = useMusicTrack();
-  const isMobile = useIsMobile();
 
-  // Check if current track is "Another Day in Paradise"
+  // Check if current track is "Another Day in Paradise" (only song with video files currently)
   const isParadiseSong = currentTrackName?.includes("Another Day in Paradise") ?? false;
 
-  // Should show: Paradise is playing AND not on mobile AND videos enabled
-  const shouldShow = isParadiseSong && !isMobile && isEnabled;
+  // Show videos when Paradise is playing and videos are enabled (works on all devices including mobile)
+  const shouldShow = isParadiseSong && isEnabled;
 
   useEffect(() => {
     if (isParadiseSong) {
       console.log(`[TeardropsVideoBackground] State update:`, {
         currentTrackName,
         isParadiseSong,
-        isMobile,
         isEnabled,
         shouldShow
       });
     }
-  }, [currentTrackName, isParadiseSong, isMobile, isEnabled, shouldShow]);
+  }, [currentTrackName, isParadiseSong, isEnabled, shouldShow]);
 
   return (
     <AnimatePresence>
