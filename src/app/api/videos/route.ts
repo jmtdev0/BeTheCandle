@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
-import videoData from '@/data/videos.json';
+import musicData from '@/data/music-data.json';
+
+interface TrackMetadata {
+  musicLink?: string;
+  videoLink?: string;
+  videos?: string[];
+}
 
 export async function GET() {
   try {
@@ -10,7 +16,15 @@ export async function GET() {
       return NextResponse.json({ videos: [] });
     }
 
-    const videos = videoData.videos
+    // Recopilar todos los videos de todos los tracks que tengan videos
+    const allVideoFilenames: string[] = [];
+    for (const trackInfo of Object.values(musicData.tracks as Record<string, TrackMetadata>)) {
+      if (trackInfo.videos && trackInfo.videos.length > 0) {
+        allVideoFilenames.push(...trackInfo.videos);
+      }
+    }
+
+    const videos = allVideoFilenames
       .map(filename => `${r2BaseUrl}/compressed/${encodeURIComponent(filename)}`)
       .sort();
 

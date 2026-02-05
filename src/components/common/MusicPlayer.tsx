@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink, Film } from "lucide-react";
 import { useCookieConsent } from "@/contexts/CookieConsentContext";
 import { useMusicTrack } from "@/contexts/MusicTrackContext";
 
@@ -10,6 +10,8 @@ interface Track {
   path: string;
   displayName: string;
   link?: string | null;
+  videoLink?: string | null;
+  hasVideo?: boolean;
 }
 
 interface MusicPlayerProps {
@@ -45,6 +47,18 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"video" | "music">("video");
+
+  // Auto-switch tab to show currently playing track when expanding
+  useEffect(() => {
+    if (isExpanded && tracks.length > 0) {
+      const currentTrack = tracks[currentTrackIndex];
+      if (currentTrack) {
+        const shouldBeInVideoTab = currentTrack.hasVideo;
+        setActiveTab(shouldBeInVideoTab ? "video" : "music");
+      }
+    }
+  }, [isExpanded, currentTrackIndex, tracks]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previousVolumeRef = useRef(0.3);
   const hasAutoPlayedRef = useRef(false);
@@ -333,46 +347,97 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
           )}
         </div>
 
-        {/* Panel expandible de selección de canciones */}
+        {/* Panel expandible de selección de canciones con tabs */}
         {isExpanded && tracks.length > 0 && (
-          <div className="max-h-[240px] overflow-y-auto border-b border-gray-700/50 w-[320px]">
-            {tracks.map((track, index) => (
-              <div
-                key={track.path}
-                className={`w-full px-4 py-3 text-left text-sm transition-colors ${
-                  index === currentTrackIndex
-                    ? themeColors.highlightBg
-                    : "hover:bg-gray-800/50"
+          <div className="border-b border-gray-700/50 w-[320px]">
+            {/* Tabs: Video / Music */}
+            <div className="flex border-b border-gray-700/50">
+              <button
+                onClick={() => setActiveTab("video")}
+                className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
+                  activeTab === "video"
+                    ? `${themeColors.highlightBg} ${themeColors.highlight} border-b-2`
+                    : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50"
                 }`}
+                style={activeTab === "video" ? { borderBottomColor: themeColors.slider } : undefined}
               >
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => selectTrack(index)}
-                    className="flex items-center gap-2 flex-1 min-w-0"
+                <span className="flex items-center justify-center gap-1.5">
+                  <Film size={12} />
+                  Music with Videos
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab("music")}
+                className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
+                  activeTab === "music"
+                    ? `${themeColors.highlightBg} ${themeColors.highlight} border-b-2`
+                    : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50"
+                }`}
+                style={activeTab === "music" ? { borderBottomColor: themeColors.slider } : undefined}
+              >
+                <span className="flex items-center justify-center gap-1.5">
+                  <Music size={12} />
+                  Just Music
+                </span>
+              </button>
+            </div>
+            {/* Track list filtered by active tab */}
+            <div className="max-h-[240px] overflow-y-auto">
+              {tracks
+                .map((track, globalIndex) => ({ track, globalIndex }))
+                .filter(({ track }) =>
+                  activeTab === "video" ? track.hasVideo : !track.hasVideo
+                )
+                .map(({ track, globalIndex }) => (
+                  <div
+                    key={track.path}
+                    className={`w-full px-4 py-3 text-left text-sm transition-colors ${
+                      globalIndex === currentTrackIndex
+                        ? themeColors.highlightBg
+                        : "hover:bg-gray-800/50"
+                    }`}
                   >
-                    <Music size={14} className={index === currentTrackIndex ? themeColors.highlight : "text-gray-400"} />
-                    <span className={`truncate ${index === currentTrackIndex ? themeColors.highlight : "text-gray-300"}`}>
-                      {track.displayName}
-                    </span>
-                    {index === currentTrackIndex && isPlaying && (
-                      <span className={`ml-auto ${themeColors.highlight}`}>♪</span>
-                    )}
-                  </button>
-                  {track.link && (
-                    <a
-                      href={track.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`flex-shrink-0 p-1 text-gray-400 ${themeColors.iconHover} transition-colors`}
-                      title="Ver en YouTube"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => selectTrack(globalIndex)}
+                        className="flex items-center gap-2 flex-1 min-w-0"
+                      >
+                        <Music size={14} className={globalIndex === currentTrackIndex ? themeColors.highlight : "text-gray-400"} />
+                        <span className={`truncate ${globalIndex === currentTrackIndex ? themeColors.highlight : "text-gray-300"}`}>
+                          {track.displayName}
+                        </span>
+                        {globalIndex === currentTrackIndex && isPlaying && (
+                          <span className={`ml-auto ${themeColors.highlight}`}>♪</span>
+                        )}
+                      </button>
+                      {track.link && (
+                        <a
+                          href={track.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`flex-shrink-0 p-1 text-gray-400 ${themeColors.iconHover} transition-colors`}
+                          title="Song source"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink size={14} />
+                        </a>
+                      )}
+                      {activeTab === "video" && track.videoLink && (
+                        <a
+                          href={track.videoLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`flex-shrink-0 p-1 text-gray-400 ${themeColors.iconHover} transition-colors`}
+                          title="Video source"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Film size={14} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
           </div>
         )}
 

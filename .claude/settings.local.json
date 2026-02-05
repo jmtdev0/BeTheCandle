@@ -14,7 +14,9 @@
       "Bash(git rm:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(del \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\public\\\\background_music\\\\Links.txt\")",
+      "Bash(del \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\src\\\\data\\\\videos.json\")"
     ]
   }
 }
