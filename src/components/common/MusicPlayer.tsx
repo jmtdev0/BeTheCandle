@@ -36,7 +36,7 @@ function setCookie(name: string, value: string, days = 365) {
 
 export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
   const { allowPreferences } = useCookieConsent();
-  const { setMusicTrackState } = useMusicTrack();
+  const { setMusicTrackState, videoVolume, setVideoVolume, setImmersiveMode, videoEnabled, forceSkipToSkyScene } = useMusicTrack();
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -59,6 +59,28 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       }
     }
   }, [isExpanded, currentTrackIndex, tracks]);
+
+  // When videoEnabled becomes false, switch to music tab
+  useEffect(() => {
+    if (!videoEnabled && activeTab === "video") {
+      setActiveTab("music");
+    }
+  }, [videoEnabled, activeTab]);
+
+  // When forceSkipToSkyScene fires, switch to a random Sky Scene track
+  useEffect(() => {
+    if (forceSkipToSkyScene === 0) return;
+
+    const skySceneTracks = tracks
+      .map((t, i) => ({ track: t, index: i }))
+      .filter(({ track }) => !track.hasVideo);
+
+    if (skySceneTracks.length > 0) {
+      const random = skySceneTracks[Math.floor(Math.random() * skySceneTracks.length)];
+      setCurrentTrackIndex(random.index);
+    }
+  }, [forceSkipToSkyScene, tracks]);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previousVolumeRef = useRef(0.3);
   const hasAutoPlayedRef = useRef(false);
@@ -67,8 +89,10 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
   const handleTrackEnd = useCallback(() => {
     const audio = audioRef.current;
+    const current = tracks[currentTrackIndex];
 
-    if (tracks.length <= 1) {
+    // Video Gallery tracks and single-track playlists: loop the same track
+    if (current?.hasVideo || tracks.length <= 1) {
       if (audio) {
         audio.currentTime = 0;
         audio
@@ -84,17 +108,33 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       return;
     }
 
+    // Sky Scene tracks: only pick from other Sky Scene tracks
+    const skySceneTracks = tracks
+      .map((t, i) => ({ track: t, index: i }))
+      .filter(({ track }) => !track.hasVideo);
+
+    if (skySceneTracks.length <= 1) {
+      // Only one Sky Scene track: loop it
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      }
+      return;
+    }
+
     let nextIndex = currentTrackIndex;
     let attempts = 0;
     const maxAttempts = 20;
 
     while ((nextIndex === currentTrackIndex || nextIndex === lastPlayedTrackRef.current) && attempts < maxAttempts) {
-      nextIndex = Math.floor(Math.random() * tracks.length);
+      const pick = skySceneTracks[Math.floor(Math.random() * skySceneTracks.length)];
+      nextIndex = pick.index;
       attempts += 1;
     }
 
     if (nextIndex === currentTrackIndex) {
-      nextIndex = (currentTrackIndex + 1) % tracks.length;
+      const otherTracks = skySceneTracks.filter(({ index }) => index !== currentTrackIndex);
+      nextIndex = otherTracks[0]?.index ?? (currentTrackIndex + 1) % tracks.length;
     }
 
     lastPlayedTrackRef.current = currentTrackIndex;
@@ -106,17 +146,21 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     if (allowPreferences) {
       const savedVolume = getCookie("music_volume");
       const savedMuted = getCookie("music_muted");
-      
+      const savedVideoVolume = getCookie("video_volume");
+
       if (savedVolume) {
         setVolume(parseFloat(savedVolume));
       }
       if (savedMuted) {
         setIsMuted(savedMuted === "true");
       }
+      if (savedVideoVolume) {
+        setVideoVolume(parseFloat(savedVideoVolume));
+      }
     }
-    
+
     setIsHydrated(true);
-  }, [allowPreferences]);
+  }, [allowPreferences, setVideoVolume]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -170,6 +214,13 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       setCookie("music_muted", isMuted.toString());
     }
   }, [isMuted, allowPreferences]);
+
+  // Guardar volumen de vídeo en cookie cuando cambia
+  useEffect(() => {
+    if (allowPreferences) {
+      setCookie("video_volume", videoVolume.toString());
+    }
+  }, [videoVolume, allowPreferences]);
 
   // Cargar música automáticamente desde la API
   useEffect(() => {
@@ -285,6 +336,10 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   };
 
   const selectTrack = (index: number) => {
+    const track = tracks[index];
+    if (track && !track.hasVideo) {
+      setImmersiveMode(false);
+    }
     setCurrentTrackIndex(index);
   };
 
@@ -298,8 +353,9 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       currentTrackPath: currentTrack?.path || null,
       isPlaying,
       currentTrackIndex,
+      currentTrackHasVideo: currentTrack?.hasVideo ?? false,
     });
-  }, [currentTrack?.name, currentTrack?.path, isPlaying, currentTrackIndex, setMusicTrackState]);
+  }, [currentTrack?.name, currentTrack?.path, currentTrack?.hasVideo, isPlaying, currentTrackIndex, setMusicTrackState]);
 
   // Colores según el tema
   const themeColors = theme === "blue" ? {
@@ -352,20 +408,22 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
           <div className="border-b border-gray-700/50 w-[320px]">
             {/* Tabs: Video / Music */}
             <div className="flex border-b border-gray-700/50">
-              <button
-                onClick={() => setActiveTab("video")}
-                className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
-                  activeTab === "video"
-                    ? `${themeColors.highlightBg} ${themeColors.highlight} border-b-2`
-                    : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50"
-                }`}
-                style={activeTab === "video" ? { borderBottomColor: themeColors.slider } : undefined}
-              >
-                <span className="flex items-center justify-center gap-1.5">
-                  <Film size={12} />
-                  Music with Videos
-                </span>
-              </button>
+              {videoEnabled && (
+                <button
+                  onClick={() => setActiveTab("video")}
+                  className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
+                    activeTab === "video"
+                      ? `${themeColors.highlightBg} ${themeColors.highlight} border-b-2`
+                      : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50"
+                  }`}
+                  style={activeTab === "video" ? { borderBottomColor: themeColors.slider } : undefined}
+                >
+                  <span className="flex items-center justify-center gap-1.5">
+                    <Film size={12} />
+                    Video Gallery 🎦
+                  </span>
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab("music")}
                 className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
@@ -377,12 +435,12 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
               >
                 <span className="flex items-center justify-center gap-1.5">
                   <Music size={12} />
-                  Just Music
+                  Sky Scene ᯓ🔵
                 </span>
               </button>
             </div>
             {/* Track list filtered by active tab */}
-            <div className="max-h-[240px] overflow-y-auto">
+            <div className="max-h-[240px] overflow-y-auto music-list-scrollbar">
               {tracks
                 .map((track, globalIndex) => ({ track, globalIndex }))
                 .filter(({ track }) =>
@@ -508,6 +566,31 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
             </div>
           </div>
 
+          {/* Video volume control */}
+          <div className="flex items-center gap-3 mt-3">
+            <div className="flex-shrink-0 w-10 flex items-center justify-center">
+              <Film size={18} className="text-gray-400" />
+            </div>
+            <div className="flex items-center gap-2 flex-1">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={videoVolume}
+                onChange={(e) => setVideoVolume(parseFloat(e.target.value))}
+                className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
+                style={{
+                  background: `linear-gradient(to right, ${themeColors.slider} ${videoVolume * 100}%, #374151 ${videoVolume * 100}%)`,
+                }}
+                data-theme={theme}
+              />
+              <span className="flex-shrink-0 text-xs text-gray-400 w-8 text-right">
+                {Math.round(videoVolume * 100)}%
+              </span>
+            </div>
+          </div>
+
           {/* Mensaje sin música */}
           {tracks.length === 0 && (
             <div className="mt-3 pt-3 border-t border-gray-700/50">
@@ -552,6 +635,25 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
         .slider-thumb::-moz-range-thumb:hover {
           background: ${themeColors.sliderHover};
+        }
+
+        .music-list-scrollbar::-webkit-scrollbar {
+          width: 5px;
+        }
+        .music-list-scrollbar::-webkit-scrollbar-track {
+          background: rgba(17, 24, 39, 0.6);
+          border-radius: 3px;
+        }
+        .music-list-scrollbar::-webkit-scrollbar-thumb {
+          background: ${themeColors.slider}55;
+          border-radius: 3px;
+        }
+        .music-list-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: ${themeColors.slider}99;
+        }
+        .music-list-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: ${themeColors.slider}55 rgba(17, 24, 39, 0.6);
         }
       `}</style>
     </div>

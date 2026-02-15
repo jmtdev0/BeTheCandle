@@ -30,11 +30,10 @@ interface LastPayoutData {
 export default function CommunityPotPage() {
   const { gradient } = useDayNightCycle();
   const { setDataReady } = usePageTransition();
-  const { currentTrackName } = useMusicTrack();
+  const { currentTrackHasVideo, immersiveMode, setImmersiveMode, videoEnabled, setVideoEnabled, triggerSkipToSkyScene } = useMusicTrack();
 
-  // Video settings from database
-  const [videoSettings, setVideoSettings] = useState<{ isEnabled: boolean }>({ isEnabled: true });
-
+  // Poll video settings from database every 60 seconds
+  const videoEnabledRef = useRef(true);
   useEffect(() => {
     async function fetchVideoSettings() {
       try {
@@ -48,22 +47,28 @@ export default function CommunityPotPage() {
           return;
         }
         if (data) {
-          setVideoSettings({ isEnabled: data.is_enabled });
+          const newValue = data.is_enabled as boolean;
+          const prevValue = videoEnabledRef.current;
+          videoEnabledRef.current = newValue;
+          setVideoEnabled(newValue);
+
+          // Transition true→false: switch to a Sky Scene track
+          if (prevValue && !newValue) {
+            triggerSkipToSkyScene();
+          }
         }
       } catch (err) {
         console.error('[CommunityPot] Error fetching video settings:', err);
       }
     }
+
     fetchVideoSettings();
-  }, []);
+    const interval = setInterval(fetchVideoSettings, 60000);
+    return () => clearInterval(interval);
+  }, [setVideoEnabled, triggerSkipToSkyScene]);
 
-  // Detect Another Day in Paradise - currently the only song with video files
-  const isParadiseSong = currentTrackName?.includes("Another Day in Paradise") ?? false;
-
-  // When a video song plays AND videos are enabled, make background transparent
-  // Telepath will be added here when its video files are available
-  const isVideoSong = isParadiseSong;
-  const isVideoActive = isVideoSong && videoSettings.isEnabled;
+  // When a video track plays AND videos are enabled, make background transparent
+  const isVideoActive = currentTrackHasVideo && videoEnabled;
   const effectiveBackground = isVideoActive ? "transparent" : gradient;
   const communityPot = useCommunityPot();
   const {
@@ -540,8 +545,8 @@ export default function CommunityPotPage() {
   };
 
   // Determine if UI should be visible (desktop hover OR mobile toggle)
-  const shouldShowInfo = isMobile ? mobileUIVisible : (infoVisible || infoHovering);
-  const shouldShowRankings = isMobile ? mobileUIVisible : (rankingsVisible || rankingsHovering);
+  const shouldShowInfo = !immersiveMode && (isMobile ? mobileUIVisible : (infoVisible || infoHovering));
+  const shouldShowRankings = !immersiveMode && (isMobile ? mobileUIVisible : (rankingsVisible || rankingsHovering));
   // Join button visibility:
   // - "Reveal" mode: desktop hover hotspot OR mobile UI toggle OR always when no participants
   // - "Pulse" mode: fades in/out every 10s (only when user has not reserved a slot)
@@ -550,7 +555,7 @@ export default function CommunityPotPage() {
     : (participantCount === 0 || joinButtonVisible || joinButtonHovering);
 
   const joinButtonPulseEnabled = participantCount > 0 && !viewerHasCurrentSlot;
-  const shouldShowJoinButton = joinButtonReveal || (joinButtonPulseEnabled && buttonFadeVisible);
+  const shouldShowJoinButton = !immersiveMode && (joinButtonReveal || (joinButtonPulseEnabled && buttonFadeVisible));
 
   // When the sidebar opens elsewhere, hide mobile UI controls to avoid overlap
   useEffect(() => {
@@ -582,10 +587,10 @@ export default function CommunityPotPage() {
       {/* Mobile: hint removed per UX request */}
 
       {/* Video Background Effect - appears behind everything when a video song plays */}
-      <TeardropsVideoBackground isEnabled={videoSettings.isEnabled} />
+      <TeardropsVideoBackground isEnabled={videoEnabled} />
 
       {/* 3D Interactive Orbs */}
-      {participantCount > 0 && (
+      {participantCount > 0 && !immersiveMode && (
         <InteractiveOrbs3D
           participants={participants}
           hoveredParticipantId={hoveredParticipantId}
@@ -820,7 +825,7 @@ export default function CommunityPotPage() {
             ? (
                 viewerHasCurrentSlot
                   ? (shouldShowJoinButton ? 1 : 0)
-                  : (joinButtonReveal || (joinButtonPulseEnabled && buttonFadeVisible))
+                  : shouldShowJoinButton
                     ? 1
                     : 0
               )
@@ -867,7 +872,7 @@ export default function CommunityPotPage() {
           aria-modal="true"
           aria-labelledby="join-modal-title"
         >
-        <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-[#2276cb]/40 bg-black/80 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5 max-h-[90vh] overflow-y-auto">
+        <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-[#2276cb]/40 bg-black/80 backdrop-blur-2xl p-6 shadow-2xl shadow-[#2276cb]/40 space-y-5 max-h-[90vh] overflow-y-auto join-modal-scrollbar">
           <div className="flex items-center justify-between mb-2">
             <h2 id="join-modal-title" className="text-2xl font-bold text-white">{viewerHasCurrentSlot ? "Change your address" : "Reserve your slot"}</h2>
             <button
@@ -1092,6 +1097,40 @@ export default function CommunityPotPage() {
           </div>
         </div>
       )}
+      {/* Immersive mode toggle - visible on hover */}
+      <div className="fixed bottom-6 left-6 z-40 group p-4 -m-4">
+        <button
+          onClick={() => setImmersiveMode(!immersiveMode)}
+          className={`opacity-0 group-hover:opacity-100 px-4 py-2 rounded-lg text-xs font-medium transition-all duration-300 backdrop-blur-md border ${
+            immersiveMode
+              ? "bg-white/15 border-white/30 text-white hover:bg-white/25"
+              : "bg-black/40 border-white/10 text-white/60 hover:bg-black/60 hover:text-white"
+          }`}
+        >
+          {immersiveMode ? "Show everything" : "Hide everything"}
+        </button>
+      </div>
+
+      <style jsx>{`
+        .join-modal-scrollbar::-webkit-scrollbar {
+          width: 5px;
+        }
+        .join-modal-scrollbar::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.4);
+          border-radius: 3px;
+        }
+        .join-modal-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(34, 118, 203, 0.35);
+          border-radius: 3px;
+        }
+        .join-modal-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(34, 118, 203, 0.65);
+        }
+        .join-modal-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(34, 118, 203, 0.35) rgba(0, 0, 0, 0.4);
+        }
+      `}</style>
     </div>
   );
 }

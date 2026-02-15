@@ -1,6 +1,18 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useMusicTrack } from "@/contexts/MusicTrackContext";
+
+// Per-clip descriptor returned by the API
+interface VideoClip {
+  url: string;
+  transition: "fade" | "cut";
+  speed: number;
+}
+
+interface VideoBackgroundManagerProps {
+  trackName?: string;
+}
 
 // Fisher-Yates shuffle algorithm
 function shuffleArray<T>(array: T[]): T[] {
@@ -12,25 +24,56 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+// Shuffle ensuring the first element differs from `avoidFirst`
+function shuffleAvoidingFirst<T>(array: T[], avoidFirst: T | null): T[] {
+  const shuffled = shuffleArray(array);
+  if (avoidFirst !== null && shuffled.length > 1 && shuffled[0] === avoidFirst) {
+    const swapIdx = 1 + Math.floor(Math.random() * (shuffled.length - 1));
+    [shuffled[0], shuffled[swapIdx]] = [shuffled[swapIdx], shuffled[0]];
+  }
+  return shuffled;
+}
+
 // Random duration between 10-15 seconds
 function getRandomDuration() {
-  const MIN_DURATION = 10000; // 10s
-  const MAX_DURATION = 15000; // 15s
+  const MIN_DURATION = 10000;
+  const MAX_DURATION = 15000;
   return Math.random() * (MAX_DURATION - MIN_DURATION) + MIN_DURATION;
 }
 
 // Helper to log only in development
 const isDev = process.env.NODE_ENV === 'development' || typeof window !== 'undefined' && window.location.hostname === 'localhost';
-const devLog = (...args: any[]) => {
+const devLog = (...args: unknown[]) => {
   if (isDev) console.log(...args);
 };
 
-export default function VideoBackgroundManager() {
-  const [videoList, setVideoList] = useState<string[]>([]);
-  const [playlist, setPlaylist] = useState<string[]>([]);
+// Normalize API response
+function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
+  const videos = data.videos;
+  if (!Array.isArray(videos) || videos.length === 0) {
+    return [];
+  }
+  return videos.map((v: unknown) => {
+    if (typeof v === 'string') {
+      return { url: v, transition: 'fade' as const, speed: 1 };
+    }
+    const clip = v as Record<string, unknown>;
+    return {
+      url: clip.url as string,
+      transition: (clip.transition as 'fade' | 'cut') ?? 'fade',
+      speed: (clip.speed as number) ?? 1,
+    };
+  });
+}
+
+export default function VideoBackgroundManager({ trackName }: VideoBackgroundManagerProps) {
+  const { videoVolume } = useMusicTrack();
+
+  const [videoList, setVideoList] = useState<VideoClip[]>([]);
+  const [playlist, setPlaylist] = useState<VideoClip[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isActive, setIsActive] = useState(false);
-  // Add state for dynamic transition duration
+  const [fullLength, setFullLength] = useState(false);
   const [transitionDuration, setTransitionDuration] = useState(3500);
 
   const videoARef = useRef<HTMLVideoElement>(null);
@@ -45,18 +88,23 @@ export default function VideoBackgroundManager() {
 
     async function fetchVideos() {
       try {
-        const response = await fetch('/api/videos');
+        const apiUrl = trackName
+          ? `/api/videos?track=${encodeURIComponent(trackName)}`
+          : '/api/videos';
+
+        const response = await fetch(apiUrl);
         if (ignore) return;
 
         const data = await response.json();
         if (ignore) return;
 
-        if (data.videos && Array.isArray(data.videos) && data.videos.length > 0) {
-          const videos = data.videos as string[];
+        const videos = normalizeVideos(data);
+        if (videos.length > 0) {
           setVideoList(videos);
           const shuffled = shuffleArray(videos);
           setPlaylist(shuffled);
           setCurrentIndex(0);
+          setFullLength(data.fullLength ?? false);
           setIsActive(true);
         }
       } catch (error) {
@@ -70,25 +118,30 @@ export default function VideoBackgroundManager() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [trackName]);
+
+  // Apply video volume from context to both video elements
+  useEffect(() => {
+    [videoARef, videoBRef].forEach(ref => {
+      if (ref.current) {
+        ref.current.muted = videoVolume === 0;
+        ref.current.volume = videoVolume;
+      }
+    });
+  }, [videoVolume]);
 
   // Bandwidth Tracker
   useEffect(() => {
-    // Only run in browser
     if (typeof window === 'undefined') return;
 
     const interval = setInterval(() => {
-      // Get all network resource entries
       const entries = performance.getEntriesByType("resource");
       let totalBytes = 0;
       let count = 0;
 
       for (const entry of entries) {
-        // Filter for video files (mp4, mov, or specifically in our folder)
         if (entry.name.match(/\.(mp4|mov)$/i)) {
           const rEntry = entry as PerformanceResourceTiming;
-          // transferSize matches bytes transferred over network (0 if cached)
-          // This exactly attempts to measure "bandwidth consumption"
           if (rEntry.transferSize) {
             totalBytes += rEntry.transferSize;
             count++;
@@ -100,7 +153,7 @@ export default function VideoBackgroundManager() {
       if (count > 0) {
         devLog(`[Bandwidth Tracker] Session usage: ${totalMB} MB (${count} requests)`);
       }
-    }, 4000); // Log every 4 seconds
+    }, 4000);
 
     return () => clearInterval(interval);
   }, []);
@@ -108,7 +161,7 @@ export default function VideoBackgroundManager() {
   // Debug video events
   useEffect(() => {
     const events = ['playing', 'pause', 'ended', 'error', 'waiting', 'stalled'];
-    
+
     const logEvent = (id: string, e: Event) => {
       const target = e.target as HTMLVideoElement;
       devLog(`[VideoBackgroundManager] ${id} event: ${e.type}`, {
@@ -123,7 +176,7 @@ export default function VideoBackgroundManager() {
     const attach = (ref: React.RefObject<HTMLVideoElement | null>, id: string) => {
       const el = ref.current;
       if (!el) return () => {};
-      
+
       const handlers = events.map(evt => {
         const handler = (e: Event) => logEvent(id, e);
         el.addEventListener(evt, handler);
@@ -151,13 +204,9 @@ export default function VideoBackgroundManager() {
       return;
     }
 
-    // Note: We removed the mountedRef check to avoid race conditions. 
-    // If component is unmounted, setState will just warn, which is better than stalling.
-
     devLog('[VideoBackgroundManager] Executing transitionToNext');
     isTransitioningRef.current = true;
 
-    // Clear any existing timer from the ref (just in case)
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -167,21 +216,21 @@ export default function VideoBackgroundManager() {
       const nextIndex = (prevIndex + 1) % playlist.length;
       devLog(`[VideoBackgroundManager] Updating index: ${prevIndex} -> ${nextIndex}`);
 
-      // Reshuffle if we've reached the end
+      // Reshuffle when wrapping around, avoiding repeat of last clip
       if (nextIndex === 0 && videoList.length > 0) {
         devLog('[VideoBackgroundManager] Reshuffling playlist');
-        const newPlaylist = shuffleArray(videoList);
+        const lastClip = playlist[playlist.length - 1] ?? null;
+        const newPlaylist = shuffleAvoidingFirst(videoList, lastClip);
         setPlaylist(newPlaylist);
       }
 
       return nextIndex;
     });
 
-    // Reset transitioning flag after a short delay
     setTimeout(() => {
       isTransitioningRef.current = false;
     }, 500);
-  }, [playlist.length, videoList]);
+  }, [playlist, videoList]);
 
   // Handle video ended event
   const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -191,52 +240,62 @@ export default function VideoBackgroundManager() {
     transitionToNext();
   }, [transitionToNext]);
 
-  // Setup timer for transitions (backup in case video is longer than expected)
-  useEffect(() => {
-    if (!isActive || playlist.length === 0) return;
+  // Apply per-clip properties to a video element
+  const applyClipProperties = useCallback((video: HTMLVideoElement, clip: VideoClip) => {
+    video.playbackRate = clip.speed;
+    video.muted = videoVolume === 0;
+    video.volume = videoVolume;
 
-    // Use a local variable for the timer ID to ensure cleanups are correct
+    if (clip.transition === 'cut') {
+      setTransitionDuration(0);
+    } else {
+      setTransitionDuration(2500);
+    }
+
+    devLog('[VideoBackgroundManager] Applied clip properties:', {
+      file: clip.url.split('/').pop(),
+      speed: clip.speed,
+      transition: clip.transition,
+      videoVolume,
+    });
+  }, [videoVolume]);
+
+  // Setup timer for transitions (only when NOT fullLength)
+  useEffect(() => {
+    if (!isActive || playlist.length === 0 || fullLength) return;
+
     let timerId: NodeJS.Timeout | null = null;
     let metadataHandler: (() => void) | null = null;
 
     const setupTimer = () => {
       let duration = getRandomDuration();
-      
-      // Check active video duration
+
       const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
       const video = activeRef.current;
-      
+
       if (video && video.duration) {
         const videoDurationMs = video.duration * 1000;
-        const fadeBuffer = 3500; // ms
-        
-        // If video is short (e.g. less than 5 seconds), do a hard cut (0ms transition)
-        // This avoids awkward loops during fade or transitions starting immediately
-        if (videoDurationMs < 5000) {
-           devLog(`[VideoBackgroundManager] Short video detected (${(videoDurationMs/1000).toFixed(1)}s < 5s). Scheduling hard cut.`);
-           
-           // Set transition to instant for the upcoming switch
-           setTransitionDuration(0);
-           
-           // Play full video then switch
-           // We subtract a tiny amount (e.g. 50ms) to ensure we don't miss the end or loop unnecessarily
-           // but technically if loop=true it doesn't matter.
-           duration = videoDurationMs;
-        } else {
-           // Normal video: use slow fade
-           setTransitionDuration(3500);
+        const currentClip = playlist[currentIndex];
+        const effectiveDurationMs = videoDurationMs / (currentClip?.speed || 1);
+        const fadeBuffer = currentClip?.transition === 'cut' ? 0 : 2500;
 
-           // Ensure we transition before it ends using the fade buffer
-           const safeRunTime = Math.max(0, videoDurationMs - fadeBuffer);
-           
+        if (effectiveDurationMs < 5000) {
+           devLog(`[VideoBackgroundManager] Short video detected (${(effectiveDurationMs/1000).toFixed(1)}s < 5s). Scheduling hard cut.`);
+           setTransitionDuration(0);
+           duration = effectiveDurationMs;
+        } else {
+           if (currentClip?.transition !== 'cut') {
+             setTransitionDuration(2500);
+           }
+           const safeRunTime = Math.max(0, effectiveDurationMs - fadeBuffer);
+
            if (duration > safeRunTime) {
              devLog(`[VideoBackgroundManager] Video shorter than random cycle. Adjusting timer to start transition at ${(safeRunTime/1000).toFixed(1)}s`);
              duration = safeRunTime;
            }
         }
       } else {
-         // Fallback if no duration found (shouldn't happen with metadata wait)
-         setTransitionDuration(3500);
+         setTransitionDuration(2500);
       }
 
       devLog('[VideoBackgroundManager] Setting timer for', duration, 'ms');
@@ -249,16 +308,14 @@ export default function VideoBackgroundManager() {
       timerRef.current = timerId;
     };
 
-    // Attempt to setup timer immediately if metadata known, otherwise wait
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const video = activeRef.current;
 
-    if (video && video.readyState >= 1) { // HAVE_METADATA
+    if (video && video.readyState >= 1) {
       setupTimer();
     } else if (video) {
         metadataHandler = () => {
           setupTimer();
-          // Remove listener once handled
           if (video && metadataHandler) {
              video.removeEventListener('loadedmetadata', metadataHandler);
              metadataHandler = null;
@@ -266,7 +323,6 @@ export default function VideoBackgroundManager() {
         };
         video.addEventListener('loadedmetadata', metadataHandler);
     } else {
-        // Fallback
         setupTimer();
     }
 
@@ -282,66 +338,62 @@ export default function VideoBackgroundManager() {
         video.removeEventListener('loadedmetadata', metadataHandler);
       }
     };
-  }, [isActive, playlist.length, currentIndex, transitionToNext]);
+  }, [isActive, playlist.length, currentIndex, transitionToNext, playlist, fullLength]);
 
   // Load videos based on current index (ping-pong between A and B)
   useEffect(() => {
     if (playlist.length === 0) return;
 
-    const currentVideo = playlist[currentIndex];
+    const currentClip = playlist[currentIndex];
     const nextIndex = (currentIndex + 1) % playlist.length;
-    const nextVideo = playlist[nextIndex];
+    const nextClip = playlist[nextIndex];
 
-    devLog('[VideoBackgroundManager] Loading videos. Current:', currentIndex, currentVideo);
+    devLog('[VideoBackgroundManager] Loading videos. Current:', currentIndex, currentClip.url);
 
-    // Even indices use videoA, odd indices use videoB
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
 
     // Load and play the active video
     if (activeRef.current) {
       const video = activeRef.current;
-      // If the src is not fully qualified in playlist, this check might be false negative, 
-      // but setting src again is safe for ensuring playback starts from beginning.
-      // To avoid reloading if already correct (from preload), we can check endsWith.
-      const srcNeedsUpdate = video.src !== currentVideo && !video.src.endsWith(currentVideo);
-      
+      const srcNeedsUpdate = video.src !== currentClip.url && !video.src.endsWith(currentClip.url);
+
       if (srcNeedsUpdate) {
-        devLog(`[VideoBackgroundManager] Active video src update needed. setting to ${currentVideo}`);
-        video.src = currentVideo;
+        devLog(`[VideoBackgroundManager] Active video src update needed. setting to ${currentClip.url}`);
+        video.src = currentClip.url;
         video.load();
       }
-      
+
+      applyClipProperties(video, currentClip);
+
       video.play().catch((err) => {
         devLog('[VideoBackgroundManager] Autoplay failed:', err);
       });
     }
 
     // Preload the next video - DELAYED
-    // We delay this operation to allow the 'outgoing' video (which is now in preloadRef)
-    // to finish its fade-out transition before we cut its content.
-    // The delay should match the current transition duration.
+    // The preloaded video must stay paused at its start until it becomes the active video
     const preloadDelay = transitionDuration;
-    
+
     const preloadTimeout = setTimeout(() => {
       if (preloadRef.current) {
         const video = preloadRef.current;
-        
-        // Now that fade out is likely done, stop the old video
         video.pause();
-        
-        const srcNeedsUpdate = video.src !== nextVideo && !video.src.endsWith(nextVideo);
-        
+
+        const srcNeedsUpdate = video.src !== nextClip.url && !video.src.endsWith(nextClip.url);
+
         if (srcNeedsUpdate) {
-          devLog(`[VideoBackgroundManager] Preloading next video: ${nextVideo}`);
-          video.src = nextVideo;
+          devLog(`[VideoBackgroundManager] Preloading next video: ${nextClip.url}`);
+          video.src = nextClip.url;
           video.load();
         }
+
+        video.currentTime = 0;
       }
-    }, preloadDelay); // Sync with dynamic transition duration
+    }, preloadDelay);
 
     return () => clearTimeout(preloadTimeout);
-  }, [playlist, currentIndex, transitionDuration]);
+  }, [playlist, currentIndex, transitionDuration, applyClipProperties]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -363,7 +415,6 @@ export default function VideoBackgroundManager() {
     return null;
   }
 
-  // Determine which video should be visible based on current index
   const videoAOpacity = currentIndex % 2 === 0 ? 1 : 0;
   const videoBOpacity = currentIndex % 2 === 1 ? 1 : 0;
 
@@ -375,22 +426,21 @@ export default function VideoBackgroundManager() {
       <video
         ref={videoARef}
         className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
-        style={{ 
+        style={{
           opacity: videoAOpacity,
           transitionDuration: `${transitionDuration}ms`,
           transitionProperty: 'opacity'
         }}
         muted
         playsInline
-        autoPlay
-        loop={true}
+        preload="auto"
         onEnded={handleVideoEnded}
       />
 
       <video
         ref={videoBRef}
         className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
-        style={{ 
+        style={{
           opacity: videoBOpacity,
           transitionDuration: `${transitionDuration}ms`,
           transitionProperty: 'opacity'
@@ -398,7 +448,6 @@ export default function VideoBackgroundManager() {
         muted
         playsInline
         preload="auto"
-        loop={true}
         onEnded={handleVideoEnded}
       />
     </div>

@@ -16,7 +16,10 @@
       "Bash(git commit:*)",
       "Bash(grep:*)",
       "Bash(del \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\public\\\\background_music\\\\Links.txt\")",
-      "Bash(del \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\src\\\\data\\\\videos.json\")"
+      "Bash(del \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\src\\\\data\\\\videos.json\")",
+      "Bash(yt-dlp:*)",
+      "Bash(powershell:*)",
+      "Bash(ls:*)"
     ]
   }
 }

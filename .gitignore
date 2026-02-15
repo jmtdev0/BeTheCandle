@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# xd
+*.mp4
+
 # dependencies
 /node_modules
 /.pnp
@@ -44,3 +47,5 @@ export-token-0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359.csv
 
 # Video files (too large for git)
 public/I LOVE FREE 4K STOCK VIDEOS/
+public/telepath-clips/
+public/telepath-clips-compressed/

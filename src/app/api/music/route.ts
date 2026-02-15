@@ -6,47 +6,61 @@ import musicData from '@/data/music-data.json';
 interface TrackMetadata {
   musicLink?: string;
   videoLink?: string;
-  videos?: string[];
+  videoBasePath?: string;
+  videoOverrides?: Record<string, unknown>;
 }
+
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a'];
 
 export async function GET() {
   try {
     const musicDir = path.join(process.cwd(), 'public', 'background_music');
 
-    // Verificar si la carpeta existe
     if (!fs.existsSync(musicDir)) {
       return NextResponse.json({ tracks: [] });
     }
 
     const tracksMap = musicData.tracks as Record<string, TrackMetadata>;
+    const tracks: Array<{
+      name: string;
+      path: string;
+      displayName: string;
+      folder: string;
+      link: string | null;
+      videoLink: string | null;
+      hasVideo: boolean;
+    }> = [];
 
-    // Leer archivos de la carpeta
-    const files = fs.readdirSync(musicDir);
+    // Read subdirectories (Space Scene, Video Gallery, etc.)
+    const entries = fs.readdirSync(musicDir, { withFileTypes: true });
 
-    // Filtrar solo archivos de audio y crear la lista de tracks
-    const audioExtensions = ['.mp3', '.wav', '.ogg', '.m4a'];
-    const tracks = files
-      .filter(file => {
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const folderName = entry.name;
+      const folderPath = path.join(musicDir, folderName);
+      const files = fs.readdirSync(folderPath);
+
+      for (const file of files) {
         const ext = path.extname(file).toLowerCase();
-        return audioExtensions.includes(ext) && !file.startsWith('.');
-      })
-      .map(file => {
-        const nameWithoutExt = path.basename(file, path.extname(file));
-        const displayName = nameWithoutExt;
+        if (!AUDIO_EXTENSIONS.includes(ext) || file.startsWith('.')) continue;
 
-        // Buscar metadata en music-data.json
+        const nameWithoutExt = path.basename(file, ext);
         const trackData = tracksMap[nameWithoutExt] || {};
 
-        return {
+        tracks.push({
           name: nameWithoutExt,
-          path: `/background_music/${file}`,
-          displayName: displayName,
+          path: `/background_music/${folderName}/${file}`,
+          displayName: nameWithoutExt,
+          folder: folderName,
           link: trackData.musicLink || null,
           videoLink: trackData.videoLink || null,
-          hasVideo: Boolean(trackData.videoLink || (trackData.videos && trackData.videos.length > 0)),
-        };
-      })
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+          hasVideo: Boolean(trackData.videoBasePath),
+        });
+      }
+    }
+
+    tracks.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
     return NextResponse.json({ tracks });
   } catch (error) {
