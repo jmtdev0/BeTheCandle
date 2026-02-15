@@ -40,11 +40,11 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
-  
+
   // Cargar volumen y estado de mute desde cookies (valores por defecto para SSR)
   const [volume, setVolume] = useState(0.3);
   const [isMuted, setIsMuted] = useState(false);
-  
+
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<"video" | "music">("video");
@@ -508,8 +508,8 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
               onClick={togglePlay}
               disabled={tracks.length === 0}
               className={`flex-shrink-0 w-10 h-10 rounded-full transition-colors flex items-center justify-center text-white ${
-                tracks.length === 0 
-                  ? "bg-gray-700 cursor-not-allowed opacity-50" 
+                tracks.length === 0
+                  ? "bg-gray-700 cursor-not-allowed opacity-50"
                   : themeColors.button
               }`}
               title={tracks.length === 0 ? "No music available" : (isPlaying ? "Pause" : "Play")}
