@@ -11,7 +11,7 @@ export default function CommunityPotGuidePage() {
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold text-[#2276cb]">Community Pot Guide</h1>
           <Link 
-            href="/community-pot" 
+            href="/" 
             className="text-sm text-[#2276cb] hover:text-white transition-colors"
           >
             ← Back to Community Pot
@@ -363,7 +363,7 @@ export default function CommunityPotGuidePage() {
           </p>
           <div className="flex gap-4">
             <Link 
-              href="/community-pot" 
+              href="/" 
               className="px-6 py-3 bg-[#2276cb] text-white rounded-xl font-semibold hover:bg-[#1a5ba8] transition-colors"
             >
               Back to Community Pot

@@ -11,9 +11,9 @@ export default function GlobalMusicPlayer() {
   const pathname = usePathname();
   const playerRef = useRef<HTMLDivElement | null>(null);
 
-  // Only show music player on the community-pot page
-  const shouldShowPlayer = pathname === "/community-pot";
-  const shouldAutoHide = pathname === "/community-pot";
+  // Only show music player on the main page
+  const shouldShowPlayer = pathname === "/";
+  const shouldAutoHide = pathname === "/";
   const musicTheme = "blue";
 
   useEffect(() => {

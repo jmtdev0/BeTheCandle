@@ -1,101 +1,138 @@
-# BeTheCandle - Community Pot
+# Be The Candle
 
-BeTheCandle is a Web3 platform featuring a unique "Community Pot" system—a gamified, weekly distribution mechanism running on the Polygon network. While originally conceived as a Bitcoin donation platform, the project evolved to focus on USDC distributions on Polygon. This shift was driven by the high cost of on-chain Bitcoin transactions and the user-facing complexity of alternatives like the Lightning Network. By leveraging Polygon, the platform ensures low transaction fees and a seamless experience for users, providing a more stable and efficient community reward system. This README focuses on the architecture and implementation of the Community Pot.
+An immersive, interactive web experience built around the **Community Pot** — a weekly USDC distribution system on Polygon where participants join and receive equal shares through a transparent on-chain payout.
 
-## ⚗️ The Community Pot
+## Features
 
-The Community Pot is a weekly cycle where authenticated users can register to receive a share of a USDC pool. It combines interactive 3D visualizations with real-time blockchain transactions.
+- **Community Pot** — Weekly pool where participants join with a Polygon wallet address and split the pot equally at payout time.
+- **3D Visualization** — Interactive orbs rendered with Three.js represent each participant in real time.
+- **Day/Night Cycle** — Background gradients shift throughout the day (dawn, day, sunset, night) based on Madrid timezone.
+- **Music & Video Backgrounds** — Ambient music player with synced video backgrounds streamed from Cloudflare R2.
+- **Immersive Mode** — Toggle to hide all UI and enjoy the visual/audio experience.
+- **Donations** — Standalone page to display and share a donation address.
+- **Real-Time Updates** — WebSocket integration for live participant and pot status changes.
+- **On-Chain Payouts** — Automated USDC distribution on Polygon with Twitter payout announcements.
 
-### How it Works
-1.  **Weekly Cycle**: A new "week" starts automatically every Sunday.
-2.  **Join Phase**: Users authenticate and submit their Polygon wallet address to reserve a slot.
-3.  **Visualization**: Participants are represented as floating 3D orbs in the Community Pot lobby.
-4.  **Distribution**: At the end of the cycle (Sunday 16:30 Berlin Time), a secure process triggers the payout.
-5.  **Payout**: The total USDC amount in the pot is divided equally among all valid participants and sent directly to their wallets on the Polygon network.
+## Tech Stack
 
-## 🛠 Tech Stack
+| Layer | Technologies |
+|---|---|
+| Framework | Next.js 15 (App Router), React 19, TypeScript |
+| 3D Graphics | Three.js, React Three Fiber, Drei, Post-Processing (Bloom) |
+| Styling | Tailwind CSS 3, Framer Motion |
+| Database | Supabase (PostgreSQL + Auth + Realtime) |
+| Blockchain | Polygon (USDC), viem |
+| Storage | Cloudflare R2 (video), AWS S3 SDK |
+| APIs | Twitter API v2, Google reCAPTCHA v2 |
+| Testing | Playwright (E2E) |
+| Hosting | Netlify |
 
-### Core Framework
-- **Next.js 15** (App Router)
-- **React 19**
-- **TypeScript**
-- **TailwindCSS** & **Framer Motion** for styling and animations.
+## Project Structure
 
-### Web3 & Blockchain
-- **Network**: Polygon PoS (Mainnet) / Amoy (Testnet).
-- **Token**: USDC (USD Coin).
-- **Library**: **[viem](https://viem.sh/)** - Used for all blockchain interactions, including wallet management, contract calls, and transaction signing.
-- **Smart Contracts**: Standard ERC-20 interactions (USDC contract).
+```
+src/
+├── app/                        # Next.js App Router pages & API routes
+│   ├── api/                    # REST endpoints (community-pot, music, videos, auth)
+│   ├── community-pot/          # Main feature: pot page, guide, history
+│   ├── donate/                 # Donation display page
+│   └── auth/                   # OAuth callback
+├── components/
+│   ├── common/                 # Shared UI (MusicPlayer, Sidebar, CookieBanner, etc.)
+│   └── community-pot/          # Pot-specific (3D orbs, video backgrounds, stats)
+├── contexts/                   # React contexts (music state, cookies, transitions)
+├── hooks/                      # Custom hooks (useCommunityPot, useDayNightCycle, etc.)
+├── lib/                        # Utilities (Supabase clients, DB pool, R2, colors)
+├── types/                      # TypeScript type definitions
+└── data/                       # Static data (music metadata)
 
-### Backend & Infrastructure
-- **Supabase**:
-    - **PostgreSQL**: Stores weekly cycles, participants, and payout logs.
-    - **Edge Functions**: Secure server-less environment for executing the payout logic.
-    - **Realtime**: Pushes live updates (new participants, countdowns) to the frontend.
-    - **Auth**: Handles user authentication before joining the pot.
+scripts/                        # CLI tools for payouts and emergency transfers
+supabase/                       # Database config, seed SQL, and RPC functions
+tests/                          # Playwright E2E tests
+```
 
-## 🌐 Web3 Architecture
-
-The payout system is designed to be secure and automated, moving sensitive logic away from the client.
-
-### Payout Logic (`supabase/functions/community-pot-payout`)
-The distribution is handled by a Supabase Edge Function (`scheduled-distribution.ts`) powered by Deno and `viem`.
-
-1.  **Trigger**: The function is invoked via a scheduled Cron job or a secure API call.
-2.  **Verification**: It checks the current week's status and validates the participant list.
-3.  **Blockchain Interaction**:
-    - Loads the funding wallet using a private key (stored in secure environment variables).
-    - Connects to the Polygon RPC using `viem`.
-    - Calculates the split (Total Pot / Participants).
-    - Batches and executes ERC-20 `transfer` transactions for each participant.
-4.  **Settlement**: Updates the database with transaction hashes and marks the week as "completed".
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- A Supabase project with the necessary database schema.
-- A Polygon wallet with MATIC (for gas) and USDC (for the pot).
+
+- Node.js 20+
+- npm
+- A Supabase project
+- A Polygon RPC endpoint
 
 ### Installation
 
-1.  **Clone the repository**
-    ```bash
-    git clone <repository-url>
-    cd bethecandle
-    ```
+```bash
+git clone https://github.com/jmtdev0/BeTheCandle.git
+cd BeTheCandle
+npm install
+```
 
-2.  **Install dependencies**
-    ```bash
-    npm install
-    ```
+### Environment Variables
 
-3.  **Environment Setup**
-    Create a `.env.local` file with the following keys:
+Create a `.env` file at the project root with the following variables:
 
-    ```env
-    # Supabase
-    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-    
-    # Community Pot (Server-side / Edge Function vars)
-    COMMUNITY_POT_PAYOUT_SECRET=your_secure_secret
-    COMMUNITY_POT_RPC_URL=https://polygon-rpc.com
-    COMMUNITY_POT_PAYOUT_PRIVATE_KEY=your_wallet_private_key
-    ```
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=
 
-4.  **Run Development Server**
-    ```bash
-    npm run dev
-    ```
+# Polygon / Web3
+COMMUNITY_POT_RPC_URL=
+COMMUNITY_POT_PAYOUT_PRIVATE_KEY=
+COMMUNITY_POT_USDC_CONTRACT=0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359
 
-## 📂 Key Directories
+# Community Pot Config
+COMMUNITY_POT_DEFAULT_AMOUNT_USDC=10.00
+COMMUNITY_POT_DEFAULT_MAX_PARTICIPANTS=10
+COMMUNITY_POT_DEFAULT_IS_TESTNET=true
 
-- `src/app/community-pot/`: Frontend pages for the pot interface.
-- `src/components/community-pot/`: 3D Orbs and UI components.
-- `supabase/functions/community-pot-payout/`: The Deno Edge Function containing the `viem` payout logic.
-- `src/lib/communityPot.ts`: Shared logic and types.
+# reCAPTCHA
+NEXT_PUBLIC_RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET_KEY=
 
-## 📄 License
+# Cloudflare R2 (Video Storage)
+R2_ACCESS_KEY_ID=
+R2_ACCOUNT_ID=
+R2_BUCKET_NAME=
+R2_SECRET_ACCESS_KEY=
+R2_PUBLIC_URL=
 
-MIT
+# Twitter API (Payout Announcements)
+TWITTER_API_KEY=
+TWITTER_API_SECRET=
+TWITTER_ACCESS_TOKEN=
+TWITTER_ACCESS_TOKEN_SECRET=
+
+# Site
+PUBLIC_SITE_URL=
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+### Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start development server |
+| `npm run build` | Production build |
+| `npm start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run community-pot:payout` | Execute weekly payout |
+| `npm run community-pot:emergency` | Emergency fund transfer |
+
+## License
+
+All rights reserved.

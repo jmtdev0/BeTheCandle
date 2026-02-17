@@ -67,7 +67,7 @@ function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
 }
 
 export default function VideoBackgroundManager({ trackName }: VideoBackgroundManagerProps) {
-  const { videoVolume } = useMusicTrack();
+  const { videoVolume, setCurrentVideoName, forceSkipVideo } = useMusicTrack();
 
   const [videoList, setVideoList] = useState<VideoClip[]>([]);
   const [playlist, setPlaylist] = useState<VideoClip[]>([]);
@@ -81,6 +81,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
   const isTransitioningRef = useRef(false);
+  const earlyTransitionFiredRef = useRef(false);
 
   // Fetch video list on mount
   useEffect(() => {
@@ -121,14 +122,22 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   }, [trackName]);
 
   // Apply video volume from context to both video elements
+  // Only Telepath videos have audible volume; others are always muted
+  const isTelepath = trackName?.toLowerCase().includes('telepath') ?? false;
+
   useEffect(() => {
     [videoARef, videoBRef].forEach(ref => {
       if (ref.current) {
-        ref.current.muted = videoVolume === 0;
-        ref.current.volume = videoVolume;
+        if (isTelepath) {
+          ref.current.muted = videoVolume === 0;
+          ref.current.volume = videoVolume;
+        } else {
+          ref.current.muted = true;
+          ref.current.volume = 0;
+        }
       }
     });
-  }, [videoVolume]);
+  }, [videoVolume, isTelepath]);
 
   // Bandwidth Tracker
   useEffect(() => {
@@ -212,9 +221,17 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       timerRef.current = null;
     }
 
+    // Start playing the preloaded (incoming) video immediately so it has frames
+    // ready when the opacity crossfade begins
     setCurrentIndex(prevIndex => {
       const nextIndex = (prevIndex + 1) % playlist.length;
       devLog(`[VideoBackgroundManager] Updating index: ${prevIndex} -> ${nextIndex}`);
+
+      // Start the incoming video right away
+      const incomingRef = nextIndex % 2 === 0 ? videoARef : videoBRef;
+      if (incomingRef.current && incomingRef.current.paused && incomingRef.current.readyState >= 2) {
+        incomingRef.current.play().catch(() => {});
+      }
 
       // Reshuffle when wrapping around, avoiding repeat of last clip
       if (nextIndex === 0 && videoList.length > 0) {
@@ -232,19 +249,28 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, 500);
   }, [playlist, videoList]);
 
-  // Handle video ended event
+  // Handle video ended event (fallback — early transition via timeupdate is preferred)
   const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const src = (e.target as HTMLVideoElement).src;
     const filename = src.split('/').pop();
-    devLog(`[VideoBackgroundManager] Video ended: ${filename}. Transitioning...`);
+    if (earlyTransitionFiredRef.current) {
+      devLog(`[VideoBackgroundManager] Video ended: ${filename}. Early transition already fired, skipping.`);
+      return;
+    }
+    devLog(`[VideoBackgroundManager] Video ended: ${filename}. Transitioning (fallback)...`);
     transitionToNext();
   }, [transitionToNext]);
 
   // Apply per-clip properties to a video element
   const applyClipProperties = useCallback((video: HTMLVideoElement, clip: VideoClip) => {
     video.playbackRate = clip.speed;
-    video.muted = videoVolume === 0;
-    video.volume = videoVolume;
+    if (isTelepath) {
+      video.muted = videoVolume === 0;
+      video.volume = videoVolume;
+    } else {
+      video.muted = true;
+      video.volume = 0;
+    }
 
     if (clip.transition === 'cut') {
       setTransitionDuration(0);
@@ -350,6 +376,14 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     devLog('[VideoBackgroundManager] Loading videos. Current:', currentIndex, currentClip.url);
 
+    // Reset early transition flag for new clip
+    earlyTransitionFiredRef.current = false;
+
+    // Update current video name in context
+    const filename = decodeURIComponent(currentClip.url.split('/').pop() || '');
+    const displayName = filename.replace(/\.\w+$/, '').replace(/[-_]/g, ' ');
+    setCurrentVideoName(displayName);
+
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
 
@@ -371,9 +405,10 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       });
     }
 
-    // Preload the next video - DELAYED
-    // The preloaded video must stay paused at its start until it becomes the active video
-    const preloadDelay = transitionDuration;
+    // Preload the next video
+    // For fullLength mode, preload immediately so it's ready for the early crossfade
+    // For timed mode, delay preload to avoid bandwidth contention
+    const preloadDelay = fullLength ? 0 : transitionDuration;
 
     const preloadTimeout = setTimeout(() => {
       if (preloadRef.current) {
@@ -393,13 +428,51 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, preloadDelay);
 
     return () => clearTimeout(preloadTimeout);
-  }, [playlist, currentIndex, transitionDuration, applyClipProperties]);
+  }, [playlist, currentIndex, transitionDuration, applyClipProperties, fullLength]);
+
+  // Early crossfade for fullLength mode: start transition before the video ends
+  useEffect(() => {
+    if (!isActive || playlist.length === 0 || !fullLength) return;
+
+    const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    const video = activeRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      if (!video.duration || earlyTransitionFiredRef.current) return;
+      const timeRemainingSec = video.duration - video.currentTime;
+      const thresholdSec = transitionDuration / 1000;
+
+      if (thresholdSec > 0 && timeRemainingSec <= thresholdSec && timeRemainingSec > 0) {
+        devLog(`[VideoBackgroundManager] Early crossfade triggered. ${timeRemainingSec.toFixed(1)}s remaining.`);
+        earlyTransitionFiredRef.current = true;
+
+        // Start the preloaded video so it has frames ready during the crossfade
+        const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
+        if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
+          preloadRef.current.play().catch(() => {});
+        }
+
+        transitionToNext();
+      }
+    };
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    return () => video.removeEventListener('timeupdate', handleTimeUpdate);
+  }, [isActive, playlist.length, currentIndex, fullLength, transitionDuration, transitionToNext]);
+
+  // Listen for skip video trigger from context
+  useEffect(() => {
+    if (forceSkipVideo === 0) return;
+    transitionToNext();
+  }, [forceSkipVideo, transitionToNext]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
+      setCurrentVideoName(null);
 
       [videoARef, videoBRef].forEach(ref => {
         if (ref.current) {
@@ -409,6 +482,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         }
       });
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!isActive || playlist.length === 0) {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink, Film } from "lucide-react";
+import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink, Film, SkipForward } from "lucide-react";
 import { useCookieConsent } from "@/contexts/CookieConsentContext";
 import { useMusicTrack } from "@/contexts/MusicTrackContext";
 
@@ -36,7 +36,7 @@ function setCookie(name: string, value: string, days = 365) {
 
 export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
   const { allowPreferences } = useCookieConsent();
-  const { setMusicTrackState, videoVolume, setVideoVolume, setImmersiveMode, videoEnabled, forceSkipToSkyScene } = useMusicTrack();
+  const { setMusicTrackState, videoVolume, setVideoVolume, setImmersiveMode, videoEnabled, forceSkipToSkyScene, currentVideoName, triggerSkipVideo } = useMusicTrack();
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -48,6 +48,11 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<"video" | "music">("video");
+  const [isSkipCooldown, setIsSkipCooldown] = useState(false);
+  const skipCooldownRef = useRef<NodeJS.Timeout | null>(null);
+  const videoNameContainerRef = useRef<HTMLDivElement>(null);
+  const videoNameTextRef = useRef<HTMLSpanElement>(null);
+  const [videoNameOverflows, setVideoNameOverflows] = useState(false);
 
   // Auto-switch tab to show currently playing track when expanding
   useEffect(() => {
@@ -230,8 +235,14 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
         const data = await response.json();
         if (data.tracks && data.tracks.length > 0) {
           setTracks(data.tracks);
-          // Seleccionar canción aleatoria
-          const randomIndex = Math.floor(Math.random() * data.tracks.length);
+          // Always start with a Sky Scene track (non-video)
+          const skySceneIndices = data.tracks
+            .map((t: Track, i: number) => ({ t, i }))
+            .filter(({ t }: { t: Track }) => !t.hasVideo)
+            .map(({ i }: { i: number }) => i);
+          const randomIndex = skySceneIndices.length > 0
+            ? skySceneIndices[Math.floor(Math.random() * skySceneIndices.length)]
+            : Math.floor(Math.random() * data.tracks.length);
           setCurrentTrackIndex(randomIndex);
         }
       } catch (error) {
@@ -343,6 +354,31 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     setCurrentTrackIndex(index);
   };
 
+  const handleSkipVideo = useCallback(() => {
+    if (isSkipCooldown) return;
+    triggerSkipVideo();
+    setIsSkipCooldown(true);
+    skipCooldownRef.current = setTimeout(() => setIsSkipCooldown(false), 3000);
+  }, [isSkipCooldown, triggerSkipVideo]);
+
+  // Clear skip cooldown on unmount
+  useEffect(() => {
+    return () => {
+      if (skipCooldownRef.current) clearTimeout(skipCooldownRef.current);
+    };
+  }, []);
+
+  // Detect if video name overflows its container
+  useEffect(() => {
+    const text = videoNameTextRef.current;
+    const container = videoNameContainerRef.current;
+    if (text && container) {
+      setVideoNameOverflows(text.scrollWidth > container.clientWidth);
+    } else {
+      setVideoNameOverflows(false);
+    }
+  }, [currentVideoName]);
+
   // Siempre mostrar el reproductor, incluso sin canciones (para que sea visible)
   const currentTrack = tracks.length > 0 ? tracks[currentTrackIndex] : null;
 
@@ -383,9 +419,21 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
         <div className="flex items-center justify-between p-3 border-b border-gray-700/50 bg-gray-800/50">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Music size={16} className={`${themeColors.icon} flex-shrink-0`} />
-            <span className="text-xs text-gray-400 truncate">
-              {currentTrack ? currentTrack.displayName : "No music"}
-            </span>
+            <div className="min-w-0 flex-1">
+              <span className="text-xs text-gray-400 truncate block">
+                {currentTrack ? currentTrack.displayName : "No music"}
+              </span>
+              {currentTrack?.hasVideo && currentVideoName && (
+                <div ref={videoNameContainerRef} className="overflow-hidden max-w-[180px]">
+                  <span
+                    ref={videoNameTextRef}
+                    className={`text-[10px] text-gray-500 whitespace-nowrap inline-block${videoNameOverflows ? ' video-name-marquee' : ''}`}
+                  >
+                    {currentVideoName}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
           {/* Botón expandir lista (solo si hay múltiples canciones) */}
           {tracks.length > 1 && (
@@ -566,8 +614,8 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
             </div>
           </div>
 
-          {/* Video volume control */}
-          <div className="flex items-center gap-3 mt-3">
+          {/* Video volume control - only for Telepath videos */}
+          {currentTrack?.hasVideo && currentTrack?.name?.toLowerCase().includes('telepath') && <div className="flex items-center gap-3 mt-3">
             <div className="flex-shrink-0 w-10 flex items-center justify-center">
               <Film size={18} className="text-gray-400" />
             </div>
@@ -589,7 +637,27 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                 {Math.round(videoVolume * 100)}%
               </span>
             </div>
-          </div>
+          </div>}
+
+          {/* Skip video button */}
+          {currentTrack?.hasVideo && (
+            <div className="flex items-center gap-3 mt-3">
+              <div className="flex-shrink-0 w-10 flex items-center justify-center">
+                <SkipForward size={18} className="text-gray-400" />
+              </div>
+              <button
+                onClick={handleSkipVideo}
+                disabled={isSkipCooldown}
+                className={`text-xs px-3 py-1.5 rounded transition-colors ${
+                  isSkipCooldown
+                    ? 'text-gray-600 bg-gray-800/30 cursor-not-allowed'
+                    : 'text-gray-300 bg-gray-700/50 hover:bg-gray-600/50 hover:text-white'
+                }`}
+              >
+                {isSkipCooldown ? 'Wait...' : 'Next video'}
+              </button>
+            </div>
+          )}
 
           {/* Mensaje sin música */}
           {tracks.length === 0 && (
@@ -654,6 +722,14 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
         .music-list-scrollbar {
           scrollbar-width: thin;
           scrollbar-color: ${themeColors.slider}55 rgba(17, 24, 39, 0.6);
+        }
+
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-100%); }
+        }
+        .video-name-marquee {
+          animation: marquee 8s linear infinite;
         }
       `}</style>
     </div>

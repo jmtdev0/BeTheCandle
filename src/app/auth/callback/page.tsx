@@ -11,7 +11,7 @@ function CallbackHandler() {
   useEffect(() => {
     const code = searchParams.get("code");
     const error = searchParams.get("error");
-    const next = searchParams.get("next") ?? "/community-pot";
+    const next = searchParams.get("next") ?? "/";
 
     if (error) {
       console.error("OAuth callback error", error);

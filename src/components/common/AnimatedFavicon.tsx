@@ -18,7 +18,7 @@ function ensureFaviconLink(): HTMLLinkElement | null {
 
 export default function AnimatedFavicon() {
   const pathname = usePathname();
-  const isCommunityPot = pathname === "/community-pot";
+  const isCommunityPot = pathname === "/";
 
   useEffect(() => {
     // Update page title based on route

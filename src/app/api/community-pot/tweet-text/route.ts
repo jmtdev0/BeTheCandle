@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 
 Thank you all for supporting BeTheCandle ✨.
 
-🔗 View full history: bethecandle.netlify.app/community-pot/history
+🔗 View full history: bethecandle.live/history
 
 #Web3 #Polygon #USDC`;
 

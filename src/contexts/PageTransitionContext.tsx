@@ -30,7 +30,7 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
 
     // Set appropriate message based on destination
     const messages: Record<string, string> = {
-      "/community-pot": "Loading Community Pot...",
+      "/": "Loading Community Pot...",
       "/donate": "Opening Donations...",
       "/sharing-future": "Loading...",
       "/even-goofier-mode": "Loading...",
@@ -45,7 +45,7 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
   }, [router, pathname]);
 
   // Pages that require data loading before hiding the loader
-  const pagesRequiringData = ["/community-pot"];
+  const pagesRequiringData = ["/"];
   const requiresDataReady = pagesRequiringData.includes(pathname);
 
   // Reset dataReady when navigating to a new page
@@ -61,7 +61,7 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
     if (isInitialLoad) {
       // Set message based on current pathname
       const messages: Record<string, string> = {
-        "/community-pot": "Loading Community Pot...",
+        "/": "Loading Community Pot...",
         "/donate": "Opening Donations...",
         "/sharing-future": "Loading...",
         "/even-goofier-mode": "Loading...",

@@ -46,7 +46,7 @@ function DonateContent() {
             </h1>
           </div>
           <Link
-            href="/community-pot"
+            href="/"
             className="text-sm text-amber-200/80 hover:text-amber-100 transition"
           >
             ← Back to Community Pot

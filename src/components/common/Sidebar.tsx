@@ -14,7 +14,7 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-  { label: "Community Pot", href: "/community-pot", icon: "🌌" },
+  { label: "Community Pot", href: "/", icon: "🌌" },
   // { label: "Even Goofier Mode", href: "/even-goofier-mode", icon: "🎪" },
 ];
 

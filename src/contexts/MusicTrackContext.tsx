@@ -20,6 +20,10 @@ interface MusicTrackContextValue extends MusicTrackState {
   setVideoEnabled: (enabled: boolean) => void;
   forceSkipToSkyScene: number;
   triggerSkipToSkyScene: () => void;
+  currentVideoName: string | null;
+  setCurrentVideoName: (name: string | null) => void;
+  forceSkipVideo: number;
+  triggerSkipVideo: () => void;
 }
 
 const MusicTrackContext = createContext<MusicTrackContextValue | undefined>(undefined);
@@ -33,10 +37,12 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     currentTrackHasVideo: false,
   });
 
-  const [videoVolume, setVideoVolumeState] = useState(0);
+  const [videoVolume, setVideoVolumeState] = useState(0.02);
   const [immersiveMode, setImmersiveModeState] = useState(false);
   const [videoEnabled, setVideoEnabledState] = useState(true);
   const [forceSkipToSkyScene, setForceSkipToSkyScene] = useState(0);
+  const [currentVideoName, setCurrentVideoNameState] = useState<string | null>(null);
+  const [forceSkipVideo, setForceSkipVideo] = useState(0);
 
   const setMusicTrackState = useCallback((newState: MusicTrackState) => {
     setState(newState);
@@ -58,6 +64,14 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     setForceSkipToSkyScene(prev => prev + 1);
   }, []);
 
+  const setCurrentVideoName = useCallback((name: string | null) => {
+    setCurrentVideoNameState(name);
+  }, []);
+
+  const triggerSkipVideo = useCallback(() => {
+    setForceSkipVideo(prev => prev + 1);
+  }, []);
+
   const value: MusicTrackContextValue = {
     ...state,
     setMusicTrackState,
@@ -69,6 +83,10 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     setVideoEnabled,
     forceSkipToSkyScene,
     triggerSkipToSkyScene,
+    currentVideoName,
+    setCurrentVideoName,
+    forceSkipVideo,
+    triggerSkipVideo,
   };
 
   return (
@@ -88,7 +106,7 @@ export function useMusicTrack() {
       currentTrackIndex: 0,
       currentTrackHasVideo: false,
       setMusicTrackState: () => {},
-      videoVolume: 0,
+      videoVolume: 0.02,
       setVideoVolume: () => {},
       immersiveMode: false,
       setImmersiveMode: () => {},
@@ -96,6 +114,10 @@ export function useMusicTrack() {
       setVideoEnabled: () => {},
       forceSkipToSkyScene: 0,
       triggerSkipToSkyScene: () => {},
+      currentVideoName: null,
+      setCurrentVideoName: () => {},
+      forceSkipVideo: 0,
+      triggerSkipVideo: () => {},
     };
   }
   return context;

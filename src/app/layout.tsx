@@ -12,7 +12,7 @@ import { MusicTrackProvider } from "@/contexts/MusicTrackContext";
 
 export const metadata: Metadata = {
   title: "Be The Candle",
-  description: "Non-custodial Bitcoin donation platform with animated bubbles"
+  description: "Join the weekly community pot and receive your share of USDC"
 };
 
 export default function RootLayout({
