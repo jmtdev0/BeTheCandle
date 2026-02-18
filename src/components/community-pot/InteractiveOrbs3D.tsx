@@ -1354,6 +1354,28 @@ function OrbsScene({
   const DECELERATION = 0.88; // Damping factor (0-1, lower = more friction, reduced for quicker stop)
   const MAX_OFFSET = 12; // Increased range (was 3)
 
+  // Smooth zoom state
+  const zoomDistanceRef = useRef(35); // Current camera distance (matches initial camera position z=35)
+  const zoomTargetRef = useRef(35);
+  const ZOOM_MIN = 14;
+  const ZOOM_MAX = 70;
+  const ZOOM_LERP_SPEED = 0.08; // Smoothing factor
+  const ZOOM_STEP = 2.5; // Distance change per scroll tick
+
+  // Smooth sphere rotation via mouse buttons
+  const mouseButtonsRef = useRef<Set<number>>(new Set());
+  const sphereRotationVelRef = useRef(0);
+  const SPHERE_ROT_SPEED = 0.6; // Target rotation speed (rad/s)
+  const SPHERE_ROT_ACCEL = 0.04; // Acceleration factor
+  const SPHERE_ROT_DECEL = 0.92; // Damping when no button pressed
+
+  // Sunflower effect: sphere looks at mouse in Video Gallery mode
+  const mouseNDCRef = useRef({ x: 0, y: 0 }); // Normalized device coordinates (-1 to 1)
+  const sunflowerRotRef = useRef({ x: 0, y: 0 }); // Current smooth rotation offset
+  const baseRotationYRef = useRef(0); // Accumulated Y rotation from mouse-click rotation
+  const SUNFLOWER_LERP = 0.05; // Smoothing factor for look-at
+  const SUNFLOWER_MAX_ANGLE = 0.4; // Max tilt in radians (~23 degrees)
+
   // Center camera on the USDC sphere (CentralCoin at 0,0,0) when on small screens
   useEffect(() => {
     if (!isMobile) return;
@@ -1423,78 +1445,207 @@ function OrbsScene({
     };
   }, []);
 
+  // Smooth zoom: capture wheel events and update target distance
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const direction = e.deltaY > 0 ? 1 : -1; // positive = zoom out, negative = zoom in
+      zoomTargetRef.current = Math.max(
+        ZOOM_MIN,
+        Math.min(ZOOM_MAX, zoomTargetRef.current + direction * ZOOM_STEP)
+      );
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Smooth sphere rotation via left/right mouse buttons
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      mouseButtonsRef.current.add(e.button);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      mouseButtonsRef.current.delete(e.button);
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault(); // Prevent context menu on right-click
+    };
+
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
+
+  // Track mouse position in NDC for sunflower effect
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseNDCRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;  // -1 to 1
+      mouseNDCRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1; // -1 to 1 (inverted Y)
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
   // Orbital rotation and WASD movement for the entire group
   useFrame((state: { camera: THREE.Camera }, delta: number) => {
     if (orbitGroupRef.current) {
       orbitGroupRef.current.rotation.y += delta * 0.05; // Slow rotation speed
     }
 
-    // Apply WASD/Arrow movement relative to CAMERA orientation with smooth acceleration
-    const keys = keysPressed.current;
     const camera = state.camera;
 
-    // Calculate desired movement direction in SCREEN space (Right/Up)
-    let moveRight = 0;
-    let moveUp = 0;
+    // WASD movement and mouse-click rotation only active in Video Gallery mode
+    if (isVideoActive) {
+      // Apply WASD/Arrow movement relative to CAMERA orientation with smooth acceleration
+      const keys = keysPressed.current;
 
-    if (keys.has('w') || keys.has('arrowup')) moveUp += 1;
-    if (keys.has('s') || keys.has('arrowdown')) moveUp -= 1;
-    if (keys.has('a') || keys.has('arrowleft')) moveRight -= 1;
-    if (keys.has('d') || keys.has('arrowright')) moveRight += 1;
+      // Calculate desired movement direction in SCREEN space (Right/Up)
+      let moveRight = 0;
+      let moveUp = 0;
 
-    // Calculate target velocity based on input
-    let targetVelX = 0;
-    let targetVelY = 0;
-    let targetVelZ = 0;
+      if (keys.has('w') || keys.has('arrowup')) moveUp += 1;
+      if (keys.has('s') || keys.has('arrowdown')) moveUp -= 1;
+      if (keys.has('a') || keys.has('arrowleft')) moveRight -= 1;
+      if (keys.has('d') || keys.has('arrowright')) moveRight += 1;
 
-    if (moveRight !== 0 || moveUp !== 0) {
-      // Get camera's local vectors in world space
-      const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-      const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      // Calculate target velocity based on input
+      let targetVelX = 0;
+      let targetVelY = 0;
+      let targetVelZ = 0;
 
-      // Calculate target velocity vector
-      const targetVel = new THREE.Vector3()
-        .addScaledVector(camRight, moveRight)
-        .addScaledVector(camUp, moveUp)
-        .normalize()
-        .multiplyScalar(MOVE_SPEED);
+      if (moveRight !== 0 || moveUp !== 0) {
+        // Get camera's local vectors in world space
+        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
 
-      targetVelX = targetVel.x;
-      targetVelY = targetVel.y;
-      targetVelZ = targetVel.z;
-    }
+        // Calculate target velocity vector
+        const targetVel = new THREE.Vector3()
+          .addScaledVector(camRight, moveRight)
+          .addScaledVector(camUp, moveUp)
+          .normalize()
+          .multiplyScalar(MOVE_SPEED);
 
-    // Smooth acceleration/deceleration using lerp
-    const velocity = velocityRef.current;
-    velocity.x += (targetVelX - velocity.x) * ACCELERATION;
-    velocity.y += (targetVelY - velocity.y) * ACCELERATION;
-    velocity.z += (targetVelZ - velocity.z) * ACCELERATION;
+        targetVelX = targetVel.x;
+        targetVelY = targetVel.y;
+        targetVelZ = targetVel.z;
+      }
 
-    // Apply damping when no input (deceleration)
-    if (moveRight === 0 && moveUp === 0) {
+      // Smooth acceleration/deceleration using lerp
+      const velocity = velocityRef.current;
+      velocity.x += (targetVelX - velocity.x) * ACCELERATION;
+      velocity.y += (targetVelY - velocity.y) * ACCELERATION;
+      velocity.z += (targetVelZ - velocity.z) * ACCELERATION;
+
+      // Apply damping when no input (deceleration)
+      if (moveRight === 0 && moveUp === 0) {
+        velocity.x *= DECELERATION;
+        velocity.y *= DECELERATION;
+        velocity.z *= DECELERATION;
+      }
+
+      // Update position based on velocity
+      movementRef.current.x += velocity.x;
+      movementRef.current.y += velocity.y;
+      movementRef.current.z += velocity.z;
+
+      // Clamp within a 3D box defined by MAX_OFFSET
+      movementRef.current.x = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.x));
+      movementRef.current.y = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.y));
+      movementRef.current.z = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.z));
+
+      // Stop velocity when hitting boundaries
+      if (Math.abs(movementRef.current.x) >= MAX_OFFSET) velocity.x = 0;
+      if (Math.abs(movementRef.current.y) >= MAX_OFFSET) velocity.y = 0;
+      if (Math.abs(movementRef.current.z) >= MAX_OFFSET) velocity.z = 0;
+
+      // Smooth sphere rotation via mouse buttons
+      const buttons = mouseButtonsRef.current;
+      let rotTarget = 0;
+      if (buttons.has(0)) rotTarget += SPHERE_ROT_SPEED; // Left click = rotate right
+      if (buttons.has(2)) rotTarget -= SPHERE_ROT_SPEED; // Right click = rotate left
+
+      if (rotTarget !== 0) {
+        sphereRotationVelRef.current += (rotTarget - sphereRotationVelRef.current) * SPHERE_ROT_ACCEL;
+      } else {
+        sphereRotationVelRef.current *= SPHERE_ROT_DECEL;
+      }
+
+      // Accumulate click rotation into base ref
+      if (Math.abs(sphereRotationVelRef.current) > 0.001) {
+        baseRotationYRef.current += sphereRotationVelRef.current * delta;
+      }
+    } else {
+      // Sky Scene mode: decelerate any residual movement/rotation smoothly
+      const velocity = velocityRef.current;
       velocity.x *= DECELERATION;
       velocity.y *= DECELERATION;
       velocity.z *= DECELERATION;
+      sphereRotationVelRef.current *= SPHERE_ROT_DECEL;
+      if (Math.abs(sphereRotationVelRef.current) > 0.001) {
+        baseRotationYRef.current += sphereRotationVelRef.current * delta;
+      }
     }
 
-    // Update position based on velocity
-    movementRef.current.x += velocity.x;
-    movementRef.current.y += velocity.y;
-    movementRef.current.z += velocity.z;
-
-    // Clamp within a 3D box defined by MAX_OFFSET
-    movementRef.current.x = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.x));
-    movementRef.current.y = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.y));
-    movementRef.current.z = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.z));
-
-    // Stop velocity when hitting boundaries
-    if (Math.abs(movementRef.current.x) >= MAX_OFFSET) velocity.x = 0;
-    if (Math.abs(movementRef.current.y) >= MAX_OFFSET) velocity.y = 0;
-    if (Math.abs(movementRef.current.z) >= MAX_OFFSET) velocity.z = 0;
-
-    // Apply movement to main group
+    // Apply movement to main group (always, so deceleration works on mode switch)
     if (mainGroupRef.current) {
       mainGroupRef.current.position.set(movementRef.current.x, movementRef.current.y, movementRef.current.z);
+    }
+
+    // Smooth zoom: lerp camera distance toward target
+    const cam = state.camera;
+    const controls = controlsRef.current;
+    if (controls) {
+      const target = controls.target as THREE.Vector3;
+      const dirFromTarget = cam.position.clone().sub(target);
+      const currentDist = dirFromTarget.length();
+
+      // Sync ref with actual distance on first frame
+      if (Math.abs(zoomDistanceRef.current - currentDist) > 10) {
+        zoomDistanceRef.current = currentDist;
+        zoomTargetRef.current = currentDist;
+      }
+
+      // Lerp toward target distance
+      zoomDistanceRef.current += (zoomTargetRef.current - zoomDistanceRef.current) * ZOOM_LERP_SPEED;
+
+      // Only apply if there's a meaningful difference
+      if (Math.abs(zoomDistanceRef.current - currentDist) > 0.01) {
+        dirFromTarget.normalize().multiplyScalar(zoomDistanceRef.current);
+        cam.position.copy(target.clone().add(dirFromTarget));
+        controls.update();
+      }
+    }
+
+    // Sunflower effect: sphere tilts toward mouse cursor in Video Gallery mode
+    if (mainGroupRef.current) {
+      if (isVideoActive) {
+        // Target rotation based on mouse NDC position
+        const targetRotX = -mouseNDCRef.current.y * SUNFLOWER_MAX_ANGLE; // Tilt up/down
+        const targetRotY = mouseNDCRef.current.x * SUNFLOWER_MAX_ANGLE;  // Tilt left/right
+
+        // Smooth lerp toward target
+        sunflowerRotRef.current.x += (targetRotX - sunflowerRotRef.current.x) * SUNFLOWER_LERP;
+        sunflowerRotRef.current.y += (targetRotY - sunflowerRotRef.current.y) * SUNFLOWER_LERP;
+
+        // Set rotation = base click rotation + sunflower offset (no drift)
+        mainGroupRef.current.rotation.x = sunflowerRotRef.current.x;
+        mainGroupRef.current.rotation.y = baseRotationYRef.current + sunflowerRotRef.current.y;
+      } else {
+        // Sky Scene: smoothly return to neutral tilt
+        sunflowerRotRef.current.x *= 0.95;
+        sunflowerRotRef.current.y *= 0.95;
+        mainGroupRef.current.rotation.x = sunflowerRotRef.current.x;
+        mainGroupRef.current.rotation.y = baseRotationYRef.current + sunflowerRotRef.current.y;
+      }
     }
   });
 
@@ -1628,10 +1779,9 @@ function OrbsScene({
       {/* Controles de órbita - rotación con zoom limitado */}
       <OrbitControls
         ref={controlsRef}
-        enableZoom={true}
+        enableZoom={false}
         enablePan={false}
         rotateSpeed={0.5}
-        zoomSpeed={0.3}
         minDistance={14}
         maxDistance={70}
         minPolarAngle={Math.PI / 4}

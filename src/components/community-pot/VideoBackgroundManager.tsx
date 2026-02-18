@@ -41,6 +41,8 @@ function getRandomDuration() {
   return Math.random() * (MAX_DURATION - MIN_DURATION) + MIN_DURATION;
 }
 
+const DEFAULT_FADE_MS = 2500;
+
 // Helper to log only in development
 const isDev = process.env.NODE_ENV === 'development' || typeof window !== 'undefined' && window.location.hostname === 'localhost';
 const devLog = (...args: unknown[]) => {
@@ -74,7 +76,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [fullLength, setFullLength] = useState(false);
-  const [transitionDuration, setTransitionDuration] = useState(3500);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
@@ -82,6 +84,26 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const mountedRef = useRef(true);
   const isTransitioningRef = useRef(false);
   const earlyTransitionFiredRef = useRef(false);
+
+  // Transition duration as a ref — never triggers re-renders or effect re-runs
+  const transitionDurationRef = useRef(DEFAULT_FADE_MS);
+
+  // Keep a ref mirror of playlist so callbacks always see the latest value
+  const playlistRef = useRef<VideoClip[]>([]);
+  useEffect(() => { playlistRef.current = playlist; }, [playlist]);
+
+  const videoListRef = useRef<VideoClip[]>([]);
+  useEffect(() => { videoListRef.current = videoList; }, [videoList]);
+
+  // Apply transition duration directly to both video elements (no state, no re-render)
+  const setTransitionDuration = useCallback((ms: number) => {
+    transitionDurationRef.current = ms;
+    [videoARef, videoBRef].forEach(ref => {
+      if (ref.current) {
+        ref.current.style.transitionDuration = `${ms}ms`;
+      }
+    });
+  }, []);
 
   // Fetch video list on mount
   useEffect(() => {
@@ -221,33 +243,46 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       timerRef.current = null;
     }
 
-    // Start playing the preloaded (incoming) video immediately so it has frames
-    // ready when the opacity crossfade begins
+    // Determine the next clip's transition BEFORE flipping the index,
+    // so the CSS transition-duration is already applied when opacity changes.
     setCurrentIndex(prevIndex => {
-      const nextIndex = (prevIndex + 1) % playlist.length;
+      const pl = playlistRef.current;
+      const nextIndex = (prevIndex + 1) % pl.length;
+      const nextClip = pl[nextIndex];
+
       devLog(`[VideoBackgroundManager] Updating index: ${prevIndex} -> ${nextIndex}`);
+
+      // Apply the incoming clip's transition duration to both elements
+      const duration = nextClip?.transition === 'cut' ? 0 : DEFAULT_FADE_MS;
+      setTransitionDuration(duration);
 
       // Start the incoming video right away
       const incomingRef = nextIndex % 2 === 0 ? videoARef : videoBRef;
       if (incomingRef.current && incomingRef.current.paused && incomingRef.current.readyState >= 2) {
-        incomingRef.current.play().catch(() => {});
+        incomingRef.current.play().catch((err) => {
+          if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            setAutoplayBlocked(true);
+          }
+        });
       }
 
       // Reshuffle when wrapping around, avoiding repeat of last clip
-      if (nextIndex === 0 && videoList.length > 0) {
+      if (nextIndex === 0 && videoListRef.current.length > 0) {
         devLog('[VideoBackgroundManager] Reshuffling playlist');
-        const lastClip = playlist[playlist.length - 1] ?? null;
-        const newPlaylist = shuffleAvoidingFirst(videoList, lastClip);
+        const lastClip = pl[pl.length - 1] ?? null;
+        const newPlaylist = shuffleAvoidingFirst(videoListRef.current, lastClip);
         setPlaylist(newPlaylist);
       }
 
       return nextIndex;
     });
 
+    // Release the transition lock after the fade completes (not before)
+    const guardDuration = transitionDurationRef.current + 100;
     setTimeout(() => {
       isTransitioningRef.current = false;
-    }, 500);
-  }, [playlist, videoList]);
+    }, guardDuration);
+  }, [setTransitionDuration]);
 
   // Handle video ended event (fallback — early transition via timeupdate is preferred)
   const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -261,7 +296,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     transitionToNext();
   }, [transitionToNext]);
 
-  // Apply per-clip properties to a video element
+  // Apply per-clip properties to a video element (speed + volume only, no transition state)
   const applyClipProperties = useCallback((video: HTMLVideoElement, clip: VideoClip) => {
     video.playbackRate = clip.speed;
     if (isTelepath) {
@@ -272,19 +307,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       video.volume = 0;
     }
 
-    if (clip.transition === 'cut') {
-      setTransitionDuration(0);
-    } else {
-      setTransitionDuration(2500);
-    }
-
     devLog('[VideoBackgroundManager] Applied clip properties:', {
       file: clip.url.split('/').pop(),
       speed: clip.speed,
       transition: clip.transition,
       videoVolume,
     });
-  }, [videoVolume]);
+  }, [videoVolume, isTelepath]);
 
   // Setup timer for transitions (only when NOT fullLength)
   useEffect(() => {
@@ -303,16 +332,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         const videoDurationMs = video.duration * 1000;
         const currentClip = playlist[currentIndex];
         const effectiveDurationMs = videoDurationMs / (currentClip?.speed || 1);
-        const fadeBuffer = currentClip?.transition === 'cut' ? 0 : 2500;
+        const fadeBuffer = currentClip?.transition === 'cut' ? 0 : DEFAULT_FADE_MS;
 
         if (effectiveDurationMs < 5000) {
            devLog(`[VideoBackgroundManager] Short video detected (${(effectiveDurationMs/1000).toFixed(1)}s < 5s). Scheduling hard cut.`);
-           setTransitionDuration(0);
+           // Short videos will get a cut transition applied in transitionToNext
            duration = effectiveDurationMs;
         } else {
-           if (currentClip?.transition !== 'cut') {
-             setTransitionDuration(2500);
-           }
            const safeRunTime = Math.max(0, effectiveDurationMs - fadeBuffer);
 
            if (duration > safeRunTime) {
@@ -320,8 +346,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
              duration = safeRunTime;
            }
         }
-      } else {
-         setTransitionDuration(2500);
       }
 
       devLog('[VideoBackgroundManager] Setting timer for', duration, 'ms');
@@ -402,13 +426,15 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
       video.play().catch((err) => {
         devLog('[VideoBackgroundManager] Autoplay failed:', err);
+        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+          setAutoplayBlocked(true);
+        }
       });
     }
 
-    // Preload the next video
-    // For fullLength mode, preload immediately so it's ready for the early crossfade
-    // For timed mode, delay preload to avoid bandwidth contention
-    const preloadDelay = fullLength ? 0 : transitionDuration;
+    // Preload the next video after the current transition completes.
+    // This avoids destroying the fading-out element's visual content mid-crossfade.
+    const preloadDelay = transitionDurationRef.current;
 
     const preloadTimeout = setTimeout(() => {
       if (preloadRef.current) {
@@ -428,7 +454,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, preloadDelay);
 
     return () => clearTimeout(preloadTimeout);
-  }, [playlist, currentIndex, transitionDuration, applyClipProperties, fullLength]);
+  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName]);
 
   // Early crossfade for fullLength mode: start transition before the video ends
   useEffect(() => {
@@ -441,7 +467,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     const handleTimeUpdate = () => {
       if (!video.duration || earlyTransitionFiredRef.current) return;
       const timeRemainingSec = video.duration - video.currentTime;
-      const thresholdSec = transitionDuration / 1000;
+      const thresholdSec = transitionDurationRef.current / 1000;
 
       if (thresholdSec > 0 && timeRemainingSec <= thresholdSec && timeRemainingSec > 0) {
         devLog(`[VideoBackgroundManager] Early crossfade triggered. ${timeRemainingSec.toFixed(1)}s remaining.`);
@@ -450,7 +476,11 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         // Start the preloaded video so it has frames ready during the crossfade
         const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
         if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
-          preloadRef.current.play().catch(() => {});
+          preloadRef.current.play().catch((err) => {
+            if (err instanceof DOMException && err.name === 'NotAllowedError') {
+              setAutoplayBlocked(true);
+            }
+          });
         }
 
         transitionToNext();
@@ -459,7 +489,43 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     return () => video.removeEventListener('timeupdate', handleTimeUpdate);
-  }, [isActive, playlist.length, currentIndex, fullLength, transitionDuration, transitionToNext]);
+  }, [isActive, playlist.length, currentIndex, fullLength, transitionToNext]);
+
+  // Initialize transition duration on both video elements once they are active
+  useEffect(() => {
+    if (isActive) {
+      setTransitionDuration(DEFAULT_FADE_MS);
+    }
+  }, [isActive, setTransitionDuration]);
+
+  // Handle user clicking "Enable Video" in the autoplay-blocked modal
+  const handleEnableVideo = useCallback(() => {
+    const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    if (activeRef.current) {
+      activeRef.current.play().catch(() => {});
+    }
+    setAutoplayBlocked(false);
+  }, [currentIndex]);
+
+  // Recover playback when the page becomes visible again
+  useEffect(() => {
+    const handleVisibilityRecover = () => {
+      if (document.hidden) return;
+      const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+      const video = activeRef.current;
+      if (video && video.paused && mountedRef.current && !autoplayBlocked) {
+        video.play().catch((err) => {
+          devLog('[VideoBackgroundManager] Visibility recovery play failed:', err);
+          if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            setAutoplayBlocked(true);
+          }
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityRecover);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityRecover);
+  }, [currentIndex, autoplayBlocked]);
 
   // Listen for skip video trigger from context
   useEffect(() => {
@@ -502,7 +568,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
         style={{
           opacity: videoAOpacity,
-          transitionDuration: `${transitionDuration}ms`,
           transitionProperty: 'opacity'
         }}
         muted
@@ -516,7 +581,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
         style={{
           opacity: videoBOpacity,
-          transitionDuration: `${transitionDuration}ms`,
           transitionProperty: 'opacity'
         }}
         muted
@@ -524,6 +588,29 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         preload="auto"
         onEnded={handleVideoEnded}
       />
+
+      {autoplayBlocked && (
+        <div
+          className="fixed inset-0 flex items-center justify-center pointer-events-auto"
+          style={{ zIndex: 9999, backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
+        >
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-sm mx-4 text-center shadow-2xl">
+            <h2 className="text-white text-xl font-semibold mb-3">
+              Video Playback Blocked
+            </h2>
+            <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+              Your browser is blocking automatic video playback to save resources.
+              Click the button below to enable it.
+            </p>
+            <button
+              onClick={handleEnableVideo}
+              className="bg-white text-gray-900 font-medium px-6 py-2.5 rounded-lg hover:bg-gray-200 transition-colors duration-200"
+            >
+              Enable Video
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
