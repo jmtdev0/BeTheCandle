@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "community-pot:payout": "tsx scripts/community-pot-payout.ts",
-    "community-pot:emergency": "tsx scripts/emergency-transfer.ts"
+    "community-pot:emergency": "tsx scripts/emergency-transfer.ts",
+    "community-pot:verify-wallet": "tsx scripts/verify-wallet.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.990.0",

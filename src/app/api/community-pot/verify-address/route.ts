@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 // Polygon RPC endpoints
-const POLYGON_RPC_MAINNET = "https://polygon-rpc.com";
+const POLYGON_RPC_MAINNET = process.env.COMMUNITY_POT_RPC_URL || "https://polygon-rpc.com";
 const POLYGON_RPC_AMOY = "https://rpc-amoy.polygon.technology";
 
 // Rate limiting (in-memory, per instance)
