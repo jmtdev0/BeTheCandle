@@ -24,6 +24,8 @@ interface MusicTrackContextValue extends MusicTrackState {
   setCurrentVideoName: (name: string | null) => void;
   forceSkipVideo: number;
   triggerSkipVideo: () => void;
+  videoPlaybackUnlockRequest: number;
+  triggerVideoPlaybackUnlock: () => void;
 }
 
 const MusicTrackContext = createContext<MusicTrackContextValue | undefined>(undefined);
@@ -43,6 +45,7 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
   const [forceSkipToSkyScene, setForceSkipToSkyScene] = useState(0);
   const [currentVideoName, setCurrentVideoNameState] = useState<string | null>(null);
   const [forceSkipVideo, setForceSkipVideo] = useState(0);
+  const [videoPlaybackUnlockRequest, setVideoPlaybackUnlockRequest] = useState(0);
 
   const setMusicTrackState = useCallback((newState: MusicTrackState) => {
     setState(newState);
@@ -72,6 +75,10 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     setForceSkipVideo(prev => prev + 1);
   }, []);
 
+  const triggerVideoPlaybackUnlock = useCallback(() => {
+    setVideoPlaybackUnlockRequest(prev => prev + 1);
+  }, []);
+
   const value: MusicTrackContextValue = {
     ...state,
     setMusicTrackState,
@@ -87,6 +94,8 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     setCurrentVideoName,
     forceSkipVideo,
     triggerSkipVideo,
+    videoPlaybackUnlockRequest,
+    triggerVideoPlaybackUnlock,
   };
 
   return (
@@ -118,6 +127,8 @@ export function useMusicTrack() {
       setCurrentVideoName: () => {},
       forceSkipVideo: 0,
       triggerSkipVideo: () => {},
+      videoPlaybackUnlockRequest: 0,
+      triggerVideoPlaybackUnlock: () => {},
     };
   }
   return context;

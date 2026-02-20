@@ -36,7 +36,17 @@ function setCookie(name: string, value: string, days = 365) {
 
 export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
   const { allowPreferences } = useCookieConsent();
-  const { setMusicTrackState, videoVolume, setVideoVolume, setImmersiveMode, videoEnabled, forceSkipToSkyScene, currentVideoName, triggerSkipVideo } = useMusicTrack();
+  const {
+    setMusicTrackState,
+    videoVolume,
+    setVideoVolume,
+    setImmersiveMode,
+    videoEnabled,
+    forceSkipToSkyScene,
+    currentVideoName,
+    triggerSkipVideo,
+    triggerVideoPlaybackUnlock,
+  } = useMusicTrack();
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -348,6 +358,9 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
   const selectTrack = (index: number) => {
     const track = tracks[index];
+    if (track?.hasVideo) {
+      triggerVideoPlaybackUnlock();
+    }
     if (track && !track.hasVideo) {
       setImmersiveMode(false);
     }
@@ -505,6 +518,11 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                   >
                     <div className="flex items-center gap-2">
                       <button
+                        onPointerDown={() => {
+                          if (track.hasVideo) {
+                            triggerVideoPlaybackUnlock();
+                          }
+                        }}
                         onClick={() => selectTrack(globalIndex)}
                         className="flex items-center gap-2 flex-1 min-w-0"
                       >

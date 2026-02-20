@@ -69,14 +69,13 @@ function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
 }
 
 export default function VideoBackgroundManager({ trackName }: VideoBackgroundManagerProps) {
-  const { videoVolume, setCurrentVideoName, forceSkipVideo } = useMusicTrack();
+  const { videoVolume, setCurrentVideoName, forceSkipVideo, videoPlaybackUnlockRequest } = useMusicTrack();
 
   const [videoList, setVideoList] = useState<VideoClip[]>([]);
   const [playlist, setPlaylist] = useState<VideoClip[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [fullLength, setFullLength] = useState(false);
-  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
@@ -258,7 +257,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
             currentTime: video.currentTime,
             playPromiseResolved,
           });
-          setAutoplayBlocked(true);
         }
       }, 200);
     };
@@ -281,9 +279,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           video.removeEventListener('canplay', onCanPlay);
           video.removeEventListener('timeupdate', onTimeUpdate);
           devLog('[VideoBackgroundManager] play() rejected:', err);
-          if (err instanceof DOMException && err.name === 'NotAllowedError') {
-            setAutoplayBlocked(true);
-          }
         });
     }
 
@@ -300,7 +295,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           currentTime: video.currentTime,
           playPromiseResolved,
         });
-        setAutoplayBlocked(true);
       }
     }, 1200);
   }, []);
@@ -562,16 +556,25 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }
   }, [isActive, setTransitionDuration]);
 
-  // Handle user clicking "Enable Video" in the autoplay-blocked modal
-  const handleEnableVideo = useCallback(() => {
+  // User-gesture hint from MusicPlayer: when a Video Gallery track button is pressed,
+  // aggressively retry playback for active/preloaded elements.
+  useEffect(() => {
+    if (videoPlaybackUnlockRequest === 0) return;
+    if (!isActive || playlist.length === 0) return;
+
+    devLog('[VideoBackgroundManager] Received user playback unlock request');
+
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
+
     if (activeRef.current) {
-      activeRef.current.play().catch((err) => {
-        devLog('[VideoBackgroundManager] Enable Video click did not unlock playback:', err);
-      });
+      attemptPlay(activeRef.current);
     }
-    setAutoplayBlocked(false);
-  }, [currentIndex]);
+
+    if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
+      attemptPlay(preloadRef.current);
+    }
+  }, [videoPlaybackUnlockRequest, isActive, playlist.length, currentIndex, attemptPlay]);
 
   // Recover playback when the page becomes visible again
   useEffect(() => {
@@ -579,14 +582,14 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       if (document.hidden) return;
       const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
       const video = activeRef.current;
-      if (video && video.paused && mountedRef.current && !autoplayBlocked) {
+      if (video && video.paused && mountedRef.current) {
         attemptPlay(video);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityRecover);
     return () => document.removeEventListener('visibilitychange', handleVisibilityRecover);
-  }, [currentIndex, autoplayBlocked, attemptPlay]);
+  }, [currentIndex, attemptPlay]);
 
   // Listen for skip video trigger from context
   useEffect(() => {
@@ -652,28 +655,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         />
       </div>
 
-      {autoplayBlocked && (
-        <div
-          className="fixed inset-0 flex items-center justify-center pointer-events-auto"
-          style={{ zIndex: 9999, backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
-        >
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-sm mx-4 text-center shadow-2xl">
-            <h2 className="text-white text-xl font-semibold mb-3">
-              Video Playback Blocked
-            </h2>
-            <p className="text-gray-300 text-sm mb-6 leading-relaxed">
-              Your browser is blocking automatic video playback to save resources.
-              Click the button below to enable it.
-            </p>
-            <button
-              onClick={handleEnableVideo}
-              className="bg-white text-gray-900 font-medium px-6 py-2.5 rounded-lg hover:bg-gray-200 transition-colors duration-200"
-            >
-              Enable Video
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }
