@@ -1,10 +1,19 @@
 # Changelog
 
+### 21/02/2026
+
 ### 20/02/2026
 * Created CHANGELOG.md
 * Added global instructions to read context files (AGENTS.md, copilot-instructions.md, README.md) at conversation start
 * Fixed autoplay-blocked modal being invisible in all browsers (was inside a z-index:-1 parent container)
 * Added Brave-compatible autoplay detection via canplay event fallback (Brave silently blocks autoplay without rejecting the play() promise)
+* Refined USDC `CentralCoin` sunflower tracking in Video Gallery with raycast-driven 3D orientation
+* Stabilized sunflower motion with NDC + local-direction smoothing, face-switch hysteresis, and bounded quaternion rotation
+* Fixed sunflower behavior across zoom levels by projecting cursor ray onto a camera-facing plane at sphere depth
+* Biased sunflower target plane toward the viewer so one USDC symbol stays more front-facing (not perpendicular)
+* Removed drag-start rotation jump by baking transient sunflower offset into base rotation on left-click drag begin
+* Added Video Gallery idle behavior: after 3s without mouse movement, USDC sphere resumes gentle auto-rotation and returns to sunflower on mouse move
+* Softened idle auto-rotation startup with eased blend-in to avoid abrupt spin onset
 
 ### 19/02/2026
 * Added verify-wallet Supabase function

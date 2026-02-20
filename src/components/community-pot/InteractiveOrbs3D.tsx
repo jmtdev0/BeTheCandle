@@ -1195,19 +1195,53 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
   const toTargetWorldRef = useRef(new THREE.Vector3());
   const toTargetLocalRef = useRef(new THREE.Vector3());
   const smoothedLocalDirRef = useRef(new THREE.Vector3(0, 0, 1));
+  const camForwardRef = useRef(new THREE.Vector3());
+  const targetPlaneRef = useRef(new THREE.Plane());
+  const targetPlanePointRef = useRef(new THREE.Vector3());
   const parentWorldQuatRef = useRef(new THREE.Quaternion());
   const currentQuatRef = useRef(new THREE.Quaternion());
   const targetFrontQuatRef = useRef(new THREE.Quaternion());
   const targetBackQuatRef = useRef(new THREE.Quaternion());
   const tmpNdcRef = useRef(new THREE.Vector2());
   const smoothedNdcRef = useRef(new THREE.Vector2());
+  const prevMouseNdcRef = useRef(new THREE.Vector2());
+  const lastMouseMoveAtRef = useRef(Date.now());
+  const idleSpinBlendRef = useRef(0);
   const activeFaceRef = useRef<1 | -1>(1);
   const AXIS_FRONT = useMemo(() => new THREE.Vector3(0, 0, 1), []);
   const AXIS_BACK = useMemo(() => new THREE.Vector3(0, 0, -1), []);
+  const SUNFLOWER_PLANE_FORWARD_BIAS = 8;
+  const VIDEO_MOUSE_IDLE_MS = 3000;
+  const VIDEO_IDLE_SPIN_SPEED = 0.22;
+  const VIDEO_IDLE_SPIN_BLEND_IN = 2.5;
 
   useFrame((state: { camera: THREE.Camera }, delta: number) => {
     if (spinRef.current) {
       if (isVideoActive && mouseNDCRef) {
+        const mouseX = mouseNDCRef.current.x;
+        const mouseY = mouseNDCRef.current.y;
+        const movedX = Math.abs(mouseX - prevMouseNdcRef.current.x);
+        const movedY = Math.abs(mouseY - prevMouseNdcRef.current.y);
+        const mouseMoved = movedX > 1e-5 || movedY > 1e-5;
+        if (mouseMoved) {
+          lastMouseMoveAtRef.current = Date.now();
+        }
+        prevMouseNdcRef.current.set(mouseX, mouseY);
+        const isMouseIdle = Date.now() - lastMouseMoveAtRef.current >= VIDEO_MOUSE_IDLE_MS;
+
+        if (isMouseIdle) {
+          // In Video Gallery, blend-in spin smoothly after idle threshold.
+          const blendAlpha = 1 - Math.exp(-VIDEO_IDLE_SPIN_BLEND_IN * delta);
+          idleSpinBlendRef.current += (1 - idleSpinBlendRef.current) * blendAlpha;
+          const easedBlend =
+            idleSpinBlendRef.current * idleSpinBlendRef.current * (3 - 2 * idleSpinBlendRef.current);
+
+          spinRef.current.rotation.y += delta * VIDEO_IDLE_SPIN_SPEED * easedBlend;
+          spinRef.current.rotation.x *= 1 - 0.04 * easedBlend;
+          return;
+        }
+        idleSpinBlendRef.current = 0;
+
         // Raycast from camera through cursor; rotate coin so either +Z or -Z logo faces that 3D ray.
         const ndcFollow = 1 - Math.exp(-18 * delta);
         smoothedNdcRef.current.x += (mouseNDCRef.current.x - smoothedNdcRef.current.x) * ndcFollow;
@@ -1215,12 +1249,23 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
         tmpNdcRef.current.copy(smoothedNdcRef.current);
         raycasterRef.current.setFromCamera(tmpNdcRef.current, state.camera);
 
-        // Use a point on the cursor ray far enough from the sphere center for stable direction.
-        worldTargetRef.current
-          .copy(raycasterRef.current.ray.origin)
-          .addScaledVector(raycasterRef.current.ray.direction, 30);
-
         spinRef.current.getWorldPosition(worldPosRef.current);
+        state.camera.getWorldDirection(camForwardRef.current);
+        targetPlanePointRef.current
+          .copy(worldPosRef.current)
+          .addScaledVector(camForwardRef.current, -SUNFLOWER_PLANE_FORWARD_BIAS);
+        targetPlaneRef.current.setFromNormalAndCoplanarPoint(camForwardRef.current, targetPlanePointRef.current);
+
+        // Intersect cursor ray with a plane at the sphere depth (camera-facing).
+        // This keeps behavior consistent regardless of zoom distance.
+        const hit = raycasterRef.current.ray.intersectPlane(targetPlaneRef.current, worldTargetRef.current);
+        if (!hit) {
+          const fallbackDistance = state.camera.position.distanceTo(worldPosRef.current);
+          worldTargetRef.current
+            .copy(raycasterRef.current.ray.origin)
+            .addScaledVector(raycasterRef.current.ray.direction, fallbackDistance);
+        }
+
         toTargetWorldRef.current
           .subVectors(worldTargetRef.current, worldPosRef.current)
           .normalize();
@@ -1238,7 +1283,7 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
         }
 
         // Additional smoothing in 3D direction space to remove tiny orientation jitter.
-        const dirFollow = 1 - Math.exp(-22 * delta);
+        const dirFollow = 1 - Math.exp(-16 * delta);
         smoothedLocalDirRef.current
           .lerp(toTargetLocalRef.current, dirFollow)
           .normalize();
@@ -1260,7 +1305,7 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
 
         const angleToTarget = currentQuat.angleTo(selectedTarget);
         if (angleToTarget > 1e-4) {
-          const maxAngularSpeed = 9; // rad/s
+          const maxAngularSpeed = 7; // rad/s
           currentQuat.rotateTowards(selectedTarget, maxAngularSpeed * delta);
         }
       } else {
@@ -1269,6 +1314,8 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
         spinRef.current.rotation.x *= 0.95;
         activeFaceRef.current = 1;
         smoothedLocalDirRef.current.set(0, 0, 1);
+        lastMouseMoveAtRef.current = Date.now();
+        idleSpinBlendRef.current = 0;
       }
     }
   });
