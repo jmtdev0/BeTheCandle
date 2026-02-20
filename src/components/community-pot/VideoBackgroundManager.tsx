@@ -228,34 +228,81 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     };
   }, []);
 
-  // Attempt to play a video with fallback detection for browsers (e.g. Brave) that silently
-  // block autoplay without rejecting the play() promise with NotAllowedError.
+  // Attempt to play a video with layered fallback detection for browsers (e.g. Brave) that
+  // can block autoplay without rejecting the play() promise or without firing canplay again.
   const attemptPlay = useCallback((video: HTMLVideoElement) => {
     let playingFired = false;
+    let playPromiseResolved = false;
+    let timeAdvanced = false;
+    const startTime = video.currentTime;
+    const srcName = video.src.split('/').pop() || '(no-src)';
 
     const onPlaying = () => { playingFired = true; };
     video.addEventListener('playing', onPlaying, { once: true });
+
+    const onTimeUpdate = () => {
+      if (video.currentTime > startTime + 0.01) {
+        timeAdvanced = true;
+      }
+    };
+    video.addEventListener('timeupdate', onTimeUpdate, { once: true });
 
     // Once the browser has buffered enough data, check whether playback actually started.
     // A 200 ms grace period accounts for the short delay between canplay and the first frame.
     const onCanPlay = () => {
       setTimeout(() => {
         if (!playingFired && video.paused && mountedRef.current) {
-          devLog('[VideoBackgroundManager] Autoplay silently blocked (canplay fired but video still paused)');
+          devLog('[VideoBackgroundManager] Autoplay silently blocked (canplay fired but video still paused):', {
+            src: srcName,
+            readyState: video.readyState,
+            currentTime: video.currentTime,
+            playPromiseResolved,
+          });
           setAutoplayBlocked(true);
         }
       }, 200);
     };
     video.addEventListener('canplay', onCanPlay, { once: true });
 
-    video.play().catch((err) => {
-      video.removeEventListener('playing', onPlaying);
-      video.removeEventListener('canplay', onCanPlay);
-      devLog('[VideoBackgroundManager] play() rejected:', err);
-      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+    const maybePromise = video.play();
+    if (maybePromise && typeof maybePromise.then === 'function') {
+      maybePromise
+        .then(() => {
+          playPromiseResolved = true;
+          devLog('[VideoBackgroundManager] play() resolved:', {
+            src: srcName,
+            paused: video.paused,
+            readyState: video.readyState,
+            currentTime: video.currentTime,
+          });
+        })
+        .catch((err) => {
+          video.removeEventListener('playing', onPlaying);
+          video.removeEventListener('canplay', onCanPlay);
+          video.removeEventListener('timeupdate', onTimeUpdate);
+          devLog('[VideoBackgroundManager] play() rejected:', err);
+          if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            setAutoplayBlocked(true);
+          }
+        });
+    }
+
+    // Final fallback: if play() resolved but there is no real playback progression, assume block.
+    setTimeout(() => {
+      if (!mountedRef.current) return;
+      if (playingFired || timeAdvanced) return;
+      if (video.paused || video.currentTime <= startTime + 0.01) {
+        devLog('[VideoBackgroundManager] Autoplay likely blocked (no playback progression):', {
+          src: srcName,
+          paused: video.paused,
+          readyState: video.readyState,
+          startTime,
+          currentTime: video.currentTime,
+          playPromiseResolved,
+        });
         setAutoplayBlocked(true);
       }
-    });
+    }, 1200);
   }, []);
 
   // Transition to next video
@@ -519,7 +566,9 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const handleEnableVideo = useCallback(() => {
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     if (activeRef.current) {
-      activeRef.current.play().catch(() => {});
+      activeRef.current.play().catch((err) => {
+        devLog('[VideoBackgroundManager] Enable Video click did not unlock playback:', err);
+      });
     }
     setAutoplayBlocked(false);
   }, [currentIndex]);
