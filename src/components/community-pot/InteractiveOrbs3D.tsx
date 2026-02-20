@@ -793,14 +793,14 @@ function StarDust({ isNight }: { isNight: boolean }) {
   useEffect(() => {
     if (!groupRef.current) return;
 
-    const particleCount = 180;
+    const particleCount = 350;
     const positions = new Float32Array(particleCount * 3);
     const velocities: { angular: number; radius: number }[] = [];
 
     for (let i = 0; i < particleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 18 + Math.random() * 22;
-      const y = -6 + Math.random() * 20;
+      const radius = 18 + Math.random() * 62;
+      const y = -20 + Math.random() * 50;
       positions[i * 3] = Math.cos(angle) * radius;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * radius;
@@ -1194,11 +1194,14 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
   const worldPosRef = useRef(new THREE.Vector3());
   const toTargetWorldRef = useRef(new THREE.Vector3());
   const toTargetLocalRef = useRef(new THREE.Vector3());
+  const smoothedLocalDirRef = useRef(new THREE.Vector3(0, 0, 1));
   const parentWorldQuatRef = useRef(new THREE.Quaternion());
   const currentQuatRef = useRef(new THREE.Quaternion());
   const targetFrontQuatRef = useRef(new THREE.Quaternion());
   const targetBackQuatRef = useRef(new THREE.Quaternion());
   const tmpNdcRef = useRef(new THREE.Vector2());
+  const smoothedNdcRef = useRef(new THREE.Vector2());
+  const activeFaceRef = useRef<1 | -1>(1);
   const AXIS_FRONT = useMemo(() => new THREE.Vector3(0, 0, 1), []);
   const AXIS_BACK = useMemo(() => new THREE.Vector3(0, 0, -1), []);
 
@@ -1206,7 +1209,10 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
     if (spinRef.current) {
       if (isVideoActive && mouseNDCRef) {
         // Raycast from camera through cursor; rotate coin so either +Z or -Z logo faces that 3D ray.
-        tmpNdcRef.current.set(mouseNDCRef.current.x, mouseNDCRef.current.y);
+        const ndcFollow = 1 - Math.exp(-18 * delta);
+        smoothedNdcRef.current.x += (mouseNDCRef.current.x - smoothedNdcRef.current.x) * ndcFollow;
+        smoothedNdcRef.current.y += (mouseNDCRef.current.y - smoothedNdcRef.current.y) * ndcFollow;
+        tmpNdcRef.current.copy(smoothedNdcRef.current);
         raycasterRef.current.setFromCamera(tmpNdcRef.current, state.camera);
 
         // Use a point on the cursor ray far enough from the sphere center for stable direction.
@@ -1231,21 +1237,38 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
           toTargetLocalRef.current.copy(toTargetWorldRef.current);
         }
 
-        targetFrontQuatRef.current.setFromUnitVectors(AXIS_FRONT, toTargetLocalRef.current);
-        targetBackQuatRef.current.setFromUnitVectors(AXIS_BACK, toTargetLocalRef.current);
+        // Additional smoothing in 3D direction space to remove tiny orientation jitter.
+        const dirFollow = 1 - Math.exp(-22 * delta);
+        smoothedLocalDirRef.current
+          .lerp(toTargetLocalRef.current, dirFollow)
+          .normalize();
+
+        targetFrontQuatRef.current.setFromUnitVectors(AXIS_FRONT, smoothedLocalDirRef.current);
+        targetBackQuatRef.current.setFromUnitVectors(AXIS_BACK, smoothedLocalDirRef.current);
 
         const currentQuat = spinRef.current.quaternion;
         currentQuatRef.current.copy(currentQuat);
         const angleToFront = currentQuatRef.current.angleTo(targetFrontQuatRef.current);
         const angleToBack = currentQuatRef.current.angleTo(targetBackQuatRef.current);
-        const selectedTarget = angleToFront <= angleToBack ? targetFrontQuatRef.current : targetBackQuatRef.current;
+        const switchHysteresis = 0.22;
+        if (activeFaceRef.current === 1) {
+          if (angleToBack + switchHysteresis < angleToFront) activeFaceRef.current = -1;
+        } else if (angleToFront + switchHysteresis < angleToBack) {
+          activeFaceRef.current = 1;
+        }
+        const selectedTarget = activeFaceRef.current === 1 ? targetFrontQuatRef.current : targetBackQuatRef.current;
 
-        const slerpAlpha = 1 - Math.exp(-12 * delta);
-        currentQuat.slerp(selectedTarget, slerpAlpha);
+        const angleToTarget = currentQuat.angleTo(selectedTarget);
+        if (angleToTarget > 1e-4) {
+          const maxAngularSpeed = 9; // rad/s
+          currentQuat.rotateTowards(selectedTarget, maxAngularSpeed * delta);
+        }
       } else {
         // Sky Scene: spin slowly and reset X tilt
         spinRef.current.rotation.y += delta * 0.2;
         spinRef.current.rotation.x *= 0.95;
+        activeFaceRef.current = 1;
+        smoothedLocalDirRef.current.set(0, 0, 1);
       }
     }
   });
@@ -1409,13 +1432,14 @@ function OrbsScene({
   const MOVE_SPEED = 0.15; // Target speed
   const ACCELERATION = 0.025; // How quickly we accelerate (increased for quicker response)
   const DECELERATION = 0.88; // Damping factor (0-1, lower = more friction, reduced for quicker stop)
-  const MAX_OFFSET = 12; // Increased range (was 3)
+  const MAX_OFFSET = 50; // Horizontal movement range for WASD
+  const MAX_OFFSET_Y = 27; // Vertical movement range (tighter to keep figures on screen)
 
   // Smooth zoom state
   const zoomDistanceRef = useRef(35); // Current camera distance (matches initial camera position z=35)
   const zoomTargetRef = useRef(35);
-  const ZOOM_MIN = 14;
-  const ZOOM_MAX = 70;
+  const ZOOM_MIN = 22;
+  const ZOOM_MAX = 90;
   const ZOOM_LERP_SPEED = 0.08; // Smoothing factor
   const ZOOM_STEP = 2.5; // Distance change per scroll tick
 
@@ -1524,7 +1548,19 @@ function OrbsScene({
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       mouseButtonsRef.current.add(e.button);
-      if (e.button === 0) isDraggingRef.current = true;
+      if (e.button === 0) {
+        // Avoid a jump when switching from sunflower tracking to drag mode.
+        // Merge current sunflower offset into base rotation, then reset transient state.
+        baseRotationXRef.current += sunflowerRotRef.current.x;
+        baseRotationYRef.current += sunflowerRotRef.current.y;
+        sunflowerRotRef.current.x = 0;
+        sunflowerRotRef.current.y = 0;
+        sunflowerVelRef.current.x = 0;
+        sunflowerVelRef.current.y = 0;
+        mouseDragDeltaRef.current.x = 0;
+        mouseDragDeltaRef.current.y = 0;
+        isDraggingRef.current = true;
+      }
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -1625,12 +1661,12 @@ function OrbsScene({
 
       // Clamp within a 3D box defined by MAX_OFFSET
       movementRef.current.x = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.x));
-      movementRef.current.y = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.y));
+      movementRef.current.y = Math.max(-MAX_OFFSET_Y, Math.min(MAX_OFFSET_Y, movementRef.current.y));
       movementRef.current.z = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.z));
 
       // Stop velocity when hitting boundaries
       if (Math.abs(movementRef.current.x) >= MAX_OFFSET) velocity.x = 0;
-      if (Math.abs(movementRef.current.y) >= MAX_OFFSET) velocity.y = 0;
+      if (Math.abs(movementRef.current.y) >= MAX_OFFSET_Y) velocity.y = 0;
       if (Math.abs(movementRef.current.z) >= MAX_OFFSET) velocity.z = 0;
 
       // Mouse-button rotation disabled (rotation is now driven by sunflower effect)
@@ -1860,8 +1896,8 @@ function OrbsScene({
         enablePan={false}
         enableRotate={!isVideoActive}
         rotateSpeed={0.5}
-        minDistance={14}
-        maxDistance={70}
+        minDistance={ZOOM_MIN}
+        maxDistance={ZOOM_MAX}
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={Math.PI / 1.5}
       />

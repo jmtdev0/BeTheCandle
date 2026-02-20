@@ -228,6 +228,36 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     };
   }, []);
 
+  // Attempt to play a video with fallback detection for browsers (e.g. Brave) that silently
+  // block autoplay without rejecting the play() promise with NotAllowedError.
+  const attemptPlay = useCallback((video: HTMLVideoElement) => {
+    let playingFired = false;
+
+    const onPlaying = () => { playingFired = true; };
+    video.addEventListener('playing', onPlaying, { once: true });
+
+    // Once the browser has buffered enough data, check whether playback actually started.
+    // A 200 ms grace period accounts for the short delay between canplay and the first frame.
+    const onCanPlay = () => {
+      setTimeout(() => {
+        if (!playingFired && video.paused && mountedRef.current) {
+          devLog('[VideoBackgroundManager] Autoplay silently blocked (canplay fired but video still paused)');
+          setAutoplayBlocked(true);
+        }
+      }, 200);
+    };
+    video.addEventListener('canplay', onCanPlay, { once: true });
+
+    video.play().catch((err) => {
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('canplay', onCanPlay);
+      devLog('[VideoBackgroundManager] play() rejected:', err);
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        setAutoplayBlocked(true);
+      }
+    });
+  }, []);
+
   // Transition to next video
   const transitionToNext = useCallback(() => {
     if (isTransitioningRef.current) {
@@ -259,11 +289,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       // Start the incoming video right away
       const incomingRef = nextIndex % 2 === 0 ? videoARef : videoBRef;
       if (incomingRef.current && incomingRef.current.paused && incomingRef.current.readyState >= 2) {
-        incomingRef.current.play().catch((err) => {
-          if (err instanceof DOMException && err.name === 'NotAllowedError') {
-            setAutoplayBlocked(true);
-          }
-        });
+        attemptPlay(incomingRef.current);
       }
 
       // Reshuffle when wrapping around, avoiding repeat of last clip
@@ -282,7 +308,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     setTimeout(() => {
       isTransitioningRef.current = false;
     }, guardDuration);
-  }, [setTransitionDuration]);
+  }, [setTransitionDuration, attemptPlay]);
 
   // Handle video ended event (fallback — early transition via timeupdate is preferred)
   const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -424,12 +450,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
       applyClipProperties(video, currentClip);
 
-      video.play().catch((err) => {
-        devLog('[VideoBackgroundManager] Autoplay failed:', err);
-        if (err instanceof DOMException && err.name === 'NotAllowedError') {
-          setAutoplayBlocked(true);
-        }
-      });
+      attemptPlay(video);
     }
 
     // Preload the next video after the current transition completes.
@@ -454,7 +475,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, preloadDelay);
 
     return () => clearTimeout(preloadTimeout);
-  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName]);
+  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName, attemptPlay]);
 
   // Early crossfade for fullLength mode: start transition before the video ends
   useEffect(() => {
@@ -476,11 +497,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         // Start the preloaded video so it has frames ready during the crossfade
         const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
         if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
-          preloadRef.current.play().catch((err) => {
-            if (err instanceof DOMException && err.name === 'NotAllowedError') {
-              setAutoplayBlocked(true);
-            }
-          });
+          attemptPlay(preloadRef.current);
         }
 
         transitionToNext();
@@ -489,7 +506,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     return () => video.removeEventListener('timeupdate', handleTimeUpdate);
-  }, [isActive, playlist.length, currentIndex, fullLength, transitionToNext]);
+  }, [isActive, playlist.length, currentIndex, fullLength, transitionToNext, attemptPlay]);
 
   // Initialize transition duration on both video elements once they are active
   useEffect(() => {
@@ -514,18 +531,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
       const video = activeRef.current;
       if (video && video.paused && mountedRef.current && !autoplayBlocked) {
-        video.play().catch((err) => {
-          devLog('[VideoBackgroundManager] Visibility recovery play failed:', err);
-          if (err instanceof DOMException && err.name === 'NotAllowedError') {
-            setAutoplayBlocked(true);
-          }
-        });
+        attemptPlay(video);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityRecover);
     return () => document.removeEventListener('visibilitychange', handleVisibilityRecover);
-  }, [currentIndex, autoplayBlocked]);
+  }, [currentIndex, autoplayBlocked, attemptPlay]);
 
   // Listen for skip video trigger from context
   useEffect(() => {
@@ -559,35 +571,37 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const videoBOpacity = currentIndex % 2 === 1 ? 1 : 0;
 
   return (
-    <div
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: -1 }}
-    >
-      <video
-        ref={videoARef}
-        className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
-        style={{
-          opacity: videoAOpacity,
-          transitionProperty: 'opacity'
-        }}
-        muted
-        playsInline
-        preload="auto"
-        onEnded={handleVideoEnded}
-      />
+    <>
+      <div
+        className="fixed inset-0 pointer-events-none"
+        style={{ zIndex: -1 }}
+      >
+        <video
+          ref={videoARef}
+          className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
+          style={{
+            opacity: videoAOpacity,
+            transitionProperty: 'opacity'
+          }}
+          muted
+          playsInline
+          preload="auto"
+          onEnded={handleVideoEnded}
+        />
 
-      <video
-        ref={videoBRef}
-        className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
-        style={{
-          opacity: videoBOpacity,
-          transitionProperty: 'opacity'
-        }}
-        muted
-        playsInline
-        preload="auto"
-        onEnded={handleVideoEnded}
-      />
+        <video
+          ref={videoBRef}
+          className="absolute top-0 left-0 w-full h-full object-cover ease-in-out"
+          style={{
+            opacity: videoBOpacity,
+            transitionProperty: 'opacity'
+          }}
+          muted
+          playsInline
+          preload="auto"
+          onEnded={handleVideoEnded}
+        />
+      </div>
 
       {autoplayBlocked && (
         <div
@@ -611,6 +625,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
