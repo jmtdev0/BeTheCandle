@@ -1183,13 +1183,70 @@ function Orb({
   );
 }
 
-function CentralCoin({ isNight }: { isNight: boolean }) {
+function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
+  isNight: boolean;
+  isVideoActive?: boolean;
+  mouseNDCRef?: React.MutableRefObject<{ x: number; y: number }>;
+}) {
   const spinRef = useRef<THREE.Group>(null);
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const worldTargetRef = useRef(new THREE.Vector3());
+  const worldPosRef = useRef(new THREE.Vector3());
+  const toTargetWorldRef = useRef(new THREE.Vector3());
+  const toTargetLocalRef = useRef(new THREE.Vector3());
+  const parentWorldQuatRef = useRef(new THREE.Quaternion());
+  const currentQuatRef = useRef(new THREE.Quaternion());
+  const targetFrontQuatRef = useRef(new THREE.Quaternion());
+  const targetBackQuatRef = useRef(new THREE.Quaternion());
+  const tmpNdcRef = useRef(new THREE.Vector2());
+  const AXIS_FRONT = useMemo(() => new THREE.Vector3(0, 0, 1), []);
+  const AXIS_BACK = useMemo(() => new THREE.Vector3(0, 0, -1), []);
 
-  useFrame((_state: unknown, delta: number) => {
+  useFrame((state: { camera: THREE.Camera }, delta: number) => {
     if (spinRef.current) {
-      // Rotate the coin slowly on its Y axis
-      spinRef.current.rotation.y += delta * 0.2;
+      if (isVideoActive && mouseNDCRef) {
+        // Raycast from camera through cursor; rotate coin so either +Z or -Z logo faces that 3D ray.
+        tmpNdcRef.current.set(mouseNDCRef.current.x, mouseNDCRef.current.y);
+        raycasterRef.current.setFromCamera(tmpNdcRef.current, state.camera);
+
+        // Use a point on the cursor ray far enough from the sphere center for stable direction.
+        worldTargetRef.current
+          .copy(raycasterRef.current.ray.origin)
+          .addScaledVector(raycasterRef.current.ray.direction, 30);
+
+        spinRef.current.getWorldPosition(worldPosRef.current);
+        toTargetWorldRef.current
+          .subVectors(worldTargetRef.current, worldPosRef.current)
+          .normalize();
+
+        const parent = spinRef.current.parent;
+        if (parent) {
+          parent.getWorldQuaternion(parentWorldQuatRef.current);
+          parentWorldQuatRef.current.invert();
+          toTargetLocalRef.current
+            .copy(toTargetWorldRef.current)
+            .applyQuaternion(parentWorldQuatRef.current)
+            .normalize();
+        } else {
+          toTargetLocalRef.current.copy(toTargetWorldRef.current);
+        }
+
+        targetFrontQuatRef.current.setFromUnitVectors(AXIS_FRONT, toTargetLocalRef.current);
+        targetBackQuatRef.current.setFromUnitVectors(AXIS_BACK, toTargetLocalRef.current);
+
+        const currentQuat = spinRef.current.quaternion;
+        currentQuatRef.current.copy(currentQuat);
+        const angleToFront = currentQuatRef.current.angleTo(targetFrontQuatRef.current);
+        const angleToBack = currentQuatRef.current.angleTo(targetBackQuatRef.current);
+        const selectedTarget = angleToFront <= angleToBack ? targetFrontQuatRef.current : targetBackQuatRef.current;
+
+        const slerpAlpha = 1 - Math.exp(-12 * delta);
+        currentQuat.slerp(selectedTarget, slerpAlpha);
+      } else {
+        // Sky Scene: spin slowly and reset X tilt
+        spinRef.current.rotation.y += delta * 0.2;
+        spinRef.current.rotation.x *= 0.95;
+      }
     }
   });
 
@@ -1362,19 +1419,23 @@ function OrbsScene({
   const ZOOM_LERP_SPEED = 0.08; // Smoothing factor
   const ZOOM_STEP = 2.5; // Distance change per scroll tick
 
-  // Smooth sphere rotation via mouse buttons
+  // Sphere rotation shared constants
   const mouseButtonsRef = useRef<Set<number>>(new Set());
-  const sphereRotationVelRef = useRef(0);
-  const SPHERE_ROT_SPEED = 0.6; // Target rotation speed (rad/s)
   const SPHERE_ROT_ACCEL = 0.04; // Acceleration factor
   const SPHERE_ROT_DECEL = 0.92; // Damping when no button pressed
 
+  // Mouse drag rotation (left-click + drag)
+  const isDraggingRef = useRef(false);
+  const mouseDragDeltaRef = useRef({ x: 0, y: 0 }); // Accumulated drag delta per frame
+  const DRAG_ROT_SENSITIVITY = 0.01; // Radians per pixel of mouse movement
+
   // Sunflower effect: sphere looks at mouse in Video Gallery mode
   const mouseNDCRef = useRef({ x: 0, y: 0 }); // Normalized device coordinates (-1 to 1)
-  const sunflowerRotRef = useRef({ x: 0, y: 0 }); // Current smooth rotation offset
-  const baseRotationYRef = useRef(0); // Accumulated Y rotation from mouse-click rotation
-  const SUNFLOWER_LERP = 0.05; // Smoothing factor for look-at
-  const SUNFLOWER_MAX_ANGLE = 0.4; // Max tilt in radians (~23 degrees)
+  const sunflowerRotRef = useRef({ x: 0, y: 0 }); // Current rotation offset
+  const sunflowerVelRef = useRef({ x: 0, y: 0 }); // Velocity (same model as drag)
+  const baseRotationXRef = useRef(0); // Accumulated X rotation from drag
+  const baseRotationYRef = useRef(0); // Accumulated Y rotation from drag
+  const SUNFLOWER_MAX_ANGLE = Math.PI / 2; // Max tilt in radians (~90 degrees)
 
   // Center camera on the USDC sphere (CentralCoin at 0,0,0) when on small screens
   useEffect(() => {
@@ -1459,40 +1520,45 @@ function OrbsScene({
     return () => window.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Smooth sphere rotation via left/right mouse buttons
+  // Mouse button tracking + drag detection + NDC position
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       mouseButtonsRef.current.add(e.button);
+      if (e.button === 0) isDraggingRef.current = true;
     };
 
     const handleMouseUp = (e: MouseEvent) => {
       mouseButtonsRef.current.delete(e.button);
+      if (e.button === 0) isDraggingRef.current = false;
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault(); // Prevent context menu on right-click
+      e.preventDefault();
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Always track NDC position for sunflower
+      mouseNDCRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouseNDCRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      // Accumulate drag delta when left button is held
+      if (isDraggingRef.current) {
+        mouseDragDeltaRef.current.x += e.movementX;
+        mouseDragDeltaRef.current.y += e.movementY;
+      }
     };
 
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
     return () => {
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, []);
-
-  // Track mouse position in NDC for sunflower effect
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseNDCRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;  // -1 to 1
-      mouseNDCRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1; // -1 to 1 (inverted Y)
-    };
-
-    window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
   // Orbital rotation and WASD movement for the entire group
@@ -1567,32 +1633,14 @@ function OrbsScene({
       if (Math.abs(movementRef.current.y) >= MAX_OFFSET) velocity.y = 0;
       if (Math.abs(movementRef.current.z) >= MAX_OFFSET) velocity.z = 0;
 
-      // Smooth sphere rotation via mouse buttons
-      const buttons = mouseButtonsRef.current;
-      let rotTarget = 0;
-      if (buttons.has(0)) rotTarget += SPHERE_ROT_SPEED; // Left click = rotate right
-      if (buttons.has(2)) rotTarget -= SPHERE_ROT_SPEED; // Right click = rotate left
-
-      if (rotTarget !== 0) {
-        sphereRotationVelRef.current += (rotTarget - sphereRotationVelRef.current) * SPHERE_ROT_ACCEL;
-      } else {
-        sphereRotationVelRef.current *= SPHERE_ROT_DECEL;
-      }
-
-      // Accumulate click rotation into base ref
-      if (Math.abs(sphereRotationVelRef.current) > 0.001) {
-        baseRotationYRef.current += sphereRotationVelRef.current * delta;
-      }
+      // Mouse-button rotation disabled (rotation is now driven by sunflower effect)
     } else {
       // Sky Scene mode: decelerate any residual movement/rotation smoothly
       const velocity = velocityRef.current;
       velocity.x *= DECELERATION;
       velocity.y *= DECELERATION;
       velocity.z *= DECELERATION;
-      sphereRotationVelRef.current *= SPHERE_ROT_DECEL;
-      if (Math.abs(sphereRotationVelRef.current) > 0.001) {
-        baseRotationYRef.current += sphereRotationVelRef.current * delta;
-      }
+      // No sphere rotation to decelerate in Sky Scene mode
     }
 
     // Apply movement to main group (always, so deceleration works on mode switch)
@@ -1625,25 +1673,54 @@ function OrbsScene({
       }
     }
 
-    // Sunflower effect: sphere tilts toward mouse cursor in Video Gallery mode
+    // Sphere rotation: drag (left-click + move) or sunflower (passive mouse tracking)
     if (mainGroupRef.current) {
       if (isVideoActive) {
-        // Target rotation based on mouse NDC position
-        const targetRotX = -mouseNDCRef.current.y * SUNFLOWER_MAX_ANGLE; // Tilt up/down
-        const targetRotY = mouseNDCRef.current.x * SUNFLOWER_MAX_ANGLE;  // Tilt left/right
+        if (isDraggingRef.current) {
+          // Drag mode: apply mouse movement delta to base rotation
+          baseRotationYRef.current += mouseDragDeltaRef.current.x * DRAG_ROT_SENSITIVITY;
+          baseRotationXRef.current -= mouseDragDeltaRef.current.y * DRAG_ROT_SENSITIVITY;
+          mouseDragDeltaRef.current.x = 0;
+          mouseDragDeltaRef.current.y = 0;
 
-        // Smooth lerp toward target
-        sunflowerRotRef.current.x += (targetRotX - sunflowerRotRef.current.x) * SUNFLOWER_LERP;
-        sunflowerRotRef.current.y += (targetRotY - sunflowerRotRef.current.y) * SUNFLOWER_LERP;
+          // Decay sunflower offset toward zero so it doesn't add stale tilt
+          sunflowerRotRef.current.x *= 0.9;
+          sunflowerRotRef.current.y *= 0.9;
+          sunflowerVelRef.current.x = 0;
+          sunflowerVelRef.current.y = 0;
+        } else {
+          // Sunflower mode: sphere follows mouse position
+          const targetRotX = -mouseNDCRef.current.y * SUNFLOWER_MAX_ANGLE;
+          const targetRotY = mouseNDCRef.current.x * SUNFLOWER_MAX_ANGLE;
 
-        // Set rotation = base click rotation + sunflower offset (no drift)
-        mainGroupRef.current.rotation.x = sunflowerRotRef.current.x;
+          const diffX = targetRotX - sunflowerRotRef.current.x;
+          const diffY = targetRotY - sunflowerRotRef.current.y;
+
+          sunflowerVelRef.current.x += diffX * SPHERE_ROT_ACCEL;
+          sunflowerVelRef.current.y += diffY * SPHERE_ROT_ACCEL;
+          sunflowerVelRef.current.x *= SPHERE_ROT_DECEL;
+          sunflowerVelRef.current.y *= SPHERE_ROT_DECEL;
+
+          // Clamp velocity to never overshoot the target (prevents spring/bounce)
+          if (Math.abs(sunflowerVelRef.current.x) > Math.abs(diffX)) sunflowerVelRef.current.x = diffX;
+          if (Math.abs(sunflowerVelRef.current.y) > Math.abs(diffY)) sunflowerVelRef.current.y = diffY;
+
+          sunflowerRotRef.current.x += sunflowerVelRef.current.x;
+          sunflowerRotRef.current.y += sunflowerVelRef.current.y;
+        }
+
+        mainGroupRef.current.rotation.x = baseRotationXRef.current + sunflowerRotRef.current.x;
         mainGroupRef.current.rotation.y = baseRotationYRef.current + sunflowerRotRef.current.y;
       } else {
-        // Sky Scene: smoothly return to neutral tilt
+        // Sky Scene: decelerate toward neutral
+        sunflowerVelRef.current.x *= SPHERE_ROT_DECEL;
+        sunflowerVelRef.current.y *= SPHERE_ROT_DECEL;
+        sunflowerRotRef.current.x += sunflowerVelRef.current.x;
+        sunflowerRotRef.current.y += sunflowerVelRef.current.y;
         sunflowerRotRef.current.x *= 0.95;
         sunflowerRotRef.current.y *= 0.95;
-        mainGroupRef.current.rotation.x = sunflowerRotRef.current.x;
+
+        mainGroupRef.current.rotation.x = baseRotationXRef.current + sunflowerRotRef.current.x;
         mainGroupRef.current.rotation.y = baseRotationYRef.current + sunflowerRotRef.current.y;
       }
     }
@@ -1659,7 +1736,7 @@ function OrbsScene({
 
       {/* Main group that moves with WASD/Arrow keys */}
       <group ref={mainGroupRef}>
-        <CentralCoin isNight={isNight} />
+        <CentralCoin isNight={isNight} isVideoActive={isVideoActive} mouseNDCRef={mouseNDCRef} />
         <group ref={orbitGroupRef}>
           {participants.map((participant, index) => {
             const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -1781,6 +1858,7 @@ function OrbsScene({
         ref={controlsRef}
         enableZoom={false}
         enablePan={false}
+        enableRotate={!isVideoActive}
         rotateSpeed={0.5}
         minDistance={14}
         maxDistance={70}
