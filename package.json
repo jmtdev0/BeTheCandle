@@ -9,6 +9,7 @@
     "lint": "next lint",
     "check:video-gallery": "tsx scripts/check-video-gallery-playback.ts",
     "videos:reencode:h264": "powershell -ExecutionPolicy Bypass -File scripts/reencode-stock-videos-h264.ps1",
+    "videos:reencode:other:h264": "powershell -ExecutionPolicy Bypass -File scripts/reencode-other-collections-h264.ps1",
     "community-pot:payout": "tsx scripts/community-pot-payout.ts",
     "community-pot:emergency": "tsx scripts/emergency-transfer.ts",
     "community-pot:verify-wallet": "tsx scripts/verify-wallet.ts"

@@ -21,7 +21,7 @@
     "Telepath - Teardrops (edited)": {
       "musicLink": "https://telepathtelepath.bandcamp.com/track/--45",
       "videoLink": "https://www.youtube.com/playlist?list=PLv4vBcuxLTBOrzqOtWWhrbZR2Q0G7FPs2",
-      "videoBasePath": "telepath-compressed",
+      "videoBasePath": "telepath-compressed-h264",
       "videoOverrides": {
         "total-solar-eclipse_1m40s-2m14s.mp4": { "transition": "cut" },
         "charlotte-de-witte-amelie-lens_18m00s-18m30s.mp4": { "speed": 0.65 },
@@ -38,7 +38,7 @@
       "fullLength": false
     },
     "Oklou - unearth me (edited)": {
-      "videoBasePath": "anerzmi-compressed"
+      "videoBasePath": "anerzmi-compressed-h264"
     }
   }
 }
