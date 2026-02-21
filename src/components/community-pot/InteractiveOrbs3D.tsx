@@ -1183,11 +1183,13 @@ function Orb({
   );
 }
 
-function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
+function CentralCoin({ isNight, isVideoActive, mouseNDCRef, dragScaleRef }: {
   isNight: boolean;
   isVideoActive?: boolean;
   mouseNDCRef?: React.MutableRefObject<{ x: number; y: number }>;
+  dragScaleRef?: React.MutableRefObject<number>;
 }) {
+  const coinGroupRef = useRef<THREE.Group>(null);
   const spinRef = useRef<THREE.Group>(null);
   const raycasterRef = useRef(new THREE.Raycaster());
   const worldTargetRef = useRef(new THREE.Vector3());
@@ -1318,6 +1320,16 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
         idleSpinBlendRef.current = 0;
       }
     }
+
+    // Scale pulse when drag activates
+    if (coinGroupRef.current && dragScaleRef) {
+      const target = dragScaleRef.current;
+      const current = coinGroupRef.current.scale.x;
+      const newScale = current + (target - current) * 0.15;
+      coinGroupRef.current.scale.setScalar(newScale);
+      // Ease dragScaleRef back toward 1.0
+      dragScaleRef.current += (1 - dragScaleRef.current) * 0.08;
+    }
   });
 
   const arcLength = Math.PI - 0.6;
@@ -1344,7 +1356,7 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef }: {
   }), [neonScale]);
 
   return (
-    <group position={[0, 0, 0]} rotation={[0.2, 0, 0.1]}>
+    <group ref={coinGroupRef} position={[0, 0, 0]} rotation={[0.2, 0, 0.1]}>
       {/* Blue light emanating from the USDC sphere */}
       <pointLight 
         position={[0, 0, 0]} 
@@ -1644,6 +1656,127 @@ function OrbsScene({
     };
   }, []);
 
+  // Touch: pinch-to-zoom and long-press drag for mobile
+  const sphereDragActiveRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchDragStartRef = useRef({ x: 0, y: 0 });
+  const touchDragPosRef = useRef({ x: 0, y: 0 });
+  const prevPinchDistRef = useRef(0);
+  const sphereDragScaleRef = useRef(1);
+
+  const LONG_PRESS_MS = 300;
+  const LONG_PRESS_THRESHOLD = 10;
+  const TOUCH_DRAG_SENSITIVITY = 0.08;
+  const PINCH_ZOOM_SPEED = 0.15;
+
+  useEffect(() => {
+    if (!isVideoActive) return;
+
+    const getTouchDistance = (t1: Touch, t2: Touch) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const dispatchSphereDrag = (active: boolean) => {
+      window.dispatchEvent(new CustomEvent('sphere-drag-active', { detail: active }));
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Pinch start
+        prevPinchDistRef.current = getTouchDistance(e.touches[0], e.touches[1]);
+        // Cancel any long-press timer
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        return;
+      }
+
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        touchDragStartRef.current = { x: touch.clientX, y: touch.clientY };
+        touchDragPosRef.current = { x: touch.clientX, y: touch.clientY };
+
+        // Start long-press timer
+        longPressTimerRef.current = setTimeout(() => {
+          sphereDragActiveRef.current = true;
+          sphereDragScaleRef.current = 1.08; // trigger scale pulse
+          dispatchSphereDrag(true);
+        }, LONG_PRESS_MS);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Pinch zoom
+        const dist = getTouchDistance(e.touches[0], e.touches[1]);
+        if (prevPinchDistRef.current > 0) {
+          const delta = dist - prevPinchDistRef.current;
+          zoomTargetRef.current = Math.max(
+            ZOOM_MIN,
+            Math.min(ZOOM_MAX, zoomTargetRef.current - delta * PINCH_ZOOM_SPEED)
+          );
+        }
+        prevPinchDistRef.current = dist;
+        return;
+      }
+
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+
+        if (!sphereDragActiveRef.current) {
+          // Check if finger moved too far before long-press triggered
+          const dx = touch.clientX - touchDragStartRef.current.x;
+          const dy = touch.clientY - touchDragStartRef.current.y;
+          if (Math.sqrt(dx * dx + dy * dy) > LONG_PRESS_THRESHOLD) {
+            if (longPressTimerRef.current) {
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = null;
+            }
+          }
+          return;
+        }
+
+        // Sphere drag mode: move the main group
+        const deltaX = touch.clientX - touchDragPosRef.current.x;
+        const deltaY = touch.clientY - touchDragPosRef.current.y;
+        touchDragPosRef.current = { x: touch.clientX, y: touch.clientY };
+
+        movementRef.current.x += deltaX * TOUCH_DRAG_SENSITIVITY;
+        movementRef.current.y -= deltaY * TOUCH_DRAG_SENSITIVITY;
+
+        // Clamp within bounds
+        movementRef.current.x = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.x));
+        movementRef.current.y = Math.max(-MAX_OFFSET_Y, Math.min(MAX_OFFSET_Y, movementRef.current.y));
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      if (sphereDragActiveRef.current) {
+        sphereDragActiveRef.current = false;
+        dispatchSphereDrag(false);
+      }
+      prevPinchDistRef.current = 0;
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    };
+  }, [isVideoActive]);
+
   // Orbital rotation and WASD movement for the entire group
   useFrame((state: { camera: THREE.Camera }, delta: number) => {
     if (orbitGroupRef.current) {
@@ -1819,7 +1952,7 @@ function OrbsScene({
 
       {/* Main group that moves with WASD/Arrow keys */}
       <group ref={mainGroupRef}>
-        <CentralCoin isNight={isNight} isVideoActive={isVideoActive} mouseNDCRef={mouseNDCRef} />
+        <CentralCoin isNight={isNight} isVideoActive={isVideoActive} mouseNDCRef={mouseNDCRef} dragScaleRef={sphereDragScaleRef} />
         <group ref={orbitGroupRef}>
           {participants.map((participant, index) => {
             const hash = participant.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);

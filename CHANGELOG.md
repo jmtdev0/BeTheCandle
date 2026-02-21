@@ -4,6 +4,9 @@
 * Added horizontal pan/drag navigation for videos on mobile portrait mode (swipe to see cropped sides of 16:9 videos)
 * Added descriptive Pexels titles for all 51 cottonbro video clips (fetched via Pexels API)
 * Video names now link to their original Pexels page
+* Reduced video panning sensitivity for smoother, gentler movement on mobile
+* Added long-press + drag to reposition the USDC sphere on mobile (with scale pulse feedback)
+* Added pinch-to-zoom for the USDC sphere on mobile
 
 ### 20/02/2026
 * Created CHANGELOG.md

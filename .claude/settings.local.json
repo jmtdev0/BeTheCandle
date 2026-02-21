@@ -21,7 +21,8 @@
       "Bash(powershell:*)",
       "Bash(ls:*)",
       "WebFetch(domain:www.pexels.com)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npx next build:*)"
     ]
   }
 }

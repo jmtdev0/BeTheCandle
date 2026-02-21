@@ -6,7 +6,8 @@ interface UseVideoPanOptions {
 }
 
 const PAN_THRESHOLD = 15; // px before pan activates
-const MOMENTUM_DECAY = 0.95;
+const PAN_SENSITIVITY = 0.5; // damping multiplier for gentler movement
+const MOMENTUM_DECAY = 0.92;
 const MOMENTUM_MIN_VELOCITY = 0.1;
 const VELOCITY_SAMPLES = 3;
 
@@ -16,6 +17,7 @@ export function useVideoPan({ videoRefs, enabled }: UseVideoPanOptions) {
   const startPositionXRef = useRef(50);
   const isPanActiveRef = useRef(false);
   const isPanningRef = useRef(false);
+  const sphereDragActiveRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null);
 
   // Velocity tracking for momentum
@@ -57,7 +59,7 @@ export function useVideoPan({ videoRefs, enabled }: UseVideoPanOptions) {
     if (dt === 0) return;
 
     // Velocity in px/ms, convert to %/frame
-    const sensitivity = 100 / window.innerWidth;
+    const sensitivity = (100 / window.innerWidth) * PAN_SENSITIVITY;
     let velocity = ((prev.x - last.x) * sensitivity) / dt * 16; // ~16ms per frame
 
     const animate = () => {
@@ -83,8 +85,14 @@ export function useVideoPan({ videoRefs, enabled }: UseVideoPanOptions) {
       return;
     }
 
+    // Listen for sphere-drag-active to disable panning during sphere drag
+    const handleSphereDrag = (e: Event) => {
+      sphereDragActiveRef.current = (e as CustomEvent).detail;
+    };
+    window.addEventListener('sphere-drag-active', handleSphereDrag);
+
     const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || sphereDragActiveRef.current) return;
       stopMomentum();
 
       const touch = e.touches[0];
@@ -97,7 +105,7 @@ export function useVideoPan({ videoRefs, enabled }: UseVideoPanOptions) {
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || sphereDragActiveRef.current) return;
 
       const touch = e.touches[0];
       const deltaX = touch.clientX - touchStartXRef.current;
@@ -121,7 +129,7 @@ export function useVideoPan({ videoRefs, enabled }: UseVideoPanOptions) {
 
       // Dragging right (positive deltaX) → show left side (lower %)
       // Dragging left (negative deltaX) → show right side (higher %)
-      const sensitivity = 100 / window.innerWidth;
+      const sensitivity = (100 / window.innerWidth) * PAN_SENSITIVITY;
       const newX = startPositionXRef.current - deltaX * sensitivity;
       applyObjectPosition(newX);
     };
@@ -146,6 +154,7 @@ export function useVideoPan({ videoRefs, enabled }: UseVideoPanOptions) {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('sphere-drag-active', handleSphereDrag);
       stopMomentum();
     };
   }, [enabled, applyObjectPosition, dispatchPanEvent, startMomentum, stopMomentum]);
