@@ -763,8 +763,6 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                 <code className={`${themeColors.highlight}/70 text-[10px]`}>
                   /music/
                 </code>
-                <br />
-                <span className="text-green-400/70">Si R2 falla o está vacío, se usa /public/background_music/.</span>
               </p>
             </div>
           )}

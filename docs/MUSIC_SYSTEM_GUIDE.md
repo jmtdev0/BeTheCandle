@@ -1,14 +1,14 @@
-# Music System Guide (R2 + Local Fallback)
+# Music System Guide (R2 Only)
 
 ## Overview
 
-The music API now uses Cloudflare R2 as the primary source:
+The music API uses Cloudflare R2 as the only source:
 
-- Primary source: `R2_PUBLIC_URL` + `R2_MUSIC_PREFIX` (default `music`)
-- Automatic fallback: `public/background_music` when R2 fails or is empty
+- Source: `R2_PUBLIC_URL` + `R2_MUSIC_PREFIX` (default `music`)
 - API contract: unchanged (`GET /api/music`)
+- No local fallback in `public/background_music`
 
-## How to add music (production)
+## How to add music
 
 1. Open your Cloudflare dashboard and go to the configured R2 bucket.
 2. Create/use the `music/` prefix (or your custom `R2_MUSIC_PREFIX`).
@@ -20,15 +20,7 @@ R2_PUBLIC_URL=https://<your-public-bucket-url>
 R2_MUSIC_PREFIX=music
 ```
 
-Tracks will be detected automatically by `/api/music`.
-
-## Local fallback behavior
-
-If R2 is unavailable (bad credentials, network issue) or has no audio files, `/api/music` falls back to:
-
-`public/background_music/<folder>/<file>`
-
-This keeps playback alive during outages or migration.
+Tracks are detected automatically by `/api/music`.
 
 ## Metadata mapping
 
@@ -41,7 +33,7 @@ When a metadata entry contains `videoBasePath`, the track is treated as **Video 
 
 ## API response shape
 
-`GET /api/music` still returns:
+`GET /api/music` returns:
 
 ```json
 {
@@ -68,13 +60,7 @@ When a metadata entry contains `videoBasePath`, the track is treated as **Video 
 3. Confirm the bucket has supported audio extensions.
 4. Check server logs for:
    - `[Music API] source=r2 ...`
-   - `[Music API] source=local-fallback ...`
-
-### Track plays in fallback but not from R2
-
-1. Verify public bucket access/CORS for your R2 public URL.
-2. Open one returned `path` URL directly in the browser.
-3. Ensure special characters are preserved in filenames (API URL-encodes path segments).
+   - `[Music API] source=r2-error ...`
 
 ## Quick rollout checklist
 

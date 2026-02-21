@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
 import path from "path";
 import musicData from "@/data/music-data.json";
 import { listAudioInFolder } from "@/lib/r2";
@@ -21,7 +20,6 @@ type MusicTrackResponse = {
   hasVideo: boolean;
 };
 
-const AUDIO_EXTENSIONS = [".mp3", ".wav", ".ogg", ".m4a"];
 const DEFAULT_R2_MUSIC_PREFIX = "music";
 
 function normalizeR2Prefix(prefixValue: string): string {
@@ -76,55 +74,16 @@ async function getTracksFromR2(tracksMap: Record<string, TrackMetadata>): Promis
   });
 }
 
-function getTracksFromLocalFallback(tracksMap: Record<string, TrackMetadata>): MusicTrackResponse[] {
-  const tracks: MusicTrackResponse[] = [];
-  const musicDir = path.join(process.cwd(), "public", "background_music");
-
-  if (!fs.existsSync(musicDir)) {
-    return tracks;
-  }
-
-  const entries = fs.readdirSync(musicDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-
-    const folderName = entry.name;
-    const folderPath = path.join(musicDir, folderName);
-    const files = fs.readdirSync(folderPath);
-
-    for (const file of files) {
-      const ext = path.extname(file).toLowerCase();
-      if (!AUDIO_EXTENSIONS.includes(ext) || file.startsWith(".")) continue;
-
-      const name = path.basename(file, ext);
-      const localPath = `/background_music/${folderName}/${file}`;
-      tracks.push(createTrackResponse(name, localPath, tracksMap));
-    }
-  }
-
-  return tracks;
-}
-
 export async function GET() {
   const tracksMap = musicData.tracks as Record<string, TrackMetadata>;
 
   try {
     const r2Tracks = await getTracksFromR2(tracksMap);
-    if (r2Tracks.length > 0) {
-      r2Tracks.sort((a, b) => a.displayName.localeCompare(b.displayName));
-      console.log(`[Music API] source=r2 tracks=${r2Tracks.length}`);
-      return NextResponse.json({ tracks: r2Tracks });
-    }
-
-    const fallbackTracks = getTracksFromLocalFallback(tracksMap);
-    fallbackTracks.sort((a, b) => a.displayName.localeCompare(b.displayName));
-    console.warn(`[Music API] source=local-fallback reason=empty-r2 tracks=${fallbackTracks.length}`);
-    return NextResponse.json({ tracks: fallbackTracks });
+    r2Tracks.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    console.log(`[Music API] source=r2 tracks=${r2Tracks.length}`);
+    return NextResponse.json({ tracks: r2Tracks });
   } catch (error) {
-    console.error("[Music API] source=local-fallback reason=r2-error", error);
-    const fallbackTracks = getTracksFromLocalFallback(tracksMap);
-    fallbackTracks.sort((a, b) => a.displayName.localeCompare(b.displayName));
-    console.warn(`[Music API] source=local-fallback reason=r2-error tracks=${fallbackTracks.length}`);
-    return NextResponse.json({ tracks: fallbackTracks });
+    console.error("[Music API] source=r2-error", error);
+    return NextResponse.json({ tracks: [] });
   }
 }

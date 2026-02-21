@@ -2,11 +2,10 @@
  * ⚠️ ESTE ARCHIVO YA NO ES NECESARIO ⚠️
  * 
  * La música ahora se detecta automáticamente desde Cloudflare R2
- * mediante la API route en /api/music (con fallback local).
+ * mediante la API route en /api/music (solo R2).
  * 
  * Simplemente coloca archivos MP3, WAV, OGG o M4A en la carpeta
  * configurada en R2 (R2_MUSIC_PREFIX, por defecto "music").
- * Si R2 falla o está vacío, se usa /public/background_music/.
  * 
  * Este archivo se mantiene solo como referencia del formato anterior.
  */
@@ -30,7 +29,7 @@ export interface MusicTrack {
  * 
  * DEPRECADO: Este array ya no se usa.
  * Las canciones se cargan automáticamente desde /api/music
- * con fuente principal en R2 y fallback en /public/background_music/
+ * con fuente en R2
  */
 export const MUSIC_TRACKS: MusicTrack[] = [];
 

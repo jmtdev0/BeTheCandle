@@ -49,3 +49,11 @@ export-token-0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359.csv
 public/I LOVE FREE 4K STOCK VIDEOS/
 public/telepath-clips/
 public/telepath-clips-compressed/
+
+# Local music files must live in R2, never in repo
+public/background_music/**/*.mp3
+public/background_music/**/*.wav
+public/background_music/**/*.ogg
+public/background_music/**/*.m4a
+public/background_music/**/*.flac
+public/background_music/**/*.aac

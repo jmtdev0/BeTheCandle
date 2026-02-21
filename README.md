@@ -110,8 +110,7 @@ TWITTER_ACCESS_TOKEN_SECRET=
 PUBLIC_SITE_URL=
 ```
 
-`/api/music` reads tracks from Cloudflare R2 using `R2_PUBLIC_URL` + `R2_MUSIC_PREFIX` (default `music`).  
-If R2 is unavailable or empty, it automatically falls back to `public/background_music`.
+`/api/music` reads tracks from Cloudflare R2 using `R2_PUBLIC_URL` + `R2_MUSIC_PREFIX` (default `music`).
 
 ### Development
 

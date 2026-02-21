@@ -1,5 +1,7 @@
 # Changelog
 
+###  22/02/2026
+
 ### 21/02/2026
 * Fixed short videos (~3s) in Video Gallery getting stuck: now forces a hard cut transition instead of attempting a fade longer than the video itself
 * Added horizontal pan/drag navigation for videos on mobile portrait mode (swipe to see cropped sides of 16:9 videos)
@@ -21,6 +23,8 @@
 * Removed drag-start rotation jump by baking transient sunflower offset into base rotation on left-click drag begin
 * Added Video Gallery idle behavior: after 3s without mouse movement, USDC sphere resumes gentle auto-rotation and returns to sunflower on mouse move
 * Softened idle auto-rotation startup with eased blend-in to avoid abrupt spin onset
+
+---- CHANGELOG CREATED HERE ----
 
 ### 19/02/2026
 * Added verify-wallet Supabase function
