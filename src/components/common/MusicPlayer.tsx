@@ -34,6 +34,25 @@ function setCookie(name: string, value: string, days = 365) {
   document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
 }
 
+function isVideoDebugEnabled() {
+  if (process.env.NODE_ENV === "development") return true;
+  if (typeof window === "undefined") return false;
+  try {
+    const query = new URLSearchParams(window.location.search).get("debugVideo");
+    if (query === "1" || query === "true") return true;
+    const persisted = window.localStorage.getItem("btc_debug_video");
+    return persisted === "1" || persisted === "true";
+  } catch {
+    return false;
+  }
+}
+
+function mediaLog(...args: unknown[]) {
+  if (isVideoDebugEnabled()) {
+    console.log(...args);
+  }
+}
+
 export default function MusicPlayer({ tracks: initialTracks = [], theme = "orange" }: MusicPlayerProps) {
   const { allowPreferences } = useCookieConsent();
   const {
@@ -78,6 +97,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   // When videoEnabled becomes false, switch to music tab
   useEffect(() => {
     if (!videoEnabled && activeTab === "video") {
+      mediaLog("[MusicPlayer][Debug] videoEnabled=false, switching tab to music");
       setActiveTab("music");
     }
   }, [videoEnabled, activeTab]);
@@ -203,6 +223,11 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
         })
         .catch((error) => {
           console.log("Auto-play bloqueado. Haz click en play para iniciar.", error);
+          mediaLog("[MusicPlayer][Debug] initial audio autoplay blocked", {
+            error,
+            currentTrackName: tracks[currentTrackIndex]?.name ?? null,
+            documentHidden: typeof document !== "undefined" ? document.hidden : null,
+          });
           setIsPlaying(false);
         });
     };
@@ -243,6 +268,12 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       try {
         const response = await fetch('/api/music');
         const data = await response.json();
+        mediaLog("[MusicPlayer][Debug] /api/music response", {
+          ok: response.ok,
+          status: response.status,
+          totalTracks: Array.isArray(data.tracks) ? data.tracks.length : 0,
+          videoTracks: Array.isArray(data.tracks) ? data.tracks.filter((t: Track) => t.hasVideo).length : 0,
+        });
         if (data.tracks && data.tracks.length > 0) {
           setTracks(data.tracks);
           // Always start with a Sky Scene track (non-video)
@@ -301,8 +332,18 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
           .catch((error) => {
             if (!hasAutoPlayedRef.current) {
               console.log("Auto-play bloqueado. Haz click en play para iniciar.", error);
+              mediaLog("[MusicPlayer][Debug] autoplay blocked during track effect", {
+                error,
+                trackName: nextTrack.name,
+                hasVideo: Boolean(nextTrack.hasVideo),
+              });
             } else {
               console.error("Error al reproducir:", error);
+              mediaLog("[MusicPlayer][Debug] play error during track effect", {
+                error,
+                trackName: nextTrack.name,
+                hasVideo: Boolean(nextTrack.hasVideo),
+              });
             }
             setIsPlaying(false);
           });
@@ -333,6 +374,10 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
         })
         .catch((error) => {
           console.error("Error al reproducir:", error);
+          mediaLog("[MusicPlayer][Debug] togglePlay failed", {
+            error,
+            currentTrackName: tracks[currentTrackIndex]?.name ?? null,
+          });
           setIsPlaying(false);
         });
     }
@@ -358,7 +403,17 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
   const selectTrack = (index: number) => {
     const track = tracks[index];
+    mediaLog("[MusicPlayer][Debug] selectTrack()", {
+      index,
+      trackName: track?.name ?? null,
+      hasVideo: Boolean(track?.hasVideo),
+      activeTab,
+      isPlaying,
+    });
     if (track?.hasVideo) {
+      mediaLog("[MusicPlayer][Debug] triggerVideoPlaybackUnlock() from selectTrack", {
+        trackName: track.name,
+      });
       triggerVideoPlaybackUnlock();
     }
     if (track && !track.hasVideo) {
@@ -397,6 +452,12 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
   // Update global music track context whenever these values change
   useEffect(() => {
+    mediaLog("[MusicPlayer][Debug] setMusicTrackState", {
+      currentTrackName: currentTrack?.name || null,
+      hasVideo: currentTrack?.hasVideo ?? false,
+      currentTrackIndex,
+      isPlaying,
+    });
     setMusicTrackState({
       currentTrackName: currentTrack?.name || null,
       currentTrackPath: currentTrack?.path || null,
@@ -520,6 +581,10 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                       <button
                         onPointerDown={() => {
                           if (track.hasVideo) {
+                            mediaLog("[MusicPlayer][Debug] triggerVideoPlaybackUnlock() from pointerdown", {
+                              trackName: track.name,
+                              activeTab,
+                            });
                             triggerVideoPlaybackUnlock();
                           }
                         }}

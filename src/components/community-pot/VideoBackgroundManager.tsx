@@ -43,11 +43,78 @@ function getRandomDuration() {
 
 const DEFAULT_FADE_MS = 2500;
 
-// Helper to log only in development
+// Helper to log in development and in production when debugVideo=1 is present in URL
+// or localStorage contains btc_debug_video=1.
 const isDev = process.env.NODE_ENV === 'development' || typeof window !== 'undefined' && window.location.hostname === 'localhost';
+function isVideoDebugEnabled() {
+  if (isDev) return true;
+  if (typeof window === 'undefined') return false;
+
+  try {
+    const query = new URLSearchParams(window.location.search).get('debugVideo');
+    if (query === '1' || query === 'true') return true;
+    const persisted = window.localStorage.getItem('btc_debug_video');
+    return persisted === '1' || persisted === 'true';
+  } catch {
+    return false;
+  }
+}
+
 const devLog = (...args: unknown[]) => {
-  if (isDev) console.log(...args);
+  if (isVideoDebugEnabled()) console.log(...args);
 };
+
+function getReadyStateLabel(value: number) {
+  switch (value) {
+    case 0: return 'HAVE_NOTHING';
+    case 1: return 'HAVE_METADATA';
+    case 2: return 'HAVE_CURRENT_DATA';
+    case 3: return 'HAVE_FUTURE_DATA';
+    case 4: return 'HAVE_ENOUGH_DATA';
+    default: return `UNKNOWN(${value})`;
+  }
+}
+
+function getNetworkStateLabel(value: number) {
+  switch (value) {
+    case 0: return 'NETWORK_EMPTY';
+    case 1: return 'NETWORK_IDLE';
+    case 2: return 'NETWORK_LOADING';
+    case 3: return 'NETWORK_NO_SOURCE';
+    default: return `UNKNOWN(${value})`;
+  }
+}
+
+function getMediaErrorInfo(video: HTMLVideoElement) {
+  const error = video.error;
+  if (!error) return null;
+  return {
+    code: error.code,
+    message:
+      error.code === 1 ? 'MEDIA_ERR_ABORTED' :
+      error.code === 2 ? 'MEDIA_ERR_NETWORK' :
+      error.code === 3 ? 'MEDIA_ERR_DECODE' :
+      error.code === 4 ? 'MEDIA_ERR_SRC_NOT_SUPPORTED' :
+      'MEDIA_ERR_UNKNOWN',
+  };
+}
+
+function getVideoSnapshot(video: HTMLVideoElement) {
+  const src = video.currentSrc || video.src || '';
+  return {
+    src: src ? decodeURIComponent(src.split('/').pop() || src) : '(no-src)',
+    paused: video.paused,
+    ended: video.ended,
+    muted: video.muted,
+    volume: Number(video.volume.toFixed(3)),
+    playbackRate: Number(video.playbackRate.toFixed(3)),
+    currentTime: Number(video.currentTime.toFixed(3)),
+    duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+    readyState: `${video.readyState} (${getReadyStateLabel(video.readyState)})`,
+    networkState: `${video.networkState} (${getNetworkStateLabel(video.networkState)})`,
+    error: getMediaErrorInfo(video),
+  };
+}
 
 // Normalize API response
 function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
@@ -83,6 +150,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const mountedRef = useRef(true);
   const isTransitioningRef = useRef(false);
   const earlyTransitionFiredRef = useRef(false);
+  const interactionLogCountRef = useRef(0);
 
   // Transition duration as a ref — never triggers re-renders or effect re-runs
   const transitionDurationRef = useRef(DEFAULT_FADE_MS);
@@ -93,6 +161,79 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
   const videoListRef = useRef<VideoClip[]>([]);
   useEffect(() => { videoListRef.current = videoList; }, [videoList]);
+
+  // Persist debugVideo query flag to localStorage so production logs survive reloads.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const query = new URLSearchParams(window.location.search).get('debugVideo');
+      if (query === '1' || query === 'true') {
+        window.localStorage.setItem('btc_debug_video', '1');
+      } else if (query === '0' || query === 'false') {
+        window.localStorage.removeItem('btc_debug_video');
+      }
+    } catch {
+      // ignore localStorage read/write errors
+    }
+  }, []);
+
+  // Session bootstrap diagnostics (only in debug mode)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isVideoDebugEnabled()) return;
+
+    const nav = navigator as Navigator & {
+      connection?: {
+        effectiveType?: string;
+        downlink?: number;
+        saveData?: boolean;
+      };
+      deviceMemory?: number;
+    };
+
+    devLog('[VideoBackgroundManager][Debug] Session start', {
+      href: window.location.href,
+      ua: navigator.userAgent,
+      visibilityState: document.visibilityState,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      deviceMemory: nav.deviceMemory ?? null,
+      connection: nav.connection
+        ? {
+            effectiveType: nav.connection.effectiveType ?? null,
+            downlink: nav.connection.downlink ?? null,
+            saveData: nav.connection.saveData ?? null,
+          }
+        : null,
+      trackName,
+    });
+  }, [trackName]);
+
+  // Log first user interactions so we can confirm a gesture happened before playback attempts.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isVideoDebugEnabled()) return;
+
+    const logInteraction = (event: Event) => {
+      if (interactionLogCountRef.current >= 8) return;
+      interactionLogCountRef.current += 1;
+      devLog('[VideoBackgroundManager][Debug] User interaction', {
+        type: event.type,
+        isTrusted: event.isTrusted,
+        visibilityState: document.visibilityState,
+      });
+    };
+
+    const options: AddEventListenerOptions = { capture: true };
+    window.addEventListener('pointerdown', logInteraction, options);
+    window.addEventListener('click', logInteraction, options);
+    window.addEventListener('keydown', logInteraction, options);
+
+    return () => {
+      window.removeEventListener('pointerdown', logInteraction, options);
+      window.removeEventListener('click', logInteraction, options);
+      window.removeEventListener('keydown', logInteraction, options);
+    };
+  }, []);
 
   // Apply transition duration directly to both video elements (no state, no re-render)
   const setTransitionDuration = useCallback((ms: number) => {
@@ -114,13 +255,27 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           ? `/api/videos?track=${encodeURIComponent(trackName)}`
           : '/api/videos';
 
+        devLog('[VideoBackgroundManager] Fetching videos', { apiUrl, trackName });
+
         const response = await fetch(apiUrl);
         if (ignore) return;
+
+        devLog('[VideoBackgroundManager] Video API response', {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          url: response.url,
+        });
 
         const data = await response.json();
         if (ignore) return;
 
         const videos = normalizeVideos(data);
+        devLog('[VideoBackgroundManager] Video API payload summary', {
+          fullLength: Boolean(data.fullLength),
+          totalVideos: videos.length,
+          firstVideo: videos[0]?.url ? decodeURIComponent(videos[0].url.split('/').pop() || videos[0].url) : null,
+        });
         if (videos.length > 0) {
           setVideoList(videos);
           const shuffled = shuffleArray(videos);
@@ -128,6 +283,8 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           setCurrentIndex(0);
           setFullLength(data.fullLength ?? false);
           setIsActive(true);
+        } else {
+          devLog('[VideoBackgroundManager] No videos returned from API', { apiUrl, trackName });
         }
       } catch (error) {
         if (!ignore) {
@@ -157,6 +314,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           ref.current.volume = 0;
         }
       }
+    });
+
+    devLog('[VideoBackgroundManager] Volume policy applied', {
+      isTelepath,
+      contextVideoVolume: videoVolume,
+      videoA: videoARef.current ? getVideoSnapshot(videoARef.current) : null,
+      videoB: videoBRef.current ? getVideoSnapshot(videoBRef.current) : null,
     });
   }, [videoVolume, isTelepath]);
 
@@ -190,16 +354,15 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
   // Debug video events
   useEffect(() => {
-    const events = ['playing', 'pause', 'ended', 'error', 'waiting', 'stalled'];
+    if (!isActive) return;
+
+    const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'playing', 'pause', 'ended', 'error', 'waiting', 'stalled', 'suspend', 'emptied', 'abort', 'seeking', 'seeked'];
 
     const logEvent = (id: string, e: Event) => {
       const target = e.target as HTMLVideoElement;
       devLog(`[VideoBackgroundManager] ${id} event: ${e.type}`, {
-        src: target.src.split('/').pop(),
-        readyState: target.readyState,
-        paused: target.paused,
-        currentTime: target.currentTime,
-        error: target.error
+        ...getVideoSnapshot(target),
+        bufferedRanges: target.buffered.length,
       });
     };
 
@@ -225,7 +388,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       cleanupA();
       cleanupB();
     };
-  }, []);
+  }, [isActive]);
 
   // Attempt to play a video with layered fallback detection for browsers (e.g. Brave) that
   // can block autoplay without rejecting the play() promise or without firing canplay again.
@@ -235,6 +398,12 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     let timeAdvanced = false;
     const startTime = video.currentTime;
     const srcName = video.src.split('/').pop() || '(no-src)';
+
+    devLog('[VideoBackgroundManager] attemptPlay() called', {
+      src: decodeURIComponent(srcName),
+      hidden: typeof document !== 'undefined' ? document.hidden : null,
+      snapshot: getVideoSnapshot(video),
+    });
 
     const onPlaying = () => { playingFired = true; };
     video.addEventListener('playing', onPlaying, { once: true });
@@ -252,9 +421,8 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       setTimeout(() => {
         if (!playingFired && video.paused && mountedRef.current) {
           devLog('[VideoBackgroundManager] Autoplay silently blocked (canplay fired but video still paused):', {
-            src: srcName,
-            readyState: video.readyState,
-            currentTime: video.currentTime,
+            src: decodeURIComponent(srcName),
+            snapshot: getVideoSnapshot(video),
             playPromiseResolved,
           });
         }
@@ -262,24 +430,39 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     };
     video.addEventListener('canplay', onCanPlay, { once: true });
 
-    const maybePromise = video.play();
-    if (maybePromise && typeof maybePromise.then === 'function') {
-      maybePromise
-        .then(() => {
-          playPromiseResolved = true;
-          devLog('[VideoBackgroundManager] play() resolved:', {
-            src: srcName,
-            paused: video.paused,
-            readyState: video.readyState,
-            currentTime: video.currentTime,
+    try {
+      const maybePromise = video.play();
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise
+          .then(() => {
+            playPromiseResolved = true;
+            devLog('[VideoBackgroundManager] play() resolved:', {
+              src: decodeURIComponent(srcName),
+              snapshot: getVideoSnapshot(video),
+            });
+          })
+          .catch((err) => {
+            video.removeEventListener('playing', onPlaying);
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('timeupdate', onTimeUpdate);
+            devLog('[VideoBackgroundManager] play() rejected:', {
+              src: decodeURIComponent(srcName),
+              err,
+              snapshot: getVideoSnapshot(video),
+            });
           });
-        })
-        .catch((err) => {
-          video.removeEventListener('playing', onPlaying);
-          video.removeEventListener('canplay', onCanPlay);
-          video.removeEventListener('timeupdate', onTimeUpdate);
-          devLog('[VideoBackgroundManager] play() rejected:', err);
+      } else {
+        devLog('[VideoBackgroundManager] play() returned non-promise value', {
+          src: decodeURIComponent(srcName),
+          snapshot: getVideoSnapshot(video),
         });
+      }
+    } catch (err) {
+      devLog('[VideoBackgroundManager] play() threw synchronously:', {
+        src: decodeURIComponent(srcName),
+        err,
+        snapshot: getVideoSnapshot(video),
+      });
     }
 
     // Final fallback: if play() resolved but there is no real playback progression, assume block.
@@ -288,16 +471,64 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       if (playingFired || timeAdvanced) return;
       if (video.paused || video.currentTime <= startTime + 0.01) {
         devLog('[VideoBackgroundManager] Autoplay likely blocked (no playback progression):', {
-          src: srcName,
-          paused: video.paused,
-          readyState: video.readyState,
+          src: decodeURIComponent(srcName),
+          snapshot: getVideoSnapshot(video),
           startTime,
-          currentTime: video.currentTime,
           playPromiseResolved,
         });
       }
     }, 1200);
   }, []);
+
+  // Resource-level diagnostics for video files (available in production when debugVideo=1).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isVideoDebugEnabled()) return;
+    if (typeof PerformanceObserver === 'undefined') return;
+
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (!entry.name.match(/\.(mp4|mov)(\?|$)/i)) continue;
+        const resource = entry as PerformanceResourceTiming;
+        devLog('[VideoBackgroundManager][Debug] Video resource timing', {
+          file: decodeURIComponent(entry.name.split('/').pop() || entry.name),
+          initiatorType: resource.initiatorType ?? null,
+          durationMs: Number(entry.duration.toFixed(1)),
+          transferSize: resource.transferSize ?? null,
+          encodedBodySize: resource.encodedBodySize ?? null,
+          decodedBodySize: resource.decodedBodySize ?? null,
+          nextHopProtocol: resource.nextHopProtocol ?? null,
+        });
+      }
+    });
+
+    try {
+      observer.observe({ type: 'resource', buffered: true });
+    } catch {
+      observer.observe({ entryTypes: ['resource'] });
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Continuous snapshot while active in debug mode.
+  useEffect(() => {
+    if (!isActive || playlist.length === 0) return;
+    if (!isVideoDebugEnabled()) return;
+
+    const interval = setInterval(() => {
+      const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+      const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
+      devLog('[VideoBackgroundManager][Debug] Playback heartbeat', {
+        currentIndex,
+        active: activeRef.current ? getVideoSnapshot(activeRef.current) : null,
+        preload: preloadRef.current ? getVideoSnapshot(preloadRef.current) : null,
+        documentHidden: typeof document !== 'undefined' ? document.hidden : null,
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isActive, playlist.length, currentIndex]);
 
   // Transition to next video
   const transitionToNext = useCallback(() => {
@@ -556,16 +787,37 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }
   }, [isActive, setTransitionDuration]);
 
+  useEffect(() => {
+    if (!isActive || playlist.length === 0) return;
+    const clip = playlist[currentIndex];
+    devLog('[VideoBackgroundManager] Active clip changed', {
+      currentIndex,
+      totalClips: playlist.length,
+      fullLength,
+      clip: clip
+        ? {
+            file: decodeURIComponent(clip.url.split('/').pop() || clip.url),
+            transition: clip.transition,
+            speed: clip.speed,
+          }
+        : null,
+    });
+  }, [isActive, playlist, currentIndex, fullLength]);
+
   // User-gesture hint from MusicPlayer: when a Video Gallery track button is pressed,
   // aggressively retry playback for active/preloaded elements.
   useEffect(() => {
     if (videoPlaybackUnlockRequest === 0) return;
     if (!isActive || playlist.length === 0) return;
 
-    devLog('[VideoBackgroundManager] Received user playback unlock request');
-
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
+    devLog('[VideoBackgroundManager] Received user playback unlock request', {
+      request: videoPlaybackUnlockRequest,
+      currentIndex,
+      activeSnapshot: activeRef.current ? getVideoSnapshot(activeRef.current) : null,
+      preloadSnapshot: preloadRef.current ? getVideoSnapshot(preloadRef.current) : null,
+    });
 
     if (activeRef.current) {
       attemptPlay(activeRef.current);
@@ -579,9 +831,14 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   // Recover playback when the page becomes visible again
   useEffect(() => {
     const handleVisibilityRecover = () => {
-      if (document.hidden) return;
       const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
       const video = activeRef.current;
+      devLog('[VideoBackgroundManager] visibilitychange', {
+        hidden: document.hidden,
+        visibilityState: document.visibilityState,
+        activeSnapshot: video ? getVideoSnapshot(video) : null,
+      });
+      if (document.hidden) return;
       if (video && video.paused && mountedRef.current) {
         attemptPlay(video);
       }

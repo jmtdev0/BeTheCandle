@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "check:video-gallery": "tsx scripts/check-video-gallery-playback.ts",
     "community-pot:payout": "tsx scripts/community-pot-payout.ts",
     "community-pot:emergency": "tsx scripts/emergency-transfer.ts",
     "community-pot:verify-wallet": "tsx scripts/verify-wallet.ts"
