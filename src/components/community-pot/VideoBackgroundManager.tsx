@@ -618,9 +618,26 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       devLog(`[VideoBackgroundManager] Video ended: ${filename}. Early transition already fired, skipping.`);
       return;
     }
+
+    // If a transition is already in progress (e.g. timer fired at the same time),
+    // don't call transitionToNext but schedule a safety check to ensure we're not stuck.
+    if (isTransitioningRef.current) {
+      devLog(`[VideoBackgroundManager] Video ended: ${filename}. Transition already in progress, scheduling safety check.`);
+      setTimeout(() => {
+        if (!mountedRef.current) return;
+        const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+        const activeVideo = activeRef.current;
+        if (activeVideo && activeVideo.ended && !isTransitioningRef.current) {
+          devLog(`[VideoBackgroundManager] Safety: active video still ended after transition guard. Forcing next.`);
+          transitionToNext();
+        }
+      }, transitionDurationRef.current + 500);
+      return;
+    }
+
     devLog(`[VideoBackgroundManager] Video ended: ${filename}. Transitioning (fallback)...`);
     transitionToNext();
-  }, [transitionToNext]);
+  }, [transitionToNext, currentIndex]);
 
   // Apply per-clip properties to a video element (speed + volume only, no transition state)
   const applyClipProperties = useCallback((video: HTMLVideoElement, clip: VideoClip) => {
@@ -660,10 +677,12 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         const effectiveDurationMs = videoDurationMs / (currentClip?.speed || 1);
         const fadeBuffer = currentClip?.transition === 'cut' ? 0 : DEFAULT_FADE_MS;
 
-        if (effectiveDurationMs < 5000) {
-           devLog(`[VideoBackgroundManager] Short video detected (${(effectiveDurationMs/1000).toFixed(1)}s < 5s). Scheduling hard cut.`);
-           // Short videos will get a cut transition applied in transitionToNext
-           duration = effectiveDurationMs;
+        if (effectiveDurationMs < fadeBuffer + 1500) {
+           // Video too short for a proper fade — force an immediate cut transition
+           // and trigger slightly before the video ends to avoid the ended-event race.
+           devLog(`[VideoBackgroundManager] Short video detected (${(effectiveDurationMs/1000).toFixed(1)}s). Forcing hard cut.`);
+           setTransitionDuration(0);
+           duration = Math.max(effectiveDurationMs - 300, 200);
         } else {
            const safeRunTime = Math.max(0, effectiveDurationMs - fadeBuffer);
 

@@ -14,6 +14,7 @@ interface TrackMetadata {
   fullLength?: boolean;
   videoOverrides?: Record<string, VideoOverride>;
   videoNames?: Record<string, string>;
+  videoLinks?: Record<string, string>;
 }
 
 export async function GET(request: NextRequest) {
@@ -44,12 +45,13 @@ export async function GET(request: NextRequest) {
 
       const overrides = trackInfo.videoOverrides ?? {};
       const names = trackInfo.videoNames ?? {};
+      const links = trackInfo.videoLinks ?? {};
       const videos = filenames.map(filename => {
         const override = overrides[filename] ?? {};
         const videoName = names[filename];
-        // Build Pexels link from video ID and name slug
-        let link: string | undefined;
-        if (videoName) {
+        // Use explicit per-file links when provided; otherwise preserve legacy Pexels link generation.
+        let link: string | undefined = links[filename];
+        if (!link && videoName) {
           const videoId = filename.split('-')[0];
           const slug = videoName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-');
           link = `https://www.pexels.com/video/${slug}-${videoId}/`;
