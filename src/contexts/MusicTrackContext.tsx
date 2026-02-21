@@ -22,6 +22,8 @@ interface MusicTrackContextValue extends MusicTrackState {
   triggerSkipToSkyScene: () => void;
   currentVideoName: string | null;
   setCurrentVideoName: (name: string | null) => void;
+  currentVideoLink: string | null;
+  setCurrentVideoLink: (link: string | null) => void;
   forceSkipVideo: number;
   triggerSkipVideo: () => void;
   videoPlaybackUnlockRequest: number;
@@ -44,6 +46,7 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
   const [videoEnabled, setVideoEnabledState] = useState(true);
   const [forceSkipToSkyScene, setForceSkipToSkyScene] = useState(0);
   const [currentVideoName, setCurrentVideoNameState] = useState<string | null>(null);
+  const [currentVideoLink, setCurrentVideoLinkState] = useState<string | null>(null);
   const [forceSkipVideo, setForceSkipVideo] = useState(0);
   const [videoPlaybackUnlockRequest, setVideoPlaybackUnlockRequest] = useState(0);
 
@@ -71,6 +74,10 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     setCurrentVideoNameState(name);
   }, []);
 
+  const setCurrentVideoLink = useCallback((link: string | null) => {
+    setCurrentVideoLinkState(link);
+  }, []);
+
   const triggerSkipVideo = useCallback(() => {
     setForceSkipVideo(prev => prev + 1);
   }, []);
@@ -92,6 +99,8 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     triggerSkipToSkyScene,
     currentVideoName,
     setCurrentVideoName,
+    currentVideoLink,
+    setCurrentVideoLink,
     forceSkipVideo,
     triggerSkipVideo,
     videoPlaybackUnlockRequest,
@@ -125,6 +134,8 @@ export function useMusicTrack() {
       triggerSkipToSkyScene: () => {},
       currentVideoName: null,
       setCurrentVideoName: () => {},
+      currentVideoLink: null,
+      setCurrentVideoLink: () => {},
       forceSkipVideo: 0,
       triggerSkipVideo: () => {},
       videoPlaybackUnlockRequest: 0,

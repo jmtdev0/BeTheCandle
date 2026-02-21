@@ -19,7 +19,9 @@
       "Bash(del \"e:\\\\Software\\\\Coding\\\\BeTheCandle\\\\src\\\\data\\\\videos.json\")",
       "Bash(yt-dlp:*)",
       "Bash(powershell:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:www.pexels.com)",
+      "Bash(node:*)"
     ]
   }
 }

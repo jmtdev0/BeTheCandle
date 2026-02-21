@@ -2,12 +2,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useMusicTrack } from "@/contexts/MusicTrackContext";
+import { useVideoPan } from "@/hooks/useVideoPan";
 
 // Per-clip descriptor returned by the API
 interface VideoClip {
   url: string;
   transition: "fade" | "cut";
   speed: number;
+  name?: string;
+  link?: string;
 }
 
 interface VideoBackgroundManagerProps {
@@ -131,12 +134,14 @@ function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
       url: clip.url as string,
       transition: (clip.transition as 'fade' | 'cut') ?? 'fade',
       speed: (clip.speed as number) ?? 1,
+      ...(clip.name ? { name: clip.name as string } : {}),
+      ...(clip.link ? { link: clip.link as string } : {}),
     };
   });
 }
 
 export default function VideoBackgroundManager({ trackName }: VideoBackgroundManagerProps) {
-  const { videoVolume, setCurrentVideoName, forceSkipVideo, videoPlaybackUnlockRequest } = useMusicTrack();
+  const { videoVolume, setCurrentVideoName, setCurrentVideoLink, forceSkipVideo, videoPlaybackUnlockRequest } = useMusicTrack();
 
   const [videoList, setVideoList] = useState<VideoClip[]>([]);
   const [playlist, setPlaylist] = useState<VideoClip[]>([]);
@@ -154,6 +159,29 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
   // Transition duration as a ref — never triggers re-renders or effect re-runs
   const transitionDurationRef = useRef(DEFAULT_FADE_MS);
+
+  // Mobile portrait detection for video pan
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isPortrait = window.innerHeight > window.innerWidth;
+      setIsMobilePortrait(isTouch && isPortrait);
+    };
+    check();
+    window.addEventListener('resize', check);
+    const mq = window.matchMedia('(orientation: portrait)');
+    mq.addEventListener?.('change', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      mq.removeEventListener?.('change', check);
+    };
+  }, []);
+
+  useVideoPan({
+    videoRefs: [videoARef, videoBRef],
+    enabled: isMobilePortrait,
+  });
 
   // Keep a ref mirror of playlist so callbacks always see the latest value
   const playlistRef = useRef<VideoClip[]>([]);
@@ -701,10 +729,15 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     // Reset early transition flag for new clip
     earlyTransitionFiredRef.current = false;
 
-    // Update current video name in context
-    const filename = decodeURIComponent(currentClip.url.split('/').pop() || '');
-    const displayName = filename.replace(/\.\w+$/, '').replace(/[-_]/g, ' ');
-    setCurrentVideoName(displayName);
+    // Update current video name and link in context
+    if (currentClip.name) {
+      setCurrentVideoName(currentClip.name);
+    } else {
+      const filename = decodeURIComponent(currentClip.url.split('/').pop() || '');
+      const displayName = filename.replace(/\.\w+$/, '').replace(/[-_]/g, ' ');
+      setCurrentVideoName(displayName);
+    }
+    setCurrentVideoLink(currentClip.link ?? null);
 
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
@@ -747,7 +780,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, preloadDelay);
 
     return () => clearTimeout(preloadTimeout);
-  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName, attemptPlay]);
+  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName, setCurrentVideoLink, attemptPlay]);
 
   // Early crossfade for fullLength mode: start transition before the video ends
   useEffect(() => {
@@ -860,6 +893,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       setCurrentVideoName(null);
+      setCurrentVideoLink(null);
 
       [videoARef, videoBRef].forEach(ref => {
         if (ref.current) {

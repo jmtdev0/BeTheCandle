@@ -236,6 +236,15 @@ export default function CommunityPotPage() {
   // Detect quick taps (not long-press) on background to toggle mobile UI.
   const pointerStartRef = useRef<{ time: number; x: number; y: number; id?: number | null } | null>(null);
   const uiPanelRef = useRef<HTMLDivElement | null>(null);
+  const videoPanActiveRef = useRef(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      videoPanActiveRef.current = (e as CustomEvent).detail;
+    };
+    window.addEventListener('video-pan-active', handler);
+    return () => window.removeEventListener('video-pan-active', handler);
+  }, []);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!isMobile) return;
@@ -264,6 +273,11 @@ export default function CommunityPotPage() {
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!isMobile) return;
+    // Suppress tap toggle if user was panning the video
+    if (videoPanActiveRef.current) {
+      pointerStartRef.current = null;
+      return;
+    }
     const start = pointerStartRef.current;
     if (!start) return;
     // compute duration and movement

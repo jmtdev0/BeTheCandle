@@ -22,7 +22,7 @@ An immersive, interactive web experience built around the **Community Pot** — 
 | Styling | Tailwind CSS 3, Framer Motion |
 | Database | Supabase (PostgreSQL + Auth + Realtime) |
 | Blockchain | Polygon (USDC), viem |
-| Storage | Cloudflare R2 (video), AWS S3 SDK |
+| Storage | Cloudflare R2 (video + music), AWS S3 SDK |
 | APIs | Twitter API v2, Google reCAPTCHA v2 |
 | Testing | Playwright (E2E) |
 | Hosting | Netlify |
@@ -92,12 +92,13 @@ COMMUNITY_POT_DEFAULT_IS_TESTNET=true
 NEXT_PUBLIC_RECAPTCHA_SITE_KEY=
 RECAPTCHA_SECRET_KEY=
 
-# Cloudflare R2 (Video Storage)
+# Cloudflare R2 (Video + Music Storage)
 R2_ACCESS_KEY_ID=
 R2_ACCOUNT_ID=
 R2_BUCKET_NAME=
 R2_SECRET_ACCESS_KEY=
 R2_PUBLIC_URL=
+R2_MUSIC_PREFIX=music
 
 # Twitter API (Payout Announcements)
 TWITTER_API_KEY=
@@ -108,6 +109,9 @@ TWITTER_ACCESS_TOKEN_SECRET=
 # Site
 PUBLIC_SITE_URL=
 ```
+
+`/api/music` reads tracks from Cloudflare R2 using `R2_PUBLIC_URL` + `R2_MUSIC_PREFIX` (default `music`).  
+If R2 is unavailable or empty, it automatically falls back to `public/background_music`.
 
 ### Development
 

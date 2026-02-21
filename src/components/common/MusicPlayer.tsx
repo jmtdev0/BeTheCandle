@@ -63,6 +63,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     videoEnabled,
     forceSkipToSkyScene,
     currentVideoName,
+    currentVideoLink,
     triggerSkipVideo,
     triggerVideoPlaybackUnlock,
   } = useMusicTrack();
@@ -499,12 +500,24 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
               </span>
               {currentTrack?.hasVideo && currentVideoName && (
                 <div ref={videoNameContainerRef} className="overflow-hidden max-w-[180px]">
-                  <span
-                    ref={videoNameTextRef}
-                    className={`text-[10px] text-gray-500 whitespace-nowrap inline-block${videoNameOverflows ? ' video-name-marquee' : ''}`}
-                  >
-                    {currentVideoName}
-                  </span>
+                  {currentVideoLink ? (
+                    <a
+                      ref={videoNameTextRef as React.RefObject<HTMLAnchorElement>}
+                      href={currentVideoLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`text-[10px] text-gray-500 hover:text-gray-300 whitespace-nowrap inline-block${videoNameOverflows ? ' video-name-marquee' : ''}`}
+                    >
+                      {currentVideoName}
+                    </a>
+                  ) : (
+                    <span
+                      ref={videoNameTextRef}
+                      className={`text-[10px] text-gray-500 whitespace-nowrap inline-block${videoNameOverflows ? ' video-name-marquee' : ''}`}
+                    >
+                      {currentVideoName}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -746,12 +759,12 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
           {tracks.length === 0 && (
             <div className="mt-3 pt-3 border-t border-gray-700/50">
               <p className="text-xs text-gray-500 text-center leading-relaxed">
-                📁 Añade archivos MP3 a<br />
+                ☁️ Sube audios a R2 en<br />
                 <code className={`${themeColors.highlight}/70 text-[10px]`}>
-                  /public/background_music/
+                  /music/
                 </code>
                 <br />
-                <span className="text-green-400/70">¡Se detectarán automáticamente!</span>
+                <span className="text-green-400/70">Si R2 falla o está vacío, se usa /public/background_music/.</span>
               </p>
             </div>
           )}

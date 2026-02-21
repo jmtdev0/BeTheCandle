@@ -1,22 +1,23 @@
-# Background Music
+# Background Music (Local Fallback)
 
-Esta carpeta contiene los archivos de música de fondo para la aplicación.
+This folder is now a fallback source.
 
-## Cómo añadir música
+Primary music source is Cloudflare R2 (`R2_PUBLIC_URL` + `R2_MUSIC_PREFIX`, default `music/`).
 
-1. Coloca tus archivos de audio aquí (formatos soportados: MP3, WAV, OGG)
-2. Usa nombres descriptivos para las canciones
-3. Los archivos aparecerán automáticamente en el selector de música
+## When this folder is used
 
-## Ejemplo de nombres
+- R2 is unavailable (credentials/network issues)
+- R2 is reachable but contains no supported audio files
 
-- `ambient-space-1.mp3`
-- `electronic-calm.mp3`
-- `cosmic-journey.mp3`
+## Supported local fallback formats
 
-## Recomendaciones
+- `.mp3`
+- `.wav`
+- `.ogg`
+- `.m4a`
 
-- **Formato**: MP3 (mejor compatibilidad)
-- **Bitrate**: 128-192 kbps (equilibrio entre calidad y tamaño)
-- **Duración**: 2-5 minutos (pueden repetirse en loop)
-- **Estilo**: Música ambiental, electrónica, espacial
+## Local structure expected by fallback scanner
+
+Use subfolders (for example `Space Scene` and `Video Gallery`) and place files inside them:
+
+`public/background_music/<folder>/<file>`

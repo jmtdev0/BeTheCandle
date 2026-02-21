@@ -1,6 +1,9 @@
 # Changelog
 
 ### 21/02/2026
+* Added horizontal pan/drag navigation for videos on mobile portrait mode (swipe to see cropped sides of 16:9 videos)
+* Added descriptive Pexels titles for all 51 cottonbro video clips (fetched via Pexels API)
+* Video names now link to their original Pexels page
 
 ### 20/02/2026
 * Created CHANGELOG.md

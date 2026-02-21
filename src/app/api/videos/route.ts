@@ -13,6 +13,7 @@ interface TrackMetadata {
   videoBasePath?: string;
   fullLength?: boolean;
   videoOverrides?: Record<string, VideoOverride>;
+  videoNames?: Record<string, string>;
 }
 
 export async function GET(request: NextRequest) {
@@ -42,12 +43,23 @@ export async function GET(request: NextRequest) {
       }
 
       const overrides = trackInfo.videoOverrides ?? {};
+      const names = trackInfo.videoNames ?? {};
       const videos = filenames.map(filename => {
         const override = overrides[filename] ?? {};
+        const videoName = names[filename];
+        // Build Pexels link from video ID and name slug
+        let link: string | undefined;
+        if (videoName) {
+          const videoId = filename.split('-')[0];
+          const slug = videoName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-');
+          link = `https://www.pexels.com/video/${slug}-${videoId}/`;
+        }
         return {
           url: `${r2BaseUrl}/${basePath}/${encodeURIComponent(filename)}`,
           transition: override.transition ?? 'fade',
           speed: override.speed ?? 1,
+          ...(videoName ? { name: videoName } : {}),
+          ...(link ? { link } : {}),
         };
       });
 
