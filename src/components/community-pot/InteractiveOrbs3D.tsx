@@ -1478,6 +1478,7 @@ function OrbsScene({
   isVideoActive?: boolean;
 }) {
   const controlsRef = useRef<any>(null);
+  const cameraRef = useRef<THREE.Camera | null>(null);
   const idleRef = useRef({ lastInteraction: Date.now(), isIdle: false });
   const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
   const IDLE_ROTATION_SPEED = 0.02; // radians per second (very slow)
@@ -1664,9 +1665,8 @@ function OrbsScene({
   const prevPinchDistRef = useRef(0);
   const sphereDragScaleRef = useRef(1);
 
-  const LONG_PRESS_MS = 300;
+  const LONG_PRESS_MS = 100;
   const LONG_PRESS_THRESHOLD = 10;
-  const TOUCH_DRAG_SENSITIVITY = 0.08;
   const PINCH_ZOOM_SPEED = 0.15;
 
   useEffect(() => {
@@ -1739,13 +1739,22 @@ function OrbsScene({
           return;
         }
 
-        // Sphere drag mode: move the main group
+        // Sphere drag mode: convert pixel delta to 3D world units so the
+        // sphere stays "glued" to the finger regardless of zoom level.
         const deltaX = touch.clientX - touchDragPosRef.current.x;
         const deltaY = touch.clientY - touchDragPosRef.current.y;
         touchDragPosRef.current = { x: touch.clientX, y: touch.clientY };
 
-        movementRef.current.x += deltaX * TOUCH_DRAG_SENSITIVITY;
-        movementRef.current.y -= deltaY * TOUCH_DRAG_SENSITIVITY;
+        const cam = cameraRef.current as THREE.PerspectiveCamera | null;
+        if (cam) {
+          const dist = zoomDistanceRef.current;
+          const vFov = (cam.fov * Math.PI) / 180;
+          const worldPerPxY = (2 * Math.tan(vFov / 2) * dist) / window.innerHeight;
+          const worldPerPxX = worldPerPxY * cam.aspect;
+
+          movementRef.current.x += deltaX * worldPerPxX;
+          movementRef.current.y -= deltaY * worldPerPxY;
+        }
 
         // Clamp within bounds
         movementRef.current.x = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, movementRef.current.x));
@@ -1784,6 +1793,7 @@ function OrbsScene({
     }
 
     const camera = state.camera;
+    cameraRef.current = camera;
 
     // WASD movement and mouse-click rotation only active in Video Gallery mode
     if (isVideoActive) {
