@@ -1,6 +1,7 @@
 #!/bin/bash
-# Compress videos with HandBrake CLI (x265, CRF 22, slow preset)
-# Processes telepath-clips first, then SoloClips
+# Compress videos with HandBrake CLI for maximum browser compatibility.
+# Output: H.264/x264 MP4 (8-bit 4:2:0), AAC audio, web-optimized.
+# Processes telepath-clips first, then SoloClips.
 
 set -euo pipefail
 
@@ -34,10 +35,18 @@ compress_dir() {
     HandBrakeCLI \
       -i "$f" \
       -o "$outfile" \
-      --encoder x265 \
-      --quality 22 \
+      --encoder x264 \
+      --quality 24 \
       --encoder-preset slow \
-      --aencoder copy:aac \
+      --encoder-profile high \
+      --encoder-level 4.1 \
+      --aencoder av_aac \
+      --ab 128 \
+      --maxWidth 1920 \
+      --maxHeight 1080 \
+      --keep-display-aspect \
+      --cfr \
+      --format av_mp4 \
       --optimize \
       2>&1 | tail -1
 
