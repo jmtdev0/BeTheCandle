@@ -4,10 +4,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import MusicPlayer from "../common/MusicPlayer";
 
+const CLICK_LOCK_MS = 3000;
+
 export default function AutoHideMusicPlayer() {
   const [isVisible, setIsVisible] = useState(false);
-  // Timestamp until which the panel must stay visible (click lock)
+  // When > 0, the panel is force-visible regardless of mouse position
   const lockUntilRef = useRef(0);
+  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -17,7 +20,6 @@ export default function AutoHideMusicPlayer() {
       if (distanceFromRight <= 150 && distanceFromBottom <= 150) {
         setIsVisible(true);
       } else if (distanceFromRight > 250 || distanceFromBottom > 250) {
-        // Don't hide while the click lock is active
         if (Date.now() < lockUntilRef.current) return;
         setIsVisible(false);
       }
@@ -27,9 +29,26 @@ export default function AutoHideMusicPlayer() {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  // Any click inside the panel keeps it visible for 2 seconds
+  // Any click inside the panel force-shows it for CLICK_LOCK_MS,
+  // even if the cursor leaves the hover zone entirely.
   const handleInteraction = useCallback(() => {
-    lockUntilRef.current = Date.now() + 2000;
+    lockUntilRef.current = Date.now() + CLICK_LOCK_MS;
+    setIsVisible(true);
+
+    // Schedule a deferred hide check after the lock expires
+    if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+    lockTimerRef.current = setTimeout(() => {
+      lockTimerRef.current = null;
+      // After the lock expires the mousemove handler takes over again.
+      // No-op here: next mousemove outside the zone will hide the panel.
+    }, CLICK_LOCK_MS);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+    };
   }, []);
 
   return (

@@ -5,6 +5,7 @@
 * Added stall detector as safety net for video transitions
 * Music modal now stays visible for 2 seconds after any click (prevents premature hide when selecting Video Gallery tracks)
 * USDC sphere zoom level is now preserved across Hide/Show everything toggling
+* Reduced max zoom out in Sky Scene from 90 to 70 (Video Gallery unchanged); smooth transition when switching modes
 
 ### 21/02/2026
 * Fixed short videos (~3s) in Video Gallery getting stuck: now forces a hard cut transition instead of attempting a fade longer than the video itself

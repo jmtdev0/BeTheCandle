@@ -1507,8 +1507,12 @@ function OrbsScene({
   const zoomDistanceRef = useRef(savedSceneState?.zoomTarget ?? 35); // Current camera distance (matches initial camera position z=35)
   const zoomTargetRef = useRef(savedSceneState?.zoomTarget ?? 35);
   const ZOOM_MIN = 22;
-  const ZOOM_MAX = 90;
-  const ZOOM_LERP_SPEED = 0.08; // Smoothing factor
+  const ZOOM_MAX_VIDEO = 90;
+  const ZOOM_MAX_SKY = 70;
+  const ZOOM_MAX = isVideoActive ? ZOOM_MAX_VIDEO : ZOOM_MAX_SKY;
+  const zoomMaxRef = useRef(ZOOM_MAX);
+  zoomMaxRef.current = ZOOM_MAX;
+  const ZOOM_LERP_SPEED = 0.045; // Smoothing factor
   const ZOOM_STEP = 2.5; // Distance change per scroll tick
 
   // Persist full camera state on unmount so it survives immersive-mode toggling
@@ -1623,7 +1627,7 @@ function OrbsScene({
       const direction = e.deltaY > 0 ? 1 : -1; // positive = zoom out, negative = zoom in
       zoomTargetRef.current = Math.max(
         ZOOM_MIN,
-        Math.min(ZOOM_MAX, zoomTargetRef.current + direction * ZOOM_STEP)
+        Math.min(zoomMaxRef.current, zoomTargetRef.current + direction * ZOOM_STEP)
       );
     };
 
@@ -1754,7 +1758,7 @@ function OrbsScene({
           const delta = dist - prevPinchDistRef.current;
           zoomTargetRef.current = Math.max(
             ZOOM_MIN,
-            Math.min(ZOOM_MAX, zoomTargetRef.current - delta * PINCH_ZOOM_SPEED)
+            Math.min(zoomMaxRef.current, zoomTargetRef.current - delta * PINCH_ZOOM_SPEED)
           );
         }
         prevPinchDistRef.current = dist;
@@ -1916,6 +1920,9 @@ function OrbsScene({
         zoomDistanceRef.current = currentDist;
         zoomTargetRef.current = currentDist;
       }
+
+      // Clamp zoom target to current mode limits (smooth transition on mode switch)
+      zoomTargetRef.current = Math.max(ZOOM_MIN, Math.min(zoomMaxRef.current, zoomTargetRef.current));
 
       // Lerp toward target distance
       zoomDistanceRef.current += (zoomTargetRef.current - zoomDistanceRef.current) * ZOOM_LERP_SPEED;
