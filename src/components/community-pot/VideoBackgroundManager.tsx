@@ -815,6 +815,10 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       const thresholdSec = transitionDurationRef.current / 1000;
 
       if (thresholdSec > 0 && timeRemainingSec <= thresholdSec && timeRemainingSec > 0) {
+        // If a previous transition guard is still active, skip — don't mark
+        // earlyTransitionFiredRef so handleVideoEnded can still act as fallback.
+        if (isTransitioningRef.current) return;
+
         devLog(`[VideoBackgroundManager] Early crossfade triggered. ${timeRemainingSec.toFixed(1)}s remaining.`);
         earlyTransitionFiredRef.current = true;
 
@@ -831,6 +835,28 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     video.addEventListener('timeupdate', handleTimeUpdate);
     return () => video.removeEventListener('timeupdate', handleTimeUpdate);
   }, [isActive, playlist.length, currentIndex, fullLength, transitionToNext, attemptPlay]);
+
+  // Stall detector: if the active video has ended and no transition is in progress,
+  // force the next transition. Catches edge cases where both the early crossfade and
+  // handleVideoEnded missed the window (e.g. short videos whose playback ends while the
+  // previous transition guard is still active).
+  useEffect(() => {
+    if (!isActive || playlist.length === 0) return;
+
+    const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    const video = activeRef.current;
+    if (!video) return;
+
+    const interval = setInterval(() => {
+      if (video.ended && !isTransitioningRef.current && mountedRef.current) {
+        devLog('[VideoBackgroundManager] Stall detector: active video ended with no transition in progress — forcing next.');
+        clearInterval(interval);
+        transitionToNext();
+      }
+    }, 300);
+
+    return () => clearInterval(interval);
+  }, [isActive, playlist.length, currentIndex, transitionToNext]);
 
   // Initialize transition duration on both video elements once they are active
   useEffect(() => {

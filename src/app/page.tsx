@@ -38,20 +38,24 @@ export default function CommunityPotPage() {
   useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F11') {
+      if (e.key === "F11" || e.code === "F11") {
         e.preventDefault();
         if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen().catch(() => {});
+          document.documentElement.requestFullscreen().catch((err) => {
+            console.warn("[CommunityPot] requestFullscreen failed:", err);
+          });
         } else {
-          document.exitFullscreen().catch(() => {});
+          document.exitFullscreen().catch((err) => {
+            console.warn("[CommunityPot] exitFullscreen failed:", err);
+          });
         }
       }
     };
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      document.removeEventListener('fullscreenchange', onFullscreenChange);
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, []);
 
@@ -1149,9 +1153,13 @@ export default function CommunityPotPage() {
         <button
           onClick={() => {
             if (!document.fullscreenElement) {
-              document.documentElement.requestFullscreen().catch(() => {});
+              document.documentElement.requestFullscreen().catch((err) => {
+                console.warn("[CommunityPot] requestFullscreen failed:", err);
+              });
             } else {
-              document.exitFullscreen().catch(() => {});
+              document.exitFullscreen().catch((err) => {
+                console.warn("[CommunityPot] exitFullscreen failed:", err);
+              });
             }
           }}
           className="opacity-0 group-hover:opacity-100 px-4 py-2 rounded-lg text-xs font-medium transition-all duration-300 backdrop-blur-md border bg-black/40 border-white/10 text-white/60 hover:bg-black/60 hover:text-white"

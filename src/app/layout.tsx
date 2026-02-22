@@ -5,6 +5,7 @@ import GlobalMusicPlayer from "@/components/common/GlobalMusicPlayer";
 import AnimatedFavicon from "@/components/common/AnimatedFavicon";
 import UserIdentityBootstrap from "@/components/common/UserIdentityBootstrap";
 import CookieBanner from "@/components/common/CookieBanner";
+import ConsoleImmersiveTools from "@/components/common/ConsoleImmersiveTools";
 import { SupabaseAuthProvider } from "@/components/common/AuthProvider";
 import { PageTransitionProvider } from "@/contexts/PageTransitionContext";
 import { CookieConsentProvider } from "@/contexts/CookieConsentContext";
@@ -28,6 +29,7 @@ export default function RootLayout({
             <MusicTrackProvider>
               <AnimatedFavicon />
               <UserIdentityBootstrap />
+              <ConsoleImmersiveTools />
               <PageTransitionProvider>
                 <Sidebar />
                 <GlobalMusicPlayer />

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink, Film, SkipForward } from "lucide-react";
+import { Volume2, VolumeX, Music, ChevronDown, ChevronUp, ExternalLink, Film, SkipForward, Info } from "lucide-react";
 import { useCookieConsent } from "@/contexts/CookieConsentContext";
 import { useMusicTrack } from "@/contexts/MusicTrackContext";
 
@@ -489,7 +489,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
   return (
       <div className="fixed bottom-6 right-6 z-50">
-      <div className="bg-gray-900/95 backdrop-blur-md rounded-lg shadow-2xl border border-gray-700/50 overflow-hidden transition-all duration-300">
+      <div className="bg-gray-900/95 backdrop-blur-md rounded-lg shadow-2xl border border-gray-700/50 overflow-visible transition-all duration-300">
         {/* Barra superior colapsable */}
         <div className="flex items-center justify-between p-3 border-b border-gray-700/50 bg-gray-800/50">
           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -711,29 +711,57 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
           </div>
 
           {/* Video volume control - only for Telepath videos */}
-          {currentTrack?.hasVideo && currentTrack?.name?.toLowerCase().includes('telepath') && <div className="flex items-center gap-3 mt-3">
-            <div className="flex-shrink-0 w-10 flex items-center justify-center">
-              <Film size={18} className="text-gray-400" />
+          {currentTrack?.hasVideo && currentTrack?.name?.toLowerCase().includes("telepath") && (
+            <div className="relative mt-3 rounded-lg border border-blue-300/20 bg-black/20 p-2">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-10 flex items-center justify-center">
+                  <Film size={18} className="text-gray-400" />
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={videoVolume}
+                    onChange={(e) => setVideoVolume(parseFloat(e.target.value))}
+                    className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
+                    style={{
+                      background: `linear-gradient(to right, ${themeColors.slider} ${videoVolume * 100}%, #374151 ${videoVolume * 100}%)`,
+                    }}
+                    data-theme={theme}
+                  />
+                  <span className="flex-shrink-0 text-xs text-gray-400 w-8 text-right">
+                    {Math.round(videoVolume * 100)}%
+                  </span>
+                </div>
+                <div className="relative group/info">
+                  <button
+                    type="button"
+                    className={`flex-shrink-0 text-gray-400 ${themeColors.iconHover} transition-colors`}
+                    aria-label="Recomendación de volumen para vídeos"
+                    title="Recomendación de volumen para vídeos"
+                  >
+                    <Info size={16} />
+                  </button>
+                  <div className="pointer-events-none absolute bottom-full right-0 z-[120] mb-2 w-[300px] rounded-xl border border-blue-300/30 bg-black/95 p-3 text-[11px] leading-relaxed text-blue-100 opacity-0 shadow-2xl transition-opacity duration-150 group-hover/info:opacity-100 group-focus-within/info:opacity-100">
+                    <p className="font-semibold text-blue-200">Video Gallery volume tip</p>
+                    <p className="mt-1">
+                      This slider controls the volume of the background videos currently playing.
+                      These clips come from YouTube, so audio quality and style can vary a lot.
+                    </p>
+                    <p className="mt-1">
+                      Some videos have pleasant ambient sound, while others are music videos or
+                      include strong background music that can worsen the experience.
+                    </p>
+                    <p className="mt-1 text-cyan-200">
+                      General recommendation: keep video volume around 3% to 4%.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={videoVolume}
-                onChange={(e) => setVideoVolume(parseFloat(e.target.value))}
-                className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
-                style={{
-                  background: `linear-gradient(to right, ${themeColors.slider} ${videoVolume * 100}%, #374151 ${videoVolume * 100}%)`,
-                }}
-                data-theme={theme}
-              />
-              <span className="flex-shrink-0 text-xs text-gray-400 w-8 text-right">
-                {Math.round(videoVolume * 100)}%
-              </span>
-            </div>
-          </div>}
+          )}
 
           {/* Skip video button */}
           {currentTrack?.hasVideo && (

@@ -1454,6 +1454,13 @@ function CentralCoin({ isNight, isVideoActive, mouseNDCRef, dragScaleRef, sphere
   );
 }
 
+// Module-level scene persistence — survives component unmount/remount (e.g. immersive mode toggle)
+let savedSceneState: {
+  cameraPosition: [number, number, number];
+  zoomTarget: number;
+  movement: { x: number; y: number; z: number };
+} | null = null;
+
 function OrbsScene({
   participants,
   hoveredParticipantId,
@@ -1497,12 +1504,31 @@ function OrbsScene({
   const MAX_OFFSET_Y = 27; // Vertical movement range (tighter to keep figures on screen)
 
   // Smooth zoom state
-  const zoomDistanceRef = useRef(35); // Current camera distance (matches initial camera position z=35)
-  const zoomTargetRef = useRef(35);
+  const zoomDistanceRef = useRef(savedSceneState?.zoomTarget ?? 35); // Current camera distance (matches initial camera position z=35)
+  const zoomTargetRef = useRef(savedSceneState?.zoomTarget ?? 35);
   const ZOOM_MIN = 22;
   const ZOOM_MAX = 90;
   const ZOOM_LERP_SPEED = 0.08; // Smoothing factor
   const ZOOM_STEP = 2.5; // Distance change per scroll tick
+
+  // Persist full camera state on unmount so it survives immersive-mode toggling
+  const lastCameraPositionRef = useRef<[number, number, number]>([0, 0, 35]);
+  const pendingRestoreRef = useRef(savedSceneState ? { ...savedSceneState } : null);
+
+  useEffect(() => {
+    // Restore movement offset immediately if we have saved state
+    if (savedSceneState) {
+      movementRef.current = { ...savedSceneState.movement };
+    }
+    return () => {
+      savedSceneState = {
+        cameraPosition: lastCameraPositionRef.current,
+        zoomTarget: zoomTargetRef.current,
+        movement: { ...movementRef.current },
+      };
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sphere rotation shared constants
   const mouseButtonsRef = useRef<Set<number>>(new Set());
@@ -1871,11 +1897,21 @@ function OrbsScene({
     const cam = state.camera;
     const controls = controlsRef.current;
     if (controls) {
+      // Restore full camera state from a previous mount (e.g. after immersive-mode toggle)
+      if (pendingRestoreRef.current) {
+        const saved = pendingRestoreRef.current;
+        cam.position.set(...saved.cameraPosition);
+        zoomDistanceRef.current = saved.zoomTarget;
+        zoomTargetRef.current = saved.zoomTarget;
+        controls.update();
+        pendingRestoreRef.current = null;
+      }
+
       const target = controls.target as THREE.Vector3;
       const dirFromTarget = cam.position.clone().sub(target);
       const currentDist = dirFromTarget.length();
 
-      // Sync ref with actual distance on first frame
+      // Sync ref with actual distance on first frame (only when no restore just happened)
       if (Math.abs(zoomDistanceRef.current - currentDist) > 10) {
         zoomDistanceRef.current = currentDist;
         zoomTargetRef.current = currentDist;
@@ -1891,6 +1927,9 @@ function OrbsScene({
         controls.update();
       }
     }
+
+    // Track camera position every frame for save-on-unmount
+    lastCameraPositionRef.current = [cam.position.x, cam.position.y, cam.position.z];
 
     // Sphere rotation: drag (left-click + move) or sunflower (passive mouse tracking)
     if (mainGroupRef.current) {
