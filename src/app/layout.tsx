@@ -13,7 +13,7 @@ import { MusicTrackProvider } from "@/contexts/MusicTrackContext";
 
 export const metadata: Metadata = {
   title: "Be The Candle",
-  description: "Join the weekly community pot and receive your share of USDC"
+  description: "Weekly equally-shared USDC giveaways"
 };
 
 export default function RootLayout({

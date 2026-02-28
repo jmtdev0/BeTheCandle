@@ -8,6 +8,7 @@ interface MusicTrackState {
   isPlaying: boolean;
   currentTrackIndex: number;
   currentTrackHasVideo: boolean;
+  currentTrackVideoHasAudio: boolean;
 }
 
 interface MusicTrackContextValue extends MusicTrackState {
@@ -39,9 +40,10 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     isPlaying: false,
     currentTrackIndex: 0,
     currentTrackHasVideo: false,
+    currentTrackVideoHasAudio: false,
   });
 
-  const [videoVolume, setVideoVolumeState] = useState(0.02);
+  const [videoVolume, setVideoVolumeState] = useState(0.05);
   const [immersiveMode, setImmersiveModeState] = useState(false);
   const [videoEnabled, setVideoEnabledState] = useState(true);
   const [forceSkipToSkyScene, setForceSkipToSkyScene] = useState(0);
@@ -123,6 +125,7 @@ export function useMusicTrack() {
       isPlaying: false,
       currentTrackIndex: 0,
       currentTrackHasVideo: false,
+      currentTrackVideoHasAudio: false,
       setMusicTrackState: () => {},
       videoVolume: 0.02,
       setVideoVolume: () => {},

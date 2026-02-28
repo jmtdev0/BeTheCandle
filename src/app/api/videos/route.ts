@@ -1,21 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import musicData from '@/data/music-data.json';
-import { listVideosInFolder } from '@/lib/r2';
-
-interface VideoOverride {
-  transition?: 'fade' | 'cut';
-  speed?: number;
-}
-
-interface TrackMetadata {
-  musicLink?: string;
-  videoLink?: string;
-  videoBasePath?: string;
-  fullLength?: boolean;
-  videoOverrides?: Record<string, VideoOverride>;
-  videoNames?: Record<string, string>;
-  videoLinks?: Record<string, string>;
-}
+import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,65 +11,81 @@ export async function GET(request: NextRequest) {
     }
 
     const trackName = request.nextUrl.searchParams.get('track');
-    const tracksMap = musicData.tracks as Record<string, TrackMetadata>;
+    const supabase = getSupabaseAdminClient();
 
     if (trackName) {
-      const trackInfo = tracksMap[trackName];
-      if (!trackInfo?.videoBasePath) {
+      const { data: track, error } = await supabase
+        .from('gallery_tracks')
+        .select(`
+          video_base_path,
+          full_length,
+          gallery_videos (
+            filename,
+            display_name,
+            link,
+            transition,
+            speed,
+            sort_order
+          )
+        `)
+        .eq('name', trackName)
+        .single();
+
+      if (error || !track?.video_base_path) {
         return NextResponse.json({ videos: [], fullLength: false });
       }
 
-      const basePath = trackInfo.videoBasePath;
-      const filenames = await listVideosInFolder(basePath);
+      const basePath = track.video_base_path;
+      const videoRows = (track.gallery_videos ?? []) as Array<{
+        filename: string;
+        display_name: string | null;
+        link: string | null;
+        transition: string;
+        speed: number;
+        sort_order: number;
+      }>;
 
-      if (filenames.length === 0) {
-        console.warn(`[Videos API] No videos found in R2 folder: ${basePath}`);
+      if (videoRows.length === 0) {
+        console.warn(`[Videos API] No videos in DB for track: ${trackName}`);
         return NextResponse.json({ videos: [], fullLength: false });
       }
 
-      const overrides = trackInfo.videoOverrides ?? {};
-      const names = trackInfo.videoNames ?? {};
-      const links = trackInfo.videoLinks ?? {};
-      const videos = filenames.map(filename => {
-        const override = overrides[filename] ?? {};
-        const videoName = names[filename];
-        // Use explicit per-file links when provided; otherwise preserve legacy Pexels link generation.
-        let link: string | undefined = links[filename];
-        if (!link && videoName) {
-          const videoId = filename.split('-')[0];
-          const slug = videoName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-');
-          link = `https://www.pexels.com/video/${slug}-${videoId}/`;
-        }
-        return {
-          url: `${r2BaseUrl}/${basePath}/${encodeURIComponent(filename)}`,
-          transition: override.transition ?? 'fade',
-          speed: override.speed ?? 1,
-          ...(videoName ? { name: videoName } : {}),
-          ...(link ? { link } : {}),
-        };
-      });
+      const videos = videoRows
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(v => ({
+          url: `${r2BaseUrl}/${basePath}/${encodeURIComponent(v.filename)}`,
+          transition: v.transition ?? 'fade',
+          speed: v.speed ?? 1,
+          ...(v.display_name ? { name: v.display_name } : {}),
+          ...(v.link ? { link: v.link } : {}),
+        }));
 
       console.log(`[Videos API] Returning ${videos.length} videos for track: ${trackName}`);
       return NextResponse.json({
         videos,
-        fullLength: trackInfo.fullLength ?? true,
+        fullLength: track.full_length ?? true,
       });
     }
 
     // Legacy mode: pool all videos as flat URL strings
+    const { data: allTracks, error } = await supabase
+      .from('gallery_tracks')
+      .select('video_base_path, gallery_videos(filename)')
+      .not('video_base_path', 'is', null);
+
+    if (error) throw error;
+
     const allVideoUrls: string[] = [];
-    for (const trackInfo of Object.values(tracksMap)) {
-      if (trackInfo.videoBasePath) {
-        const basePath = trackInfo.videoBasePath;
-        const filenames = await listVideosInFolder(basePath);
-        for (const filename of filenames) {
-          allVideoUrls.push(`${r2BaseUrl}/${basePath}/${encodeURIComponent(filename)}`);
-        }
+    for (const track of allTracks ?? []) {
+      const basePath = track.video_base_path!;
+      const videoRows = (track.gallery_videos ?? []) as Array<{ filename: string }>;
+      for (const v of videoRows) {
+        allVideoUrls.push(`${r2BaseUrl}/${basePath}/${encodeURIComponent(v.filename)}`);
       }
     }
 
     const videos = allVideoUrls.sort();
-    console.log(`[Videos API] Returning ${videos.length} video URLs from R2`);
+    console.log(`[Videos API] Returning ${videos.length} video URLs`);
     return NextResponse.json({ videos, fullLength: false });
   } catch (error) {
     console.error('[Videos API] Error:', error);

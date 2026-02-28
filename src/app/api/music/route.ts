@@ -1,89 +1,62 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import musicData from "@/data/music-data.json";
-import { listAudioInFolder } from "@/lib/r2";
-
-interface TrackMetadata {
-  musicLink?: string;
-  videoLink?: string;
-  videoBasePath?: string;
-  videoOverrides?: Record<string, unknown>;
-}
-
-type MusicTrackResponse = {
-  name: string;
-  path: string;
-  displayName: string;
-  folder: string;
-  link: string | null;
-  videoLink: string | null;
-  hasVideo: boolean;
-};
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const DEFAULT_R2_MUSIC_PREFIX = "music";
 
-function normalizeR2Prefix(prefixValue: string): string {
-  const trimmed = prefixValue.trim();
-  if (!trimmed) return DEFAULT_R2_MUSIC_PREFIX;
-  return trimmed.replace(/^\/+|\/+$/g, "");
-}
-
-function getTrackNameFromRelativePath(relativePath: string): string {
-  const ext = path.extname(relativePath);
-  return path.basename(relativePath, ext);
-}
-
-function buildR2PublicUrl(baseUrl: string, prefix: string, relativePath: string): string {
-  const safeBase = baseUrl.replace(/\/+$/, "");
-  const segments = [prefix, ...relativePath.split("/").filter(Boolean)];
-  const encodedPath = segments.map((segment) => encodeURIComponent(segment)).join("/");
-  return `${safeBase}/${encodedPath}`;
-}
-
-function createTrackResponse(
-  name: string,
-  pathValue: string,
-  tracksMap: Record<string, TrackMetadata>,
-): MusicTrackResponse {
-  const trackData = tracksMap[name] || {};
-  const hasVideo = Boolean(trackData.videoBasePath);
-  return {
-    name,
-    path: pathValue,
-    displayName: name,
-    folder: hasVideo ? "Video Gallery" : "Space Scene",
-    link: trackData.musicLink || null,
-    videoLink: trackData.videoLink || null,
-    hasVideo,
-  };
-}
-
-async function getTracksFromR2(tracksMap: Record<string, TrackMetadata>): Promise<MusicTrackResponse[]> {
-  const r2BaseUrl = process.env.R2_PUBLIC_URL;
-  if (!r2BaseUrl) {
-    throw new Error("R2_PUBLIC_URL is not set");
-  }
-
-  const r2MusicPrefix = normalizeR2Prefix(process.env.R2_MUSIC_PREFIX || DEFAULT_R2_MUSIC_PREFIX);
-  const relativePaths = await listAudioInFolder(r2MusicPrefix);
-
-  return relativePaths.map((relativePath) => {
-    const name = getTrackNameFromRelativePath(relativePath);
-    const publicUrl = buildR2PublicUrl(r2BaseUrl, r2MusicPrefix, relativePath);
-    return createTrackResponse(name, publicUrl, tracksMap);
-  });
+function buildAudioUrl(r2BaseUrl: string, prefix: string, audioFilename: string): string {
+  const safeBase = r2BaseUrl.replace(/\/+$/, "");
+  return `${safeBase}/${prefix}/${encodeURIComponent(audioFilename)}`;
 }
 
 export async function GET() {
-  const tracksMap = musicData.tracks as Record<string, TrackMetadata>;
-
   try {
-    const r2Tracks = await getTracksFromR2(tracksMap);
-    r2Tracks.sort((a, b) => a.displayName.localeCompare(b.displayName));
-    console.log(`[Music API] source=r2 tracks=${r2Tracks.length}`);
-    return NextResponse.json({ tracks: r2Tracks });
+    const r2BaseUrl = process.env.R2_PUBLIC_URL;
+    if (!r2BaseUrl) {
+      throw new Error("R2_PUBLIC_URL is not set");
+    }
+
+    const r2MusicPrefix = (process.env.R2_MUSIC_PREFIX || DEFAULT_R2_MUSIC_PREFIX)
+      .trim().replace(/^\/+|\/+$/g, "") || DEFAULT_R2_MUSIC_PREFIX;
+
+    const supabase = getSupabaseAdminClient();
+    const { data: dbTracks, error } = await supabase
+      .from("gallery_tracks")
+      .select("name, music_link, video_link, video_base_path, audio_filename, only_video_audio, video_has_audio, sort_order")
+      .order("sort_order")
+      .order("name");
+
+    if (error) throw error;
+
+    const tracks = (dbTracks ?? []).map((row) => {
+      // only_video_audio: audio comes exclusively from the video (no separate MP3).
+      // video_has_audio: the video files contain an audio track (may coexist with a separate MP3).
+      const useVideoOnlyAudio = row.only_video_audio === true;
+      const hasVideoAudio = useVideoOnlyAudio || row.video_has_audio === true;
+      return {
+        name: row.name,
+        path: useVideoOnlyAudio
+          ? null
+          : row.audio_filename
+          ? buildAudioUrl(r2BaseUrl, r2MusicPrefix, row.audio_filename)
+          : null,
+        displayName: row.name,
+        folder: row.video_base_path ? "Video Gallery" : "Space Scene",
+        link: row.music_link || null,
+        videoLink: row.video_link || null,
+        hasVideo: Boolean(row.video_base_path),
+        videoHasAudio: hasVideoAudio,
+      };
+    });
+
+    // Diagnostic: log tracks with video audio for debugging
+    const audioTracks = tracks.filter(t => t.videoHasAudio);
+    if (audioTracks.length > 0) {
+      console.log(`[Music API] Tracks with videoHasAudio=true:`, audioTracks.map(t => t.name));
+    }
+    console.log(`[Music API] source=supabase tracks=${tracks.length}`);
+    return NextResponse.json({ tracks });
   } catch (error) {
-    console.error("[Music API] source=r2-error", error);
+    console.error("[Music API] error", error);
     return NextResponse.json({ tracks: [] });
   }
 }

@@ -17,6 +17,8 @@ interface VideoBackgroundManagerProps {
   trackName?: string;
 }
 
+type PlaybackFailureReason = 'play-rejected' | 'no-progress' | 'watchdog-stall';
+
 // Fisher-Yates shuffle algorithm
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
@@ -45,6 +47,11 @@ function getRandomDuration() {
 }
 
 const DEFAULT_FADE_MS = 2500;
+const PLAYBACK_VERIFY_MS = 1200;
+const PLAYBACK_PROGRESS_EPSILON = 0.01;
+const WATCHDOG_INTERVAL_MS = 1500;
+const WATCHDOG_STALL_MS = 2200;
+const UNLOCK_PROMPT_FAIL_THRESHOLD = 1;
 
 // Helper to log in development and in production when debugVideo=1 is present in URL
 // or localStorage contains btc_debug_video=1.
@@ -64,7 +71,8 @@ function isVideoDebugEnabled() {
 }
 
 const devLog = (...args: unknown[]) => {
-  if (isVideoDebugEnabled()) console.log(...args);
+  if (!isVideoDebugEnabled()) return;
+  console.log(...args);
 };
 
 function getReadyStateLabel(value: number) {
@@ -141,13 +149,15 @@ function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
 }
 
 export default function VideoBackgroundManager({ trackName }: VideoBackgroundManagerProps) {
-  const { videoVolume, setCurrentVideoName, setCurrentVideoLink, forceSkipVideo, videoPlaybackUnlockRequest } = useMusicTrack();
+  const { videoVolume, setCurrentVideoName, setCurrentVideoLink, forceSkipVideo, videoPlaybackUnlockRequest, currentTrackVideoHasAudio } = useMusicTrack();
 
   const [videoList, setVideoList] = useState<VideoClip[]>([]);
   const [playlist, setPlaylist] = useState<VideoClip[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [fullLength, setFullLength] = useState(false);
+  const [showPlaybackUnlockToast, setShowPlaybackUnlockToast] = useState(false);
+  const [playbackFailureReason, setPlaybackFailureReason] = useState<PlaybackFailureReason | null>(null);
 
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
@@ -156,6 +166,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const isTransitioningRef = useRef(false);
   const earlyTransitionFiredRef = useRef(false);
   const interactionLogCountRef = useRef(0);
+  const consecutivePlaybackFailuresRef = useRef(0);
+  const audioPrimedRef = useRef(false);
+  const lastPlaybackProgressRef = useRef<{ index: number; time: number; timestamp: number }>({
+    index: -1,
+    time: 0,
+    timestamp: 0,
+  });
 
   // Transition duration as a ref — never triggers re-renders or effect re-runs
   const transitionDurationRef = useRef(DEFAULT_FADE_MS);
@@ -273,6 +290,62 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     });
   }, []);
 
+  const videoHasAudio = currentTrackVideoHasAudio;
+
+  const clearPlaybackFailure = useCallback((context: string) => {
+    const hadFailure = consecutivePlaybackFailuresRef.current > 0;
+    consecutivePlaybackFailuresRef.current = 0;
+    setShowPlaybackUnlockToast(false);
+    setPlaybackFailureReason(null);
+    if (hadFailure) {
+      devLog('[VideoBackgroundManager] Playback recovered', { context });
+    }
+  }, []);
+
+  const registerPlaybackFailure = useCallback((reason: PlaybackFailureReason, video: HTMLVideoElement, context: string) => {
+    consecutivePlaybackFailuresRef.current += 1;
+    setPlaybackFailureReason(reason);
+
+    const shouldPrompt = consecutivePlaybackFailuresRef.current >= UNLOCK_PROMPT_FAIL_THRESHOLD;
+    if (shouldPrompt) {
+      setShowPlaybackUnlockToast(true);
+    }
+
+    devLog('[VideoBackgroundManager] Playback failure detected', {
+      reason,
+      context,
+      failures: consecutivePlaybackFailuresRef.current,
+      shouldPrompt,
+      snapshot: getVideoSnapshot(video),
+    });
+  }, []);
+
+  const applyRuntimeAudioPolicy = useCallback((video: HTMLVideoElement) => {
+    const src = (video.currentSrc || video.src || '').split('/').pop() || '(no-src)';
+    if (videoHasAudio) {
+      const willMute = videoVolume === 0;
+      video.muted = willMute;
+      video.volume = videoVolume;
+      console.warn(`[AudioPolicy] UNMUTE path — videoHasAudio=true, muted=${willMute}, volume=${videoVolume}, src=${decodeURIComponent(src)}`);
+      return;
+    }
+
+    video.muted = true;
+    video.volume = 0;
+    devLog(`[AudioPolicy] MUTE path — videoHasAudio=false, src=${decodeURIComponent(src)}`);
+  }, [videoVolume, videoHasAudio]);
+
+  const applyMutedFirstPolicy = useCallback((video: HTMLVideoElement) => {
+    // Muted-first startup prevents autoplay policies from pausing video playback on many browsers.
+    video.muted = true;
+    video.volume = 0;
+  }, []);
+
+  useEffect(() => {
+    audioPrimedRef.current = false;
+    clearPlaybackFailure('track-change');
+  }, [trackName, clearPlaybackFailure]);
+
   // Fetch video list on mount
   useEffect(() => {
     let ignore = false;
@@ -327,30 +400,26 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     };
   }, [trackName]);
 
-  // Apply video volume from context to both video elements
-  // Only Telepath videos have audible volume; others are always muted
-  const isTelepath = trackName?.toLowerCase().includes('telepath') ?? false;
-
+  // Apply video audio policy to both elements.
+  // While startup is not primed yet, we keep both muted for autoplay reliability.
   useEffect(() => {
     [videoARef, videoBRef].forEach(ref => {
-      if (ref.current) {
-        if (isTelepath) {
-          ref.current.muted = videoVolume === 0;
-          ref.current.volume = videoVolume;
-        } else {
-          ref.current.muted = true;
-          ref.current.volume = 0;
-        }
+      if (!ref.current) return;
+      if (!audioPrimedRef.current) {
+        applyMutedFirstPolicy(ref.current);
+        return;
       }
+      applyRuntimeAudioPolicy(ref.current);
     });
 
     devLog('[VideoBackgroundManager] Volume policy applied', {
-      isTelepath,
+      videoHasAudio,
       contextVideoVolume: videoVolume,
+      audioPrimed: audioPrimedRef.current,
       videoA: videoARef.current ? getVideoSnapshot(videoARef.current) : null,
       videoB: videoBRef.current ? getVideoSnapshot(videoBRef.current) : null,
     });
-  }, [videoVolume, isTelepath]);
+  }, [videoVolume, videoHasAudio, applyMutedFirstPolicy, applyRuntimeAudioPolicy]);
 
   // Bandwidth Tracker
   useEffect(() => {
@@ -418,95 +487,82 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     };
   }, [isActive]);
 
-  // Attempt to play a video with layered fallback detection for browsers (e.g. Brave) that
-  // can block autoplay without rejecting the play() promise or without firing canplay again.
-  const attemptPlay = useCallback((video: HTMLVideoElement) => {
-    let playingFired = false;
-    let playPromiseResolved = false;
-    let timeAdvanced = false;
+  const attemptPlay = useCallback(async (video: HTMLVideoElement, context: string) => {
     const startTime = video.currentTime;
     const srcName = video.src.split('/').pop() || '(no-src)';
 
+    if (!audioPrimedRef.current) {
+      applyMutedFirstPolicy(video);
+    } else {
+      applyRuntimeAudioPolicy(video);
+    }
+
     devLog('[VideoBackgroundManager] attemptPlay() called', {
       src: decodeURIComponent(srcName),
+      context,
       hidden: typeof document !== 'undefined' ? document.hidden : null,
       snapshot: getVideoSnapshot(video),
     });
 
-    const onPlaying = () => { playingFired = true; };
-    video.addEventListener('playing', onPlaying, { once: true });
-
-    const onTimeUpdate = () => {
-      if (video.currentTime > startTime + 0.01) {
-        timeAdvanced = true;
-      }
-    };
-    video.addEventListener('timeupdate', onTimeUpdate, { once: true });
-
-    // Once the browser has buffered enough data, check whether playback actually started.
-    // A 200 ms grace period accounts for the short delay between canplay and the first frame.
-    const onCanPlay = () => {
-      setTimeout(() => {
-        if (!playingFired && video.paused && mountedRef.current) {
-          devLog('[VideoBackgroundManager] Autoplay silently blocked (canplay fired but video still paused):', {
-            src: decodeURIComponent(srcName),
-            snapshot: getVideoSnapshot(video),
-            playPromiseResolved,
-          });
-        }
-      }, 200);
-    };
-    video.addEventListener('canplay', onCanPlay, { once: true });
-
     try {
       const maybePromise = video.play();
       if (maybePromise && typeof maybePromise.then === 'function') {
-        maybePromise
-          .then(() => {
-            playPromiseResolved = true;
-            devLog('[VideoBackgroundManager] play() resolved:', {
-              src: decodeURIComponent(srcName),
-              snapshot: getVideoSnapshot(video),
-            });
-          })
-          .catch((err) => {
-            video.removeEventListener('playing', onPlaying);
-            video.removeEventListener('canplay', onCanPlay);
-            video.removeEventListener('timeupdate', onTimeUpdate);
-            devLog('[VideoBackgroundManager] play() rejected:', {
-              src: decodeURIComponent(srcName),
-              err,
-              snapshot: getVideoSnapshot(video),
-            });
-          });
-      } else {
-        devLog('[VideoBackgroundManager] play() returned non-promise value', {
-          src: decodeURIComponent(srcName),
-          snapshot: getVideoSnapshot(video),
-        });
+        await maybePromise;
       }
     } catch (err) {
-      devLog('[VideoBackgroundManager] play() threw synchronously:', {
+      registerPlaybackFailure('play-rejected', video, context);
+      devLog('[VideoBackgroundManager] play() rejected', {
         src: decodeURIComponent(srcName),
+        context,
         err,
         snapshot: getVideoSnapshot(video),
       });
+      return false;
     }
 
-    // Final fallback: if play() resolved but there is no real playback progression, assume block.
-    setTimeout(() => {
-      if (!mountedRef.current) return;
-      if (playingFired || timeAdvanced) return;
-      if (video.paused || video.currentTime <= startTime + 0.01) {
-        devLog('[VideoBackgroundManager] Autoplay likely blocked (no playback progression):', {
-          src: decodeURIComponent(srcName),
-          snapshot: getVideoSnapshot(video),
-          startTime,
-          playPromiseResolved,
-        });
-      }
-    }, 1200);
-  }, []);
+    // Unmute immediately after play() resolves so audio starts as close to the
+    // user-gesture context as possible. The 1200ms verification below still
+    // determines audioPrimedRef for future clips and the stall detector.
+    applyRuntimeAudioPolicy(video);
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, PLAYBACK_VERIFY_MS);
+    });
+
+    if (!mountedRef.current) {
+      return false;
+    }
+
+    const progressed = video.currentTime > startTime + PLAYBACK_PROGRESS_EPSILON;
+    const playing = !video.paused || progressed;
+
+    if (!playing) {
+      // Some browsers/media stacks can resolve play() before playback really starts.
+      // If playback begins later, unmute/apply runtime policy as soon as `playing` fires.
+      const handleLatePlaying = () => {
+        if (!mountedRef.current) return;
+        audioPrimedRef.current = true;
+        applyRuntimeAudioPolicy(video);
+        clearPlaybackFailure(`${context}-late-playing`);
+      };
+      video.addEventListener('playing', handleLatePlaying, { once: true });
+
+      registerPlaybackFailure('no-progress', video, context);
+      devLog('[VideoBackgroundManager] Playback did not progress after play()', {
+        src: decodeURIComponent(srcName),
+        context,
+        startTime,
+        snapshot: getVideoSnapshot(video),
+      });
+      return false;
+    }
+
+    audioPrimedRef.current = true;
+    applyRuntimeAudioPolicy(video);
+    clearPlaybackFailure(context);
+
+    return true;
+  }, [applyMutedFirstPolicy, applyRuntimeAudioPolicy, clearPlaybackFailure, registerPlaybackFailure]);
 
   // Resource-level diagnostics for video files (available in production when debugVideo=1).
   useEffect(() => {
@@ -589,7 +645,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       // Start the incoming video right away
       const incomingRef = nextIndex % 2 === 0 ? videoARef : videoBRef;
       if (incomingRef.current && incomingRef.current.paused && incomingRef.current.readyState >= 2) {
-        attemptPlay(incomingRef.current);
+        void attemptPlay(incomingRef.current, 'transition-incoming');
       }
 
       // Reshuffle when wrapping around, avoiding repeat of last clip
@@ -639,24 +695,23 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     transitionToNext();
   }, [transitionToNext, currentIndex]);
 
-  // Apply per-clip properties to a video element (speed + volume only, no transition state)
+  // Apply per-clip properties to a video element.
+  // Audio stays muted-first and is restored only after playback starts successfully.
   const applyClipProperties = useCallback((video: HTMLVideoElement, clip: VideoClip) => {
     video.playbackRate = clip.speed;
-    if (isTelepath) {
-      video.muted = videoVolume === 0;
-      video.volume = videoVolume;
+    if (audioPrimedRef.current) {
+      applyRuntimeAudioPolicy(video);
     } else {
-      video.muted = true;
-      video.volume = 0;
+      applyMutedFirstPolicy(video);
     }
 
     devLog('[VideoBackgroundManager] Applied clip properties:', {
       file: clip.url.split('/').pop(),
       speed: clip.speed,
       transition: clip.transition,
-      videoVolume,
+      mutedFirst: true,
     });
-  }, [videoVolume, isTelepath]);
+  }, [applyMutedFirstPolicy, applyRuntimeAudioPolicy]);
 
   // Setup timer for transitions (only when NOT fullLength)
   useEffect(() => {
@@ -733,7 +788,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         video.removeEventListener('loadedmetadata', metadataHandler);
       }
     };
-  }, [isActive, playlist.length, currentIndex, transitionToNext, playlist, fullLength]);
+  }, [isActive, playlist.length, currentIndex, transitionToNext, playlist, fullLength, setTransitionDuration]);
 
   // Load videos based on current index (ping-pong between A and B)
   useEffect(() => {
@@ -774,7 +829,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
       applyClipProperties(video, currentClip);
 
-      attemptPlay(video);
+      void attemptPlay(video, 'load-active');
     }
 
     // Preload the next video after the current transition completes.
@@ -825,7 +880,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         // Start the preloaded video so it has frames ready during the crossfade
         const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
         if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
-          attemptPlay(preloadRef.current);
+          void attemptPlay(preloadRef.current, 'fullLength-preload');
         }
 
         transitionToNext();
@@ -857,6 +912,57 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     return () => clearInterval(interval);
   }, [isActive, playlist.length, currentIndex, transitionToNext]);
+
+  useEffect(() => {
+    if (!isActive || playlist.length === 0) return;
+    const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    const activeVideo = activeRef.current;
+    lastPlaybackProgressRef.current = {
+      index: currentIndex,
+      time: activeVideo?.currentTime ?? 0,
+      timestamp: Date.now(),
+    };
+  }, [isActive, playlist.length, currentIndex]);
+
+  // Watchdog: transparent recovery first. We only show UI if a real playback failure is detected.
+  useEffect(() => {
+    if (!isActive || playlist.length === 0) return;
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (isTransitioningRef.current) return;
+
+      const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+      const video = activeRef.current;
+      if (!video || video.ended || video.readyState < 2) return;
+
+      const now = Date.now();
+      const snapshot = lastPlaybackProgressRef.current;
+      const progressed = video.currentTime > snapshot.time + PLAYBACK_PROGRESS_EPSILON;
+
+      if (snapshot.index !== currentIndex || progressed) {
+        lastPlaybackProgressRef.current = {
+          index: currentIndex,
+          time: video.currentTime,
+          timestamp: now,
+        };
+        if (!video.paused) {
+          clearPlaybackFailure('watchdog-progress');
+        }
+        return;
+      }
+
+      const stalledMs = now - snapshot.timestamp;
+      if (!video.paused && stalledMs < WATCHDOG_STALL_MS) {
+        return;
+      }
+
+      registerPlaybackFailure('watchdog-stall', video, 'watchdog');
+      void attemptPlay(video, 'watchdog');
+    }, WATCHDOG_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [isActive, playlist.length, currentIndex, attemptPlay, clearPlaybackFailure, registerPlaybackFailure]);
 
   // Initialize transition duration on both video elements once they are active
   useEffect(() => {
@@ -898,11 +1004,11 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     });
 
     if (activeRef.current) {
-      attemptPlay(activeRef.current);
+      void attemptPlay(activeRef.current, 'unlock-request-active');
     }
 
     if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
-      attemptPlay(preloadRef.current);
+      void attemptPlay(preloadRef.current, 'unlock-request-preload');
     }
   }, [videoPlaybackUnlockRequest, isActive, playlist.length, currentIndex, attemptPlay]);
 
@@ -918,13 +1024,28 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       });
       if (document.hidden) return;
       if (video && video.paused && mountedRef.current) {
-        attemptPlay(video);
+        void attemptPlay(video, 'visibility-recover');
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityRecover);
     return () => document.removeEventListener('visibilitychange', handleVisibilityRecover);
   }, [currentIndex, attemptPlay]);
+
+  const handlePlaybackUnlockClick = useCallback(() => {
+    const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
+
+    clearPlaybackFailure('manual-unlock-click');
+
+    if (activeRef.current) {
+      void attemptPlay(activeRef.current, 'manual-unlock-active');
+    }
+
+    if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
+      void attemptPlay(preloadRef.current, 'manual-unlock-preload');
+    }
+  }, [currentIndex, attemptPlay, clearPlaybackFailure]);
 
   // Listen for skip video trigger from context
   useEffect(() => {
@@ -957,6 +1078,12 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
   const videoAOpacity = currentIndex % 2 === 0 ? 1 : 0;
   const videoBOpacity = currentIndex % 2 === 1 ? 1 : 0;
+  const playbackFailureDescription =
+    playbackFailureReason === 'play-rejected'
+      ? 'Your browser paused autoplay for this clip.'
+      : playbackFailureReason === 'watchdog-stall'
+        ? 'Playback stalled. A manual tap can unlock it.'
+        : 'Video did not progress after play().';
 
   return (
     <>
@@ -971,7 +1098,6 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
             opacity: videoAOpacity,
             transitionProperty: 'opacity'
           }}
-          muted
           playsInline
           preload="auto"
           onEnded={handleVideoEnded}
@@ -984,12 +1110,32 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
             opacity: videoBOpacity,
             transitionProperty: 'opacity'
           }}
-          muted
           playsInline
           preload="auto"
           onEnded={handleVideoEnded}
         />
       </div>
+
+      {showPlaybackUnlockToast && (
+        <div className="fixed bottom-28 right-6 z-[95] pointer-events-auto">
+          <div className="w-[300px] rounded-xl border border-blue-300/30 bg-black/85 backdrop-blur-xl p-3 shadow-2xl shadow-black/50">
+            <p className="text-xs font-semibold text-blue-100">Video playback needs one click</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-blue-100/80">
+              {playbackFailureDescription}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-blue-100/70">
+              If this button does not work, refresh the page or try again later.
+            </p>
+            <button
+              type="button"
+              onClick={handlePlaybackUnlockClick}
+              className="mt-2 w-full rounded-md bg-blue-600/80 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500"
+            >
+              Resume Video Gallery
+            </button>
+          </div>
+        </div>
+      )}
 
     </>
   );

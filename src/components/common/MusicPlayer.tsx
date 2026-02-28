@@ -7,11 +7,12 @@ import { useMusicTrack } from "@/contexts/MusicTrackContext";
 
 interface Track {
   name: string;
-  path: string;
+  path: string | null;
   displayName: string;
   link?: string | null;
   videoLink?: string | null;
   hasVideo?: boolean;
+  videoHasAudio?: boolean;
 }
 
 interface MusicPlayerProps {
@@ -306,6 +307,22 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     const nextTrack = tracks[currentTrackIndex];
     if (!nextTrack) return;
 
+    // Video-only tracks (no separate audio file)
+    if (!nextTrack.path) {
+      if (audio.src) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+      currentTrackPathRef.current = null;
+      // Mark as playing so video playback starts via context
+      if (!hasAutoPlayedRef.current) {
+        hasAutoPlayedRef.current = true;
+        setIsPlaying(true);
+      }
+      return;
+    }
+
     if (currentTrackPathRef.current !== nextTrack.path) {
       currentTrackPathRef.current = nextTrack.path;
       audio.src = nextTrack.path;
@@ -362,7 +379,17 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
   }, [volume, isMuted]);
 
   const togglePlay = () => {
-    if (!audioRef.current || tracks.length === 0) return;
+    if (tracks.length === 0) return;
+
+    const current = tracks[currentTrackIndex];
+
+    // Video-only track (no audio file): just toggle the playing state
+    if (!current?.path) {
+      setIsPlaying(!isPlaying);
+      return;
+    }
+
+    if (!audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
@@ -465,8 +492,9 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       isPlaying,
       currentTrackIndex,
       currentTrackHasVideo: currentTrack?.hasVideo ?? false,
+      currentTrackVideoHasAudio: currentTrack?.videoHasAudio ?? false,
     });
-  }, [currentTrack?.name, currentTrack?.path, currentTrack?.hasVideo, isPlaying, currentTrackIndex, setMusicTrackState]);
+  }, [currentTrack?.name, currentTrack?.path, currentTrack?.hasVideo, currentTrack?.videoHasAudio, isPlaying, currentTrackIndex, setMusicTrackState]);
 
   // Colores según el tema
   const themeColors = theme === "blue" ? {
@@ -583,7 +611,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                 )
                 .map(({ track, globalIndex }) => (
                   <div
-                    key={track.path}
+                    key={track.name}
                     className={`w-full px-4 py-3 text-left text-sm transition-colors ${
                       globalIndex === currentTrackIndex
                         ? themeColors.highlightBg
@@ -668,7 +696,8 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
               )}
             </button>
 
-            {/* Control de volumen */}
+            {/* Music volume control - hidden for video-only-audio tracks */}
+            {currentTrack?.path && (
             <div className="flex items-center gap-2 flex-1">
               <button
                 onClick={toggleMute}
@@ -708,10 +737,11 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                 {Math.round((isMuted ? 0 : volume) * 100)}%
               </span>
             </div>
+            )}
           </div>
 
-          {/* Video volume control - only for Telepath videos */}
-          {currentTrack?.hasVideo && currentTrack?.name?.toLowerCase().includes("telepath") && (
+          {/* Video volume control - for tracks where the video has its own audio */}
+          {currentTrack?.hasVideo && currentTrack?.videoHasAudio && (
             <div className="relative mt-3 rounded-lg border border-blue-300/20 bg-black/20 p-2">
               <div className="flex items-center gap-3">
                 <div className="flex-shrink-0 w-10 flex items-center justify-center">
@@ -735,30 +765,32 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                     {Math.round(videoVolume * 100)}%
                   </span>
                 </div>
-                <div className="relative group/info">
-                  <button
-                    type="button"
-                    className={`flex-shrink-0 text-gray-400 ${themeColors.iconHover} transition-colors`}
-                    aria-label="Recomendación de volumen para vídeos"
-                    title="Recomendación de volumen para vídeos"
-                  >
-                    <Info size={16} />
-                  </button>
-                  <div className="pointer-events-none absolute bottom-full right-0 z-[120] mb-2 w-[300px] rounded-xl border border-blue-300/30 bg-black/95 p-3 text-[11px] leading-relaxed text-blue-100 opacity-0 shadow-2xl transition-opacity duration-150 group-hover/info:opacity-100 group-focus-within/info:opacity-100">
-                    <p className="font-semibold text-blue-200">Video Gallery volume tip</p>
-                    <p className="mt-1">
-                      This slider controls the volume of the background videos currently playing.
-                      These clips come from YouTube, so audio quality and style can vary a lot.
-                    </p>
-                    <p className="mt-1">
-                      Some videos have pleasant ambient sound, while others are music videos or
-                      include strong background music that can worsen the experience.
-                    </p>
-                    <p className="mt-1 text-cyan-200">
-                      General recommendation: keep video volume around 3% to 4%.
-                    </p>
+                {currentTrack?.name === 'Telepath - Teardrops (edited)' && (
+                  <div className="relative group/info">
+                    <button
+                      type="button"
+                      className={`flex-shrink-0 text-gray-400 ${themeColors.iconHover} transition-colors`}
+                      aria-label="Recomendación de volumen para vídeos"
+                      title="Recomendación de volumen para vídeos"
+                    >
+                      <Info size={16} />
+                    </button>
+                    <div className="pointer-events-none absolute bottom-full right-0 z-[120] mb-2 w-[300px] rounded-xl border border-blue-300/30 bg-black/95 p-3 text-[11px] leading-relaxed text-blue-100 opacity-0 shadow-2xl transition-opacity duration-150 group-hover/info:opacity-100 group-focus-within/info:opacity-100">
+                      <p className="font-semibold text-blue-200">Video Gallery volume tip</p>
+                      <p className="mt-1">
+                        This slider controls the volume of the background videos currently playing.
+                        These clips come from YouTube, so audio quality and style can vary a lot.
+                      </p>
+                      <p className="mt-1">
+                        Some videos have pleasant ambient sound, while others are music videos or
+                        include strong background music that can worsen the experience.
+                      </p>
+                      <p className="mt-1 text-cyan-200">
+                        General recommendation: keep video volume around 3% to 4%.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}

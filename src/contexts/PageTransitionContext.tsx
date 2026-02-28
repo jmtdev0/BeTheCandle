@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, Children, cloneElement, isValidElement } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import PageLoader from "@/components/common/PageLoader";
 
 interface PageTransitionContextType {
@@ -110,13 +111,19 @@ export function PageTransitionProvider({ children }: { children: React.ReactNode
 
   return (
     <PageTransitionContext.Provider value={{ isTransitioning, navigate, setDataReady: setDataReadyCallback }}>
-      {isTransitioning && <PageLoader message={transitionMessage} />}
+      <AnimatePresence>
+        {isTransitioning && <PageLoader message={transitionMessage} />}
+      </AnimatePresence>
       {/* Persistent components (Sidebar, Music Player) - always visible */}
       {persistentComponents}
-      {/* Page content - hidden during transitions */}
-      <div style={{ display: isTransitioning ? "none" : "block" }}>
+      {/* Page content - rendered but invisible during transitions so the canvas warms up */}
+      <motion.div
+        animate={{ opacity: isTransitioning ? 0 : 1 }}
+        transition={{ duration: 0.4 }}
+        style={{ pointerEvents: isTransitioning ? "none" : "auto" }}
+      >
         {pageContent}
-      </div>
+      </motion.div>
     </PageTransitionContext.Provider>
   );
 }

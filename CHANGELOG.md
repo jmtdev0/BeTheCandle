@@ -1,6 +1,23 @@
 # Changelog
 
+### 28/02/2026
+* Fixed video audio not playing for Telepath/Spyro tracks: `VideoBackgroundManager` now calls `applyRuntimeAudioPolicy` immediately after `play()` resolves instead of waiting 1200ms, so audio unmuting happens as close to the user-gesture context as possible
+* Raised default video volume from 2% to 5% so audio is audible at first play without having to find the slider
+* Added `video_has_audio` column + comment to `supabase/public_schema.sql` to keep the schema file consistent with the production database
+
+### 24/02/2026
+* Added WoW-style rotating loading tips to the page loader (starts on a random tip, cycles every 10s with a fade transition)
+* Fixed SSR hydration mismatch caused by `Math.random()` in `useState` initializer — randomization now happens in `useEffect` (client-only)
+* Fixed black flash between loading screen and 3D scene: page content now uses `opacity:0` instead of `display:none` during loading, so the Three.js canvas renders frames in the background while the loader is visible
+* Wrapped `PageLoader` in `AnimatePresence` so its exit fade animation actually fires on dismissal
+
 ### 22/02/2026
+* Added `video_has_audio` DB column to `gallery_tracks` — separates "videos have audio" from "only video audio" so tracks like Telepath can play both their MP3 and the video's embedded audio simultaneously
+* Migrated Video Gallery data from static `music-data.json` to Supabase (`gallery_tracks` + `gallery_videos` tables) — videos can now be added/removed dynamically from the Supabase Dashboard without redeploying
+* API routes `/api/music` and `/api/videos` now query Supabase instead of importing a JSON file
+* Removed `src/data/music-data.json` (replaced by DB)
+* Database is now the sole source of truth for tracks — `/api/music` no longer lists R2 audio files; tracks, audio filenames, and metadata all come from `gallery_tracks`
+* Added `video_has_audio` flag to support tracks where the video carries its own audio (no separate mp3 needed), replacing the hardcoded Telepath check
 * Fixed short videos getting stuck on last frame in fullLength mode (e.g. "Sin City"): the early crossfade flag was set before confirming the transition actually proceeded, blocking the fallback handler
 * Added stall detector as safety net for video transitions
 * Music modal now stays visible for 2 seconds after any click (prevents premature hide when selecting Video Gallery tracks)
