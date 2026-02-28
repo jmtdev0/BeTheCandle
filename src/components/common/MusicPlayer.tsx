@@ -492,6 +492,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
 
   // Siempre mostrar el reproductor, incluso sin canciones (para que sea visible)
   const currentTrack = tracks.length > 0 ? tracks[currentTrackIndex] : null;
+  const currentVideoMarqueeKey = `${currentVideoName ?? ""}|${currentVideoLink ?? ""}`;
 
   // Update global music track context whenever these values change
   useEffect(() => {
@@ -545,6 +546,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                 <div ref={videoNameContainerRef} className="overflow-hidden max-w-[180px]">
                   {currentVideoLink ? (
                     <a
+                      key={currentVideoMarqueeKey}
                       ref={videoNameTextRef as React.RefObject<HTMLAnchorElement>}
                       href={currentVideoLink}
                       target="_blank"
@@ -555,6 +557,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                     </a>
                   ) : (
                     <span
+                      key={currentVideoMarqueeKey}
                       ref={videoNameTextRef}
                       className={`text-[10px] text-gray-500 whitespace-nowrap inline-block${videoNameOverflows ? ' video-name-marquee' : ''}`}
                     >
@@ -769,7 +772,20 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                     max="1"
                     step="0.01"
                     value={videoVolume}
-                    onChange={(e) => setVideoVolume(parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      const vol = parseFloat(e.target.value);
+                      setVideoVolume(vol);
+                      // Apply volume directly to video elements in the user-gesture
+                      // call stack. Browser autoplay policies require muted→unmuted
+                      // transitions to happen synchronously within a gesture handler;
+                      // React's useEffect runs asynchronously and may be suppressed.
+                      document.querySelectorAll<HTMLVideoElement>('video').forEach(v => {
+                        if (!v.paused) {
+                          v.volume = vol;
+                          v.muted = vol === 0;
+                        }
+                      });
+                    }}
                     className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
                     style={{
                       background: `linear-gradient(to right, ${themeColors.slider} ${videoVolume * 100}%, #374151 ${videoVolume * 100}%)`,
@@ -899,6 +915,7 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
         }
         .video-name-marquee {
           animation: marquee 8s linear infinite;
+          animation-delay: 2s;
         }
       `}</style>
     </div>

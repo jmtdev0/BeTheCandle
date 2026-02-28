@@ -30,7 +30,6 @@ export default function TeardropsVideoBackground({ isEnabled = true }: Teardrops
     <AnimatePresence>
       {shouldShow && (
         <motion.div
-          key={currentTrackName}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

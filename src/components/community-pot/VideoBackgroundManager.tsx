@@ -47,6 +47,7 @@ function getRandomDuration() {
 }
 
 const DEFAULT_FADE_MS = 2500;
+const MIN_AUDIO_CROSSFADE_MS = 1000;
 const PLAYBACK_VERIFY_MS = 1200;
 const PLAYBACK_PROGRESS_EPSILON = 0.01;
 const WATCHDOG_INTERVAL_MS = 1500;
@@ -151,6 +152,12 @@ function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
 export default function VideoBackgroundManager({ trackName }: VideoBackgroundManagerProps) {
   const { videoVolume, setCurrentVideoName, setCurrentVideoLink, forceSkipVideo, videoPlaybackUnlockRequest, currentTrackVideoHasAudio } = useMusicTrack();
 
+  // Keep a ref so applyRuntimeAudioPolicy can always read the latest volume
+  // without having videoVolume in its useCallback deps (which would cascade into
+  // attemptPlay → transitionToNext → timer effect re-runs, causing spurious skips).
+  const videoVolumeRef = useRef(videoVolume);
+  videoVolumeRef.current = videoVolume;
+
   const [videoList, setVideoList] = useState<VideoClip[]>([]);
   const [playlist, setPlaylist] = useState<VideoClip[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -168,6 +175,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const interactionLogCountRef = useRef(0);
   const consecutivePlaybackFailuresRef = useRef(0);
   const audioPrimedRef = useRef(false);
+  const audioFadeRafRef = useRef<number | null>(null);
+  const isCrossfadingRef = useRef(false);
+  const prevIndexRef = useRef(0);
+  const currentIndexRef = useRef(0);
+  // Track key currently bound to `playlist`/`videoList`.
+  // Used to prevent stale transitions when `trackName` changes but fetch has not completed yet.
+  const playlistTrackKeyRef = useRef<string | null>(trackName ?? null);
   const lastPlaybackProgressRef = useRef<{ index: number; time: number; timestamp: number }>({
     index: -1,
     time: 0,
@@ -206,6 +220,10 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
   const videoListRef = useRef<VideoClip[]>([]);
   useEffect(() => { videoListRef.current = videoList; }, [videoList]);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   // Persist debugVideo query flag to localStorage so production logs survive reloads.
   useEffect(() => {
@@ -323,17 +341,25 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const applyRuntimeAudioPolicy = useCallback((video: HTMLVideoElement) => {
     const src = (video.currentSrc || video.src || '').split('/').pop() || '(no-src)';
     if (videoHasAudio) {
-      const willMute = videoVolume === 0;
+      // During an audio crossfade the rAF loop owns volume — only ensure unmuted.
+      if (isCrossfadingRef.current) {
+        video.muted = false;
+        return;
+      }
+      // Read from ref so this callback doesn't need videoVolume in its deps,
+      // preventing cascading rebuilds of attemptPlay / transitionToNext / timer effects.
+      const volume = videoVolumeRef.current;
+      const willMute = volume === 0;
       video.muted = willMute;
-      video.volume = videoVolume;
-      console.warn(`[AudioPolicy] UNMUTE path — videoHasAudio=true, muted=${willMute}, volume=${videoVolume}, src=${decodeURIComponent(src)}`);
+      video.volume = volume;
+      console.warn(`[AudioPolicy] UNMUTE path — videoHasAudio=true, muted=${willMute}, volume=${volume}, src=${decodeURIComponent(src)}`);
       return;
     }
 
     video.muted = true;
     video.volume = 0;
     devLog(`[AudioPolicy] MUTE path — videoHasAudio=false, src=${decodeURIComponent(src)}`);
-  }, [videoVolume, videoHasAudio]);
+  }, [videoHasAudio]); // intentionally excludes videoVolume — read via videoVolumeRef instead
 
   const applyMutedFirstPolicy = useCallback((video: HTMLVideoElement) => {
     // Muted-first startup prevents autoplay policies from pausing video playback on many browsers.
@@ -344,11 +370,16 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   useEffect(() => {
     audioPrimedRef.current = false;
     clearPlaybackFailure('track-change');
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
   }, [trackName, clearPlaybackFailure]);
 
   // Fetch video list on mount
   useEffect(() => {
     let ignore = false;
+    const requestedTrackKey = trackName ?? null;
 
     async function fetchVideos() {
       try {
@@ -380,8 +411,37 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         if (videos.length > 0) {
           setVideoList(videos);
           const shuffled = shuffleArray(videos);
+          const hadActivePlaylist = playlistRef.current.length > 0;
+          let nextIndex = 0;
+
+          if (hadActivePlaylist && shuffled.length > 1) {
+            const currentParity = currentIndexRef.current % 2;
+            nextIndex = currentParity === 0 ? 1 : 0;
+            prevIndexRef.current = currentIndexRef.current;
+            // Track switches should be visually smooth too.
+            setTransitionDuration(DEFAULT_FADE_MS);
+          }
+
+          // Pre-bind the incoming element to the new track clip before we flip index.
+          // This avoids flashing a stale preloaded clip from the previous track.
+          const incomingClip = shuffled[nextIndex];
+          const incomingRef = nextIndex % 2 === 0 ? videoARef : videoBRef;
+          if (incomingRef.current && incomingClip) {
+            const incomingVideo = incomingRef.current;
+            incomingVideo.pause();
+            const srcNeedsUpdate = incomingVideo.src !== incomingClip.url && !incomingVideo.src.endsWith(incomingClip.url);
+            if (srcNeedsUpdate) {
+              incomingVideo.src = incomingClip.url;
+              incomingVideo.load();
+            }
+            incomingVideo.currentTime = 0;
+            incomingVideo.muted = true;
+            incomingVideo.volume = 0;
+          }
+
+          playlistTrackKeyRef.current = requestedTrackKey;
           setPlaylist(shuffled);
-          setCurrentIndex(0);
+          setCurrentIndex(nextIndex);
           setFullLength(data.fullLength ?? false);
           setIsActive(true);
         } else {
@@ -398,10 +458,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     return () => {
       ignore = true;
     };
-  }, [trackName]);
+  }, [trackName, setTransitionDuration]);
 
-  // Apply video audio policy to both elements.
-  // While startup is not primed yet, we keep both muted for autoplay reliability.
+  // Apply video audio policy to both elements on track change (videoHasAudio flip).
+  // Slider-driven volume changes are handled synchronously in MusicPlayer's onChange
+  // handler via direct DOM manipulation — this effect must NOT re-run on videoVolume
+  // changes, otherwise it overwrites the slider's work (especially when audioPrimed
+  // is still false and applyMutedFirstPolicy would re-mute the video).
   useEffect(() => {
     [videoARef, videoBRef].forEach(ref => {
       if (!ref.current) return;
@@ -409,17 +472,80 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         applyMutedFirstPolicy(ref.current);
         return;
       }
-      applyRuntimeAudioPolicy(ref.current);
+      if (videoHasAudio) {
+        const volume = videoVolumeRef.current;
+        const willMute = volume === 0;
+        ref.current.muted = willMute;
+        ref.current.volume = volume;
+      } else {
+        ref.current.muted = true;
+        ref.current.volume = 0;
+      }
     });
 
     devLog('[VideoBackgroundManager] Volume policy applied', {
       videoHasAudio,
-      contextVideoVolume: videoVolume,
+      contextVideoVolume: videoVolumeRef.current,
       audioPrimed: audioPrimedRef.current,
       videoA: videoARef.current ? getVideoSnapshot(videoARef.current) : null,
       videoB: videoBRef.current ? getVideoSnapshot(videoBRef.current) : null,
     });
-  }, [videoVolume, videoHasAudio, applyMutedFirstPolicy, applyRuntimeAudioPolicy]);
+  }, [videoHasAudio, applyMutedFirstPolicy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Audio crossfade: smoothly ramp volume between outgoing and incoming video
+  // elements in sync with the CSS opacity transition.
+  useEffect(() => {
+    if (!isActive || playlist.length === 0) return;
+    if (!videoHasAudio || !audioPrimedRef.current) return;
+
+    const duration = Math.max(transitionDurationRef.current, MIN_AUDIO_CROSSFADE_MS);
+
+    const targetVolume = videoVolumeRef.current;
+    if (targetVolume === 0) return; // nothing audible to crossfade
+
+    const outRef = prevIndexRef.current % 2 === 0 ? videoARef : videoBRef;
+    const inRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
+    if (outRef === inRef) return; // first render, no transition happening
+
+    const outVideo = outRef.current;
+    const inVideo = inRef.current;
+    if (!outVideo && !inVideo) return;
+
+    // Kick off the crossfade
+    isCrossfadingRef.current = true;
+    if (inVideo) { inVideo.volume = 0; inVideo.muted = false; }
+
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const vol = videoVolumeRef.current; // re-read each frame (slider mid-fade)
+
+      if (outVideo) outVideo.volume = vol * (1 - progress);
+      if (inVideo) inVideo.volume = vol * progress;
+
+      if (progress < 1) {
+        audioFadeRafRef.current = requestAnimationFrame(tick);
+      } else {
+        // Crossfade complete — snap final values
+        if (outVideo) { outVideo.volume = 0; outVideo.muted = true; }
+        if (inVideo) { inVideo.volume = vol; inVideo.muted = vol === 0; }
+        isCrossfadingRef.current = false;
+        audioFadeRafRef.current = null;
+      }
+    };
+
+    audioFadeRafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (audioFadeRafRef.current !== null) {
+        cancelAnimationFrame(audioFadeRafRef.current);
+        audioFadeRafRef.current = null;
+      }
+      isCrossfadingRef.current = false;
+    };
+  }, [currentIndex, isActive, playlist.length, videoHasAudio]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bandwidth Tracker
   useEffect(() => {
@@ -616,6 +742,15 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
   // Transition to next video
   const transitionToNext = useCallback(() => {
+    const activeTrackKey = trackName ?? null;
+    if (playlistTrackKeyRef.current !== activeTrackKey) {
+      devLog('[VideoBackgroundManager] transitionToNext skipped for stale playlist', {
+        activeTrackKey,
+        playlistTrackKey: playlistTrackKeyRef.current,
+      });
+      return;
+    }
+
     if (isTransitioningRef.current) {
       devLog('[VideoBackgroundManager] transitionToNext called but already transitioning');
       return;
@@ -632,6 +767,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     // Determine the next clip's transition BEFORE flipping the index,
     // so the CSS transition-duration is already applied when opacity changes.
     setCurrentIndex(prevIndex => {
+      prevIndexRef.current = prevIndex;
       const pl = playlistRef.current;
       const nextIndex = (prevIndex + 1) % pl.length;
       const nextClip = pl[nextIndex];
@@ -660,11 +796,11 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     });
 
     // Release the transition lock after the fade completes (not before)
-    const guardDuration = transitionDurationRef.current + 100;
+    const guardDuration = Math.max(transitionDurationRef.current, MIN_AUDIO_CROSSFADE_MS) + 100;
     setTimeout(() => {
       isTransitioningRef.current = false;
     }, guardDuration);
-  }, [setTransitionDuration, attemptPlay]);
+  }, [trackName, setTransitionDuration, attemptPlay]);
 
   // Handle video ended event (fallback — early transition via timeupdate is preferred)
   const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -716,6 +852,8 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   // Setup timer for transitions (only when NOT fullLength)
   useEffect(() => {
     if (!isActive || playlist.length === 0 || fullLength) return;
+    const activeTrackKey = trackName ?? null;
+    if (playlistTrackKeyRef.current !== activeTrackKey) return;
 
     let timerId: NodeJS.Timeout | null = null;
     let metadataHandler: (() => void) | null = null;
@@ -730,14 +868,15 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         const videoDurationMs = video.duration * 1000;
         const currentClip = playlist[currentIndex];
         const effectiveDurationMs = videoDurationMs / (currentClip?.speed || 1);
-        const fadeBuffer = currentClip?.transition === 'cut' ? 0 : DEFAULT_FADE_MS;
+        const visualFadeBuffer = currentClip?.transition === 'cut' ? 0 : DEFAULT_FADE_MS;
+        const fadeBuffer = Math.max(visualFadeBuffer, MIN_AUDIO_CROSSFADE_MS);
 
         if (effectiveDurationMs < fadeBuffer + 1500) {
-           // Video too short for a proper fade — force an immediate cut transition
-           // and trigger slightly before the video ends to avoid the ended-event race.
+           // Video too short for a full visual fade — keep visual cut if needed and
+           // transition as early as possible to preserve at least some audio fade room.
            devLog(`[VideoBackgroundManager] Short video detected (${(effectiveDurationMs/1000).toFixed(1)}s). Forcing hard cut.`);
            setTransitionDuration(0);
-           duration = Math.max(effectiveDurationMs - 300, 200);
+           duration = Math.max(effectiveDurationMs - fadeBuffer, 200);
         } else {
            const safeRunTime = Math.max(0, effectiveDurationMs - fadeBuffer);
 
@@ -788,11 +927,19 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         video.removeEventListener('loadedmetadata', metadataHandler);
       }
     };
-  }, [isActive, playlist.length, currentIndex, transitionToNext, playlist, fullLength, setTransitionDuration]);
+  }, [isActive, playlist.length, currentIndex, transitionToNext, playlist, fullLength, setTransitionDuration, trackName]);
 
   // Load videos based on current index (ping-pong between A and B)
   useEffect(() => {
     if (playlist.length === 0) return;
+    const activeTrackKey = trackName ?? null;
+    if (playlistTrackKeyRef.current !== activeTrackKey) {
+      devLog('[VideoBackgroundManager] Skipping stale load cycle', {
+        activeTrackKey,
+        playlistTrackKey: playlistTrackKeyRef.current,
+      });
+      return;
+    }
 
     const currentClip = playlist[currentIndex];
     const nextIndex = (currentIndex + 1) % playlist.length;
@@ -834,7 +981,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     // Preload the next video after the current transition completes.
     // This avoids destroying the fading-out element's visual content mid-crossfade.
-    const preloadDelay = transitionDurationRef.current;
+    const preloadDelay = Math.max(transitionDurationRef.current, MIN_AUDIO_CROSSFADE_MS);
 
     const preloadTimeout = setTimeout(() => {
       if (preloadRef.current) {
@@ -854,11 +1001,13 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, preloadDelay);
 
     return () => clearTimeout(preloadTimeout);
-  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName, setCurrentVideoLink, attemptPlay]);
+  }, [playlist, currentIndex, applyClipProperties, fullLength, setCurrentVideoName, setCurrentVideoLink, attemptPlay, trackName]);
 
   // Early crossfade for fullLength mode: start transition before the video ends
   useEffect(() => {
     if (!isActive || playlist.length === 0 || !fullLength) return;
+    const activeTrackKey = trackName ?? null;
+    if (playlistTrackKeyRef.current !== activeTrackKey) return;
 
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const video = activeRef.current;
@@ -867,7 +1016,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     const handleTimeUpdate = () => {
       if (!video.duration || earlyTransitionFiredRef.current) return;
       const timeRemainingSec = video.duration - video.currentTime;
-      const thresholdSec = transitionDurationRef.current / 1000;
+      const thresholdSec = Math.max(transitionDurationRef.current, MIN_AUDIO_CROSSFADE_MS) / 1000;
 
       if (thresholdSec > 0 && timeRemainingSec <= thresholdSec && timeRemainingSec > 0) {
         // If a previous transition guard is still active, skip — don't mark
@@ -889,7 +1038,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     return () => video.removeEventListener('timeupdate', handleTimeUpdate);
-  }, [isActive, playlist.length, currentIndex, fullLength, transitionToNext, attemptPlay]);
+  }, [isActive, playlist.length, currentIndex, fullLength, transitionToNext, attemptPlay, trackName]);
 
   // Stall detector: if the active video has ended and no transition is in progress,
   // force the next transition. Catches edge cases where both the early crossfade and
@@ -927,6 +1076,8 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   // Watchdog: transparent recovery first. We only show UI if a real playback failure is detected.
   useEffect(() => {
     if (!isActive || playlist.length === 0) return;
+    const activeTrackKey = trackName ?? null;
+    if (playlistTrackKeyRef.current !== activeTrackKey) return;
 
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -962,7 +1113,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     }, WATCHDOG_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [isActive, playlist.length, currentIndex, attemptPlay, clearPlaybackFailure, registerPlaybackFailure]);
+  }, [isActive, playlist.length, currentIndex, attemptPlay, clearPlaybackFailure, registerPlaybackFailure, trackName]);
 
   // Initialize transition duration on both video elements once they are active
   useEffect(() => {
@@ -993,6 +1144,8 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   useEffect(() => {
     if (videoPlaybackUnlockRequest === 0) return;
     if (!isActive || playlist.length === 0) return;
+    const activeTrackKey = trackName ?? null;
+    if (playlistTrackKeyRef.current !== activeTrackKey) return;
 
     const activeRef = currentIndex % 2 === 0 ? videoARef : videoBRef;
     const preloadRef = currentIndex % 2 === 0 ? videoBRef : videoARef;
@@ -1010,7 +1163,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     if (preloadRef.current && preloadRef.current.paused && preloadRef.current.readyState >= 2) {
       void attemptPlay(preloadRef.current, 'unlock-request-preload');
     }
-  }, [videoPlaybackUnlockRequest, isActive, playlist.length, currentIndex, attemptPlay]);
+  }, [videoPlaybackUnlockRequest, isActive, playlist.length, currentIndex, attemptPlay, trackName]);
 
   // Recover playback when the page becomes visible again
   useEffect(() => {

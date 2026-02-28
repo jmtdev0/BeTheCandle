@@ -6,6 +6,10 @@
 * Fixed video audio not playing for Telepath/Spyro tracks: `VideoBackgroundManager` now calls `applyRuntimeAudioPolicy` immediately after `play()` resolves instead of waiting 1200ms, so audio unmuting happens as close to the user-gesture context as possible
 * Raised default video volume from 2% to 5% so audio is audible at first play without having to find the slider
 * Added `video_has_audio` column + comment to `supabase/public_schema.sql` to keep the schema file consistent with the production database
+* Migrated R2 public URL from `pub-*.r2.dev` (rate-limited) to custom domain `assets.bethecandle.live` via Cloudflare — eliminates TCP timeouts on video/music assets
+* Fixed video volume slider causing spurious video transitions: broke the `useCallback` dependency cascade (`videoVolume` → `applyRuntimeAudioPolicy` → `attemptPlay` → `transitionToNext` → timer effect re-runs) by reading volume via ref instead of closure
+* Fixed video volume slider muting audio: volume policy `useEffect` was overriding direct DOM changes; slider now applies volume synchronously in the user-gesture call stack and the effect only runs on track changes
+* Added smooth audio crossfade between Video Gallery clips — volume ramps down on outgoing video and up on incoming video in sync with the CSS opacity transition (2.5s)
 
 ### 24/02/2026
 * Added WoW-style rotating loading tips to the page loader (starts on a random tip, cycles every 10s with a fade transition)
