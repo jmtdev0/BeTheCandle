@@ -29,6 +29,8 @@ interface MusicTrackContextValue extends MusicTrackState {
   triggerSkipVideo: () => void;
   videoPlaybackUnlockRequest: number;
   triggerVideoPlaybackUnlock: () => void;
+  requestedTrackSlug: string | null;
+  setRequestedTrackSlug: (slug: string | null) => void;
 }
 
 const MusicTrackContext = createContext<MusicTrackContextValue | undefined>(undefined);
@@ -51,6 +53,7 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
   const [currentVideoLink, setCurrentVideoLinkState] = useState<string | null>(null);
   const [forceSkipVideo, setForceSkipVideo] = useState(0);
   const [videoPlaybackUnlockRequest, setVideoPlaybackUnlockRequest] = useState(0);
+  const [requestedTrackSlug, setRequestedTrackSlugState] = useState<string | null>(null);
 
   const setMusicTrackState = useCallback((newState: MusicTrackState) => {
     setState(newState);
@@ -88,6 +91,10 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     setVideoPlaybackUnlockRequest(prev => prev + 1);
   }, []);
 
+  const setRequestedTrackSlug = useCallback((slug: string | null) => {
+    setRequestedTrackSlugState(slug);
+  }, []);
+
   const value: MusicTrackContextValue = {
     ...state,
     setMusicTrackState,
@@ -107,6 +114,8 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
     triggerSkipVideo,
     videoPlaybackUnlockRequest,
     triggerVideoPlaybackUnlock,
+    requestedTrackSlug,
+    setRequestedTrackSlug,
   };
 
   return (
@@ -143,6 +152,8 @@ export function useMusicTrack() {
       triggerSkipVideo: () => {},
       videoPlaybackUnlockRequest: 0,
       triggerVideoPlaybackUnlock: () => {},
+      requestedTrackSlug: null,
+      setRequestedTrackSlug: () => {},
     };
   }
   return context;

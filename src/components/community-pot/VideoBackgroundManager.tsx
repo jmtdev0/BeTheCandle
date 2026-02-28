@@ -1117,7 +1117,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       </div>
 
       {showPlaybackUnlockToast && (
-        <div className="fixed bottom-28 right-6 z-[95] pointer-events-auto">
+        <div className="fixed bottom-[460px] right-6 z-[95] pointer-events-auto">
           <div className="w-[300px] rounded-xl border border-blue-300/30 bg-black/85 backdrop-blur-xl p-3 shadow-2xl shadow-black/50">
             <p className="text-xs font-semibold text-blue-100">Video playback needs one click</p>
             <p className="mt-1 text-[11px] leading-relaxed text-blue-100/80">

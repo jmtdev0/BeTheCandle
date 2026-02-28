@@ -1,6 +1,8 @@
 # Changelog
 
 ### 28/02/2026
+* Renamed "Hide everything" button to "Only visuals"; the USDC sphere now remains visible in this mode
+* Added `?video-gallery=<slug>` deep-link support: visiting `/?video-gallery=teardrops` auto-selects the matching Video Gallery track and enables Only Visuals mode — added `slug` column to `gallery_tracks` (migration `20260228_gallery_add_slug.sql`), exposed via `/api/music`, wired through `MusicTrackContext` (`requestedTrackSlug`) and consumed in `MusicPlayer`
 * Fixed video audio not playing for Telepath/Spyro tracks: `VideoBackgroundManager` now calls `applyRuntimeAudioPolicy` immediately after `play()` resolves instead of waiting 1200ms, so audio unmuting happens as close to the user-gesture context as possible
 * Raised default video volume from 2% to 5% so audio is audible at first play without having to find the slider
 * Added `video_has_audio` column + comment to `supabase/public_schema.sql` to keep the schema file consistent with the production database

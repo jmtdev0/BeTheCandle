@@ -13,6 +13,7 @@ interface Track {
   videoLink?: string | null;
   hasVideo?: boolean;
   videoHasAudio?: boolean;
+  slug?: string | null;
 }
 
 interface MusicPlayerProps {
@@ -67,6 +68,8 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
     currentVideoLink,
     triggerSkipVideo,
     triggerVideoPlaybackUnlock,
+    requestedTrackSlug,
+    setRequestedTrackSlug,
   } = useMusicTrack();
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -117,6 +120,18 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
       setCurrentTrackIndex(random.index);
     }
   }, [forceSkipToSkyScene, tracks]);
+
+  // Auto-select a track when arriving via ?video-gallery=<slug> deep-link
+  useEffect(() => {
+    if (!requestedTrackSlug || tracks.length === 0) return;
+    const idx = tracks.findIndex(t => t.slug === requestedTrackSlug);
+    if (idx !== -1) {
+      triggerVideoPlaybackUnlock();
+      setCurrentTrackIndex(idx);
+      setImmersiveMode(true);
+    }
+    setRequestedTrackSlug(null);
+  }, [tracks, requestedTrackSlug, setImmersiveMode, setRequestedTrackSlug, triggerVideoPlaybackUnlock]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previousVolumeRef = useRef(0.3);

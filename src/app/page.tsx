@@ -30,7 +30,14 @@ interface LastPayoutData {
 export default function CommunityPotPage() {
   const { gradient } = useDayNightCycle();
   const { setDataReady } = usePageTransition();
-  const { currentTrackHasVideo, immersiveMode, setImmersiveMode, videoEnabled, setVideoEnabled, triggerSkipToSkyScene } = useMusicTrack();
+  const { currentTrackHasVideo, immersiveMode, setImmersiveMode, videoEnabled, setVideoEnabled, triggerSkipToSkyScene, setRequestedTrackSlug } = useMusicTrack();
+
+  // Deep-link: ?video-gallery=<slug> → auto-select track + enable Only Visuals
+  useEffect(() => {
+    const slug = new URLSearchParams(window.location.search).get('video-gallery');
+    if (slug) setRequestedTrackSlug(slug);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -631,7 +638,7 @@ export default function CommunityPotPage() {
       <TeardropsVideoBackground isEnabled={videoEnabled} />
 
       {/* 3D Interactive Orbs */}
-      {participantCount > 0 && !immersiveMode && (
+      {participantCount > 0 && (
         <InteractiveOrbs3D
           participants={participants}
           hoveredParticipantId={hoveredParticipantId}
@@ -1148,7 +1155,7 @@ export default function CommunityPotPage() {
               : "bg-black/40 border-white/10 text-white/60 hover:bg-black/60 hover:text-white"
           }`}
         >
-          {immersiveMode ? "Show everything" : "Hide everything"}
+          {immersiveMode ? "Show everything" : "Only visuals"}
         </button>
         <button
           onClick={() => {

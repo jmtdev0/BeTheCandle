@@ -21,7 +21,7 @@ export async function GET() {
     const supabase = getSupabaseAdminClient();
     const { data: dbTracks, error } = await supabase
       .from("gallery_tracks")
-      .select("name, music_link, video_link, video_base_path, audio_filename, only_video_audio, video_has_audio, sort_order")
+      .select("name, music_link, video_link, video_base_path, audio_filename, only_video_audio, video_has_audio, sort_order, slug")
       .order("sort_order")
       .order("name");
 
@@ -45,6 +45,7 @@ export async function GET() {
         videoLink: row.video_link || null,
         hasVideo: Boolean(row.video_base_path),
         videoHasAudio: hasVideoAudio,
+        slug: row.slug ?? null,
       };
     });
 
