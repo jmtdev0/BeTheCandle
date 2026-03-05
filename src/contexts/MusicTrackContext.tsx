@@ -60,7 +60,8 @@ export function MusicTrackProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const setVideoVolume = useCallback((volume: number) => {
-    setVideoVolumeState(Math.max(0, Math.min(1, volume)));
+    const safeVolume = Number.isFinite(volume) ? volume : 0;
+    setVideoVolumeState(Math.max(0, Math.min(1, safeVolume)));
   }, []);
 
   const setImmersiveMode = useCallback((mode: boolean) => {

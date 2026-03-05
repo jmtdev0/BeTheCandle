@@ -19,6 +19,13 @@ interface VideoBackgroundManagerProps {
 
 type PlaybackFailureReason = 'play-rejected' | 'no-progress' | 'watchdog-stall';
 
+interface TrackPlaybackState {
+  videoList: VideoClip[];
+  playlist: VideoClip[];
+  currentIndex: number;
+  fullLength: boolean;
+}
+
 // Fisher-Yates shuffle algorithm
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
@@ -128,6 +135,13 @@ function getVideoSnapshot(video: HTMLVideoElement) {
   };
 }
 
+function clampMediaVolume(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
+
 // Normalize API response
 function normalizeVideos(data: Record<string, unknown>): VideoClip[] {
   const videos = data.videos;
@@ -179,6 +193,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   const isCrossfadingRef = useRef(false);
   const prevIndexRef = useRef(0);
   const currentIndexRef = useRef(0);
+  const trackPlaybackStateRef = useRef<Map<string, TrackPlaybackState>>(new Map());
   // Track key currently bound to `playlist`/`videoList`.
   // Used to prevent stale transitions when `trackName` changes but fetch has not completed yet.
   const playlistTrackKeyRef = useRef<string | null>(trackName ?? null);
@@ -348,7 +363,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
       }
       // Read from ref so this callback doesn't need videoVolume in its deps,
       // preventing cascading rebuilds of attemptPlay / transitionToNext / timer effects.
-      const volume = videoVolumeRef.current;
+      const volume = clampMediaVolume(videoVolumeRef.current);
       const willMute = volume === 0;
       video.muted = willMute;
       video.volume = volume;
@@ -380,6 +395,52 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
   useEffect(() => {
     let ignore = false;
     const requestedTrackKey = trackName ?? null;
+
+    const restoreFromCache = () => {
+      if (!requestedTrackKey) return false;
+      const cached = trackPlaybackStateRef.current.get(requestedTrackKey);
+      if (!cached || cached.playlist.length === 0) return false;
+
+      const safeIndex = Math.min(Math.max(cached.currentIndex, 0), cached.playlist.length - 1);
+      const restoredVideoList = cached.videoList.length > 0 ? cached.videoList : cached.playlist;
+      const restoredPlaylist = cached.playlist;
+      const incomingClip = restoredPlaylist[safeIndex];
+      const incomingRef = safeIndex % 2 === 0 ? videoARef : videoBRef;
+
+      // Pre-bind incoming element to avoid flashes from the previously active track.
+      if (incomingRef.current && incomingClip) {
+        const incomingVideo = incomingRef.current;
+        incomingVideo.pause();
+        const srcNeedsUpdate = incomingVideo.src !== incomingClip.url && !incomingVideo.src.endsWith(incomingClip.url);
+        if (srcNeedsUpdate) {
+          incomingVideo.src = incomingClip.url;
+          incomingVideo.load();
+        }
+        incomingVideo.currentTime = 0;
+        incomingVideo.muted = true;
+        incomingVideo.volume = 0;
+      }
+
+      playlistTrackKeyRef.current = requestedTrackKey;
+      setVideoList(restoredVideoList);
+      setPlaylist(restoredPlaylist);
+      setCurrentIndex(safeIndex);
+      setFullLength(cached.fullLength);
+      setIsActive(true);
+
+      devLog('[VideoBackgroundManager] Restored track playback state from cache', {
+        trackName: requestedTrackKey,
+        playlistLength: restoredPlaylist.length,
+        currentIndex: safeIndex,
+      });
+      return true;
+    };
+
+    if (restoreFromCache()) {
+      return () => {
+        ignore = true;
+      };
+    }
 
     async function fetchVideos() {
       try {
@@ -444,6 +505,15 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
           setCurrentIndex(nextIndex);
           setFullLength(data.fullLength ?? false);
           setIsActive(true);
+
+          if (requestedTrackKey) {
+            trackPlaybackStateRef.current.set(requestedTrackKey, {
+              videoList: videos,
+              playlist: shuffled,
+              currentIndex: nextIndex,
+              fullLength: data.fullLength ?? false,
+            });
+          }
         } else {
           devLog('[VideoBackgroundManager] No videos returned from API', { apiUrl, trackName });
         }
@@ -460,6 +530,22 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
     };
   }, [trackName, setTransitionDuration]);
 
+  // Persist current playback progress per track so switching tracks can resume later.
+  useEffect(() => {
+    const activeTrackKey = trackName ?? null;
+    if (!activeTrackKey) return;
+    if (!isActive || playlist.length === 0) return;
+    if (playlistTrackKeyRef.current !== activeTrackKey) return;
+
+    const safeIndex = Math.min(Math.max(currentIndex, 0), playlist.length - 1);
+    trackPlaybackStateRef.current.set(activeTrackKey, {
+      videoList: videoList.length > 0 ? videoList : playlist,
+      playlist,
+      currentIndex: safeIndex,
+      fullLength,
+    });
+  }, [trackName, isActive, playlist, videoList, currentIndex, fullLength]);
+
   // Apply video audio policy to both elements on track change (videoHasAudio flip).
   // Slider-driven volume changes are handled synchronously in MusicPlayer's onChange
   // handler via direct DOM manipulation — this effect must NOT re-run on videoVolume
@@ -473,7 +559,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         return;
       }
       if (videoHasAudio) {
-        const volume = videoVolumeRef.current;
+        const volume = clampMediaVolume(videoVolumeRef.current);
         const willMute = volume === 0;
         ref.current.muted = willMute;
         ref.current.volume = volume;
@@ -500,7 +586,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     const duration = Math.max(transitionDurationRef.current, MIN_AUDIO_CROSSFADE_MS);
 
-    const targetVolume = videoVolumeRef.current;
+    const targetVolume = clampMediaVolume(videoVolumeRef.current);
     if (targetVolume === 0) return; // nothing audible to crossfade
 
     const outRef = prevIndexRef.current % 2 === 0 ? videoARef : videoBRef;
@@ -519,18 +605,18 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
 
     const tick = (now: number) => {
       const elapsed = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const vol = videoVolumeRef.current; // re-read each frame (slider mid-fade)
+      const progress = Math.max(0, Math.min(elapsed / duration, 1));
+      const vol = clampMediaVolume(videoVolumeRef.current); // re-read each frame (slider mid-fade)
 
-      if (outVideo) outVideo.volume = vol * (1 - progress);
-      if (inVideo) inVideo.volume = vol * progress;
+      if (outVideo) outVideo.volume = clampMediaVolume(vol * (1 - progress));
+      if (inVideo) inVideo.volume = clampMediaVolume(vol * progress);
 
       if (progress < 1) {
         audioFadeRafRef.current = requestAnimationFrame(tick);
       } else {
         // Crossfade complete — snap final values
         if (outVideo) { outVideo.volume = 0; outVideo.muted = true; }
-        if (inVideo) { inVideo.volume = vol; inVideo.muted = vol === 0; }
+        if (inVideo) { inVideo.volume = clampMediaVolume(vol); inVideo.muted = vol === 0; }
         isCrossfadingRef.current = false;
         audioFadeRafRef.current = null;
       }

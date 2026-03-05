@@ -21,6 +21,7 @@ interface InteractiveOrbs3DProps {
   isMobile?: boolean;
   onSceneReady?: () => void;
   isVideoActive?: boolean;
+  hideWalletTooltips?: boolean;
 }
 
 // Component that notifies when the scene has been rendered
@@ -1002,6 +1003,7 @@ function Orb({
   delay,
   isHovered,
   isNight,
+  hideWalletTooltips,
   onHover,
   onLeave,
   onSelect,
@@ -1013,6 +1015,7 @@ function Orb({
   delay: number;
   isHovered: boolean;
   isNight: boolean;
+  hideWalletTooltips?: boolean;
   onHover: () => void;
   onLeave: () => void;
   onSelect?: () => void;
@@ -1154,7 +1157,7 @@ function Orb({
         />
       </mesh>
       
-      {isHovered && (
+      {isHovered && !hideWalletTooltips && (
         <Html
           position={[0, 2.6, 0]}
           scale={1}
@@ -1475,7 +1478,8 @@ function OrbsScene({
   isNight,
   isDay,
   starOpacity,
-  isVideoActive
+  isVideoActive,
+  hideWalletTooltips
 }: InteractiveOrbs3DProps & {
   lightColor: string;
   lightIntensity: number;
@@ -2028,6 +2032,7 @@ function OrbsScene({
                 delay={delay}
                 isHovered={isHovered}
                 isNight={isNight}
+                hideWalletTooltips={hideWalletTooltips}
                 onHover={() => onHoverParticipant(participant.polygonAddress)}
                 onLeave={() => onHoverParticipant(null)}
                 onSelect={isMobile ? () => onSelectParticipant?.(participant.polygonAddress) : undefined}

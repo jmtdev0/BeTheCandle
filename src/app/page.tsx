@@ -652,6 +652,7 @@ export default function CommunityPotPage() {
           isMobile={isMobile}
           onSceneReady={handleSceneReady}
           isVideoActive={isVideoActive}
+          hideWalletTooltips={immersiveMode}
         />
       )}
 

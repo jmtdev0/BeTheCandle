@@ -773,7 +773,8 @@ export default function MusicPlayer({ tracks: initialTracks = [], theme = "orang
                     step="0.01"
                     value={videoVolume}
                     onChange={(e) => {
-                      const vol = parseFloat(e.target.value);
+                      const rawVol = parseFloat(e.target.value);
+                      const vol = Number.isFinite(rawVol) ? Math.max(0, Math.min(1, rawVol)) : 0;
                       setVideoVolume(vol);
                       // Apply volume directly to video elements in the user-gesture
                       // call stack. Browser autoplay policies require muted→unmuted
