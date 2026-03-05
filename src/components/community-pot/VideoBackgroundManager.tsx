@@ -59,7 +59,11 @@ const PLAYBACK_VERIFY_MS = 1200;
 const PLAYBACK_PROGRESS_EPSILON = 0.01;
 const WATCHDOG_INTERVAL_MS = 1500;
 const WATCHDOG_STALL_MS = 2200;
-const UNLOCK_PROMPT_FAIL_THRESHOLD = 1;
+// Two consecutive failures required before showing the unlock toast.
+// A value of 1 causes false-positive flashes on track switches because the
+// first attemptPlay after a track change resets audioPrimedRef and the video
+// may still be buffering during the 1200 ms verification window.
+const UNLOCK_PROMPT_FAIL_THRESHOLD = 2;
 
 // Helper to log in development and in production when debugVideo=1 is present in URL
 // or localStorage contains btc_debug_video=1.
@@ -1355,26 +1359,7 @@ export default function VideoBackgroundManager({ trackName }: VideoBackgroundMan
         />
       </div>
 
-      {showPlaybackUnlockToast && (
-        <div className="fixed bottom-[460px] right-6 z-[95] pointer-events-auto">
-          <div className="w-[300px] rounded-xl border border-blue-300/30 bg-black/85 backdrop-blur-xl p-3 shadow-2xl shadow-black/50">
-            <p className="text-xs font-semibold text-blue-100">Video playback needs one click</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-blue-100/80">
-              {playbackFailureDescription}
-            </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-blue-100/70">
-              If this button does not work, refresh the page or try again later.
-            </p>
-            <button
-              type="button"
-              onClick={handlePlaybackUnlockClick}
-              className="mt-2 w-full rounded-md bg-blue-600/80 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500"
-            >
-              Resume Video Gallery
-            </button>
-          </div>
-        </div>
-      )}
+
 
     </>
   );
