@@ -2,6 +2,7 @@
 
 # xd
 *.mp4
+demo/*
 
 # dependencies
 /node_modules

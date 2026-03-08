@@ -769,14 +769,11 @@ export default function CommunityPotPage() {
                 <InfoRow label="Participants" value={`${participantCount}/${week?.maxParticipants ?? 10}`} />
                 <InfoRow label="Open slots" value={week ? Math.max(week.spotsRemaining, 0) : "—"} />
                 <InfoRow label="Estimated share" value={perParticipantAmountUsdc ? `${perParticipantAmountUsdc} USDC` : "Depends on headcount"} />
-                <InfoRow 
-                  label="Payout wallet" 
-                  value="0x3d8b...2b81" 
-                  mono 
-                  href={week?.isTestnet 
-                    ? "https://amoy.polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
-                    : "https://polygonscan.com/address/0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
-                  }
+                <InfoRow
+                  label="Payout wallet"
+                  value="0x3d8b...2b81"
+                  mono
+                  href="https://polygonscan.com/token/0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359?a=0x3d8be5e1f679df91d86538bbc3ffe61e5ee22b81"
                 />
                 <InfoRow label="Network" value={week?.isTestnet ? "Polygon Testnet" : "Polygon Mainnet"} />
               </div>

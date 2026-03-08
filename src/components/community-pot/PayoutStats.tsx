@@ -12,15 +12,14 @@ type TopRecipient = {
   last_received_at: string;
 };
 
-type NetworkType = "testnet" | "mainnet";
-
 interface PayoutStatsProps {
   isVisible?: boolean;
   onHoverChange?: (hovering: boolean) => void;
 }
 
+const USDC_TOKEN_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+
 export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutStatsProps) {
-  const [activeTab, setActiveTab] = useState<NetworkType>("mainnet");
   const [payoutCount, setPayoutCount] = useState<number>(0);
   const [totalDistributed, setTotalDistributed] = useState<number>(0);
   const [topRecipients, setTopRecipients] = useState<TopRecipient[]>([]);
@@ -29,12 +28,12 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
 
   useEffect(() => {
     loadStats();
-  }, [activeTab]);
+  }, []);
 
   async function loadStats() {
     setLoading(true);
     const supabase = getSupabaseBrowserClient();
-    const isTestnet = activeTab === "testnet";
+    const isTestnet = false;
 
     try {
       // Get payout count
@@ -145,30 +144,6 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
               ✕
             </button>
           </div>
-          {/* Tabs */}
-          <div className="flex border-b border-slate-700/50">
-            <button
-              onClick={() => setActiveTab("mainnet")}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === "mainnet"
-                  ? "bg-blue-500/20 text-blue-400 border-b-2 border-blue-500"
-                  : "text-slate-400 hover:text-slate-300 hover:bg-slate-800/50"
-              }`}
-            >
-              Mainnet
-            </button>
-            <button
-              onClick={() => setActiveTab("testnet")}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === "testnet"
-                  ? "bg-blue-500/20 text-blue-400 border-b-2 border-blue-500"
-                  : "text-slate-400 hover:text-slate-300 hover:bg-slate-800/50"
-              }`}
-            >
-              Testnet
-            </button>
-          </div>
-
           {/* Content */}
           <div className="p-4 space-y-4">
             {loading ? (
@@ -220,11 +195,7 @@ export default function PayoutStats({ isVisible = true, onHoverChange }: PayoutS
                                 {index + 1}
                               </div>
                               <a
-                                href={
-                                  activeTab === "testnet"
-                                    ? `https://amoy.polygonscan.com/address/${recipient.polygon_address}`
-                                    : `https://polygonscan.com/address/${recipient.polygon_address}`
-                                }
+                                href={`https://polygonscan.com/token/${USDC_TOKEN_ADDRESS}?a=${recipient.polygon_address}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-sm font-mono text-slate-300 hover:text-blue-400 transition-colors"
